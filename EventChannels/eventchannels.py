@@ -20,6 +20,7 @@ class EventChannels(commands.Cog):
             category_id=None,
             timezone="UTC",  # Default timezone
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
+            channel_format="{name}᲼{type}",  # Default channel name format
             deletion_hours=4,  # Default deletion time in hours
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
@@ -91,12 +92,42 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
+    async def seteventchannelformat(self, ctx, *, format_string: str):
+        """Set the channel name format pattern.
+
+        Available placeholders:
+        - {name} - Event name (lowercase, spaces replaced)
+        - {type} - Channel type ("text" or "voice")
+
+        Examples:
+        - `{name}᲼{type}` → "raid᲼night᲼text" (default)
+        - `{name}-{type}` → "raid-night-text"
+        - `event-{name}-{type}` → "event-raid-night-text"
+        """
+        # Validate the format string has valid placeholders
+        valid_placeholders = {'{name}', '{type}'}
+
+        # Check if format contains both required placeholders
+        if '{name}' not in format_string:
+            await ctx.send(f"❌ Format must contain `{{name}}` placeholder.")
+            return
+        if '{type}' not in format_string:
+            await ctx.send(f"❌ Format must contain `{{type}}` placeholder.")
+            return
+
+        await self.config.guild(ctx.guild).channel_format.set(format_string)
+        await ctx.send(f"✅ Event channel format set to: `{format_string}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
     async def vieweventsettings(self, ctx):
         """View current event channel settings."""
         category_id = await self.config.guild(ctx.guild).category_id()
         timezone = await self.config.guild(ctx.guild).timezone()
         deletion_hours = await self.config.guild(ctx.guild).deletion_hours()
         role_format = await self.config.guild(ctx.guild).role_format()
+        channel_format = await self.config.guild(ctx.guild).channel_format()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
@@ -106,6 +137,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Timezone", value=timezone, inline=False)
         embed.add_field(name="Deletion Time", value=f"{deletion_hours} hours after start", inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
+        embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
 
         try:
             await ctx.send(embed=embed)
@@ -116,7 +148,8 @@ class EventChannels(commands.Cog):
                 f"**Category:** {category_name}\n"
                 f"**Timezone:** {timezone}\n"
                 f"**Deletion Time:** {deletion_hours} hours after start\n"
-                f"**Role Format:** `{role_format}`"
+                f"**Role Format:** `{role_format}`\n"
+                f"**Channel Format:** `{channel_format}`"
             )
             await ctx.send(message)
 
@@ -256,7 +289,12 @@ class EventChannels(commands.Cog):
                 ),
             }
 
+            # Get channel format and prepare channel names
+            channel_format = await self.config.guild(guild).channel_format()
             base_name = event.name.lower().replace(" ", "᲼")
+
+            text_channel_name = channel_format.format(name=base_name, type="text")
+            voice_channel_name = channel_format.format(name=base_name, type="voice")
 
             text_channel = None
             voice_channel = None
@@ -264,14 +302,14 @@ class EventChannels(commands.Cog):
             try:
                 # Create channels without overwrites first
                 text_channel = await guild.create_text_channel(
-                    name=f"{base_name}᲼text",
+                    name=text_channel_name,
                     category=category,
                     reason=f"Scheduled event '{event.name}' starting soon",
                 )
                 log.info(f"Created text channel: {text_channel.name}")
 
                 voice_channel = await guild.create_voice_channel(
-                    name=f"{base_name}᲼voice",
+                    name=voice_channel_name,
                     category=category,
                     reason=f"Scheduled event '{event.name}' starting soon",
                 )
