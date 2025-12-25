@@ -12,8 +12,8 @@ Installation
 
 ::
 
-    [p]repo add asdasd-cogs https://github.com/adapdoaosdaoda/asdasd-cogs
-    [p]cog install asdasd-cogs RaidHelperEventThing
+    [p]repo add asdas-cogs https://github.com/adapdoaosdaoda/asdas-cogs
+    [p]cog install asdas-cogs EventChannels
 
 ----
 
