@@ -143,12 +143,12 @@ class EventChannels(commands.Cog):
         Available placeholders:
         - {role} - Mentions the event role
         - {event} - Event name
-        - {time} - Event start time
+        - {time} - Event start time (relative format: "in 5 minutes", "in 2 hours")
 
         Examples:
         - `{role} The event is starting soon!` (default)
-        - `{role} {event} begins at {time}!`
-        - `Hey {role}, get ready!`
+        - `{role} {event} begins {time}!` → "@Role Raid Night begins in 15 minutes!"
+        - `{role} Get ready, event starts {time}!`
 
         To disable announcements, use: `none`
         """
@@ -372,17 +372,15 @@ class EventChannels(commands.Cog):
                 # Send announcement message if configured
                 announcement_template = await self.config.guild(guild).announcement_message()
                 if announcement_template:
-                    # Get timezone for event time formatting
-                    from zoneinfo import ZoneInfo
-                    tz_name = await self.config.guild(guild).timezone()
-                    server_tz = ZoneInfo(tz_name)
-                    event_local_time = event.start_time.astimezone(server_tz)
+                    # Format event time as Discord relative timestamp
+                    unix_timestamp = int(event.start_time.timestamp())
+                    discord_timestamp = f"<t:{unix_timestamp}:R>"
 
                     # Format the announcement message
                     announcement = announcement_template.format(
                         role=role.mention,
                         event=event.name,
-                        time=event_local_time.strftime("%H:%M")
+                        time=discord_timestamp
                     )
 
                     try:
