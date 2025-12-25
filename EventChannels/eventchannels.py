@@ -387,7 +387,7 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            base_name = event.name.lower().replace(" ", "-")
+            base_name = event.name.lower().replace(" ", "᲼")
 
             try:
                 # Create channels with overwrites applied during creation
