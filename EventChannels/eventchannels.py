@@ -20,7 +20,10 @@ class EventChannels(commands.Cog):
             category_id=None,
             timezone="UTC",  # Default timezone
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
+            channel_format="{name}᲼{type}",  # Default channel name format
+            creation_minutes=15,  # Default creation time in minutes before event
             deletion_hours=4,  # Default deletion time in hours
+            announcement_message="{role} The event is starting soon!",  # Default announcement
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -64,6 +67,20 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
+    async def seteventcreationtime(self, ctx, minutes: int):
+        """Set how many minutes before event start channels are created (default: 15)."""
+        if minutes < 0:
+            await ctx.send("❌ Minutes must be a positive number.")
+            return
+        if minutes > 1440:  # 24 hours
+            await ctx.send("❌ Creation time cannot exceed 1440 minutes (24 hours).")
+            return
+        await self.config.guild(ctx.guild).creation_minutes.set(minutes)
+        await ctx.send(f"✅ Event channels will be created **{minutes} minutes** before event start.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
     async def seteventroleformat(self, ctx, *, format_string: str):
         """Set the role name format pattern.
         
@@ -91,21 +108,82 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
+    async def seteventchannelformat(self, ctx, *, format_string: str):
+        """Set the channel name format pattern.
+
+        Available placeholders:
+        - {name} - Event name (lowercase, spaces replaced)
+        - {type} - Channel type ("text" or "voice")
+
+        Examples:
+        - `{name}᲼{type}` → "raid᲼night᲼text" (default)
+        - `{name}-{type}` → "raid-night-text"
+        - `event-{name}-{type}` → "event-raid-night-text"
+        """
+        # Validate the format string has valid placeholders
+        valid_placeholders = {'{name}', '{type}'}
+
+        # Check if format contains both required placeholders
+        if '{name}' not in format_string:
+            await ctx.send(f"❌ Format must contain `{{name}}` placeholder.")
+            return
+        if '{type}' not in format_string:
+            await ctx.send(f"❌ Format must contain `{{type}}` placeholder.")
+            return
+
+        await self.config.guild(ctx.guild).channel_format.set(format_string)
+        await ctx.send(f"✅ Event channel format set to: `{format_string}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def seteventannouncement(self, ctx, *, message: str):
+        """Set the announcement message posted in event text channels.
+
+        Available placeholders:
+        - {role} - Mentions the event role
+        - {event} - Event name
+        - {time} - Event start time (relative format: "in 5 minutes", "in 2 hours")
+
+        Examples:
+        - `{role} The event is starting soon!` (default)
+        - `{role} {event} begins {time}!` → "@Role Raid Night begins in 15 minutes!"
+        - `{role} Get ready, event starts {time}!`
+
+        To disable announcements, use: `none`
+        """
+        if message.lower() == "none":
+            await self.config.guild(ctx.guild).announcement_message.set("")
+            await ctx.send("✅ Event announcements disabled.")
+        else:
+            await self.config.guild(ctx.guild).announcement_message.set(message)
+            await ctx.send(f"✅ Event announcement set to: `{message}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
     async def vieweventsettings(self, ctx):
         """View current event channel settings."""
         category_id = await self.config.guild(ctx.guild).category_id()
         timezone = await self.config.guild(ctx.guild).timezone()
+        creation_minutes = await self.config.guild(ctx.guild).creation_minutes()
         deletion_hours = await self.config.guild(ctx.guild).deletion_hours()
         role_format = await self.config.guild(ctx.guild).role_format()
+        channel_format = await self.config.guild(ctx.guild).channel_format()
+        announcement_message = await self.config.guild(ctx.guild).announcement_message()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
+        announcement_display = f"`{announcement_message}`" if announcement_message else "Disabled"
 
         embed = discord.Embed(title="Event Channels Settings", color=discord.Color.blue())
         embed.add_field(name="Category", value=category_name, inline=False)
         embed.add_field(name="Timezone", value=timezone, inline=False)
+        embed.add_field(name="Creation Time", value=f"{creation_minutes} minutes before start", inline=False)
         embed.add_field(name="Deletion Time", value=f"{deletion_hours} hours after start", inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
+        embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
+        embed.add_field(name="Announcement", value=announcement_display, inline=False)
 
         try:
             await ctx.send(embed=embed)
@@ -115,8 +193,11 @@ class EventChannels(commands.Cog):
                 f"**Event Channels Settings**\n"
                 f"**Category:** {category_name}\n"
                 f"**Timezone:** {timezone}\n"
+                f"**Creation Time:** {creation_minutes} minutes before start\n"
                 f"**Deletion Time:** {deletion_hours} hours after start\n"
-                f"**Role Format:** `{role_format}`"
+                f"**Role Format:** `{role_format}`\n"
+                f"**Channel Format:** `{channel_format}`\n"
+                f"**Announcement:** {announcement_display}"
             )
             await ctx.send(message)
 
@@ -143,17 +224,18 @@ class EventChannels(commands.Cog):
     async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent):
         try:
             start_time = event.start_time.astimezone(timezone.utc)
-            create_time = start_time - timedelta(minutes=15)
+            creation_minutes = await self.config.guild(guild).creation_minutes()
+            create_time = start_time - timedelta(minutes=creation_minutes)
             deletion_hours = await self.config.guild(guild).deletion_hours()
             delete_time = start_time + timedelta(hours=deletion_hours)
             now = datetime.now(timezone.utc)
 
-            # If event starts in less than 15 minutes, create channels immediately
+            # If event starts in less than configured minutes, create channels immediately
             if now >= create_time:
                 # Already past the create time, do it now
                 pass
             else:
-                # Wait until 15 minutes before start
+                # Wait until configured minutes before start
                 await asyncio.sleep((create_time - now).total_seconds())
 
             stored = await self.config.guild(guild).event_channels()
@@ -256,7 +338,12 @@ class EventChannels(commands.Cog):
                 ),
             }
 
+            # Get channel format and prepare channel names
+            channel_format = await self.config.guild(guild).channel_format()
             base_name = event.name.lower().replace(" ", "᲼")
+
+            text_channel_name = channel_format.format(name=base_name, type="text")
+            voice_channel_name = channel_format.format(name=base_name, type="voice")
 
             text_channel = None
             voice_channel = None
@@ -264,14 +351,14 @@ class EventChannels(commands.Cog):
             try:
                 # Create channels without overwrites first
                 text_channel = await guild.create_text_channel(
-                    name=f"{base_name}᲼text",
+                    name=text_channel_name,
                     category=category,
                     reason=f"Scheduled event '{event.name}' starting soon",
                 )
                 log.info(f"Created text channel: {text_channel.name}")
 
                 voice_channel = await guild.create_voice_channel(
-                    name=f"{base_name}᲼voice",
+                    name=voice_channel_name,
                     category=category,
                     reason=f"Scheduled event '{event.name}' starting soon",
                 )
@@ -281,6 +368,26 @@ class EventChannels(commands.Cog):
                 await text_channel.edit(overwrites=overwrites)
                 await voice_channel.edit(overwrites=overwrites)
                 log.info(f"Successfully applied permissions to both channels for event '{event.name}'")
+
+                # Send announcement message if configured
+                announcement_template = await self.config.guild(guild).announcement_message()
+                if announcement_template:
+                    # Format event time as Discord relative timestamp
+                    unix_timestamp = int(event.start_time.timestamp())
+                    discord_timestamp = f"<t:{unix_timestamp}:R>"
+
+                    # Format the announcement message
+                    announcement = announcement_template.format(
+                        role=role.mention,
+                        event=event.name,
+                        time=discord_timestamp
+                    )
+
+                    try:
+                        await text_channel.send(announcement, allowed_mentions=discord.AllowedMentions(roles=True))
+                        log.info(f"Sent announcement to {text_channel.name}")
+                    except discord.Forbidden:
+                        log.warning(f"Could not send announcement to {text_channel.name} - missing permissions")
 
             except discord.Forbidden as e:
                 log.error(f"Permission error while creating/configuring channels for event '{event.name}': {e}")
