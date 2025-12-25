@@ -21,6 +21,7 @@ class EventChannels(commands.Cog):
             timezone="UTC",  # Default timezone
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
             channel_format="{name}᲼{type}",  # Default channel name format
+            creation_minutes=15,  # Default creation time in minutes before event
             deletion_hours=4,  # Default deletion time in hours
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
@@ -61,6 +62,20 @@ class EventChannels(commands.Cog):
             return
         await self.config.guild(ctx.guild).deletion_hours.set(hours)
         await ctx.send(f"✅ Event channels will be deleted **{hours} hours** after event start.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def seteventcreationtime(self, ctx, minutes: int):
+        """Set how many minutes before event start channels are created (default: 15)."""
+        if minutes < 0:
+            await ctx.send("❌ Minutes must be a positive number.")
+            return
+        if minutes > 1440:  # 24 hours
+            await ctx.send("❌ Creation time cannot exceed 1440 minutes (24 hours).")
+            return
+        await self.config.guild(ctx.guild).creation_minutes.set(minutes)
+        await ctx.send(f"✅ Event channels will be created **{minutes} minutes** before event start.")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -125,6 +140,7 @@ class EventChannels(commands.Cog):
         """View current event channel settings."""
         category_id = await self.config.guild(ctx.guild).category_id()
         timezone = await self.config.guild(ctx.guild).timezone()
+        creation_minutes = await self.config.guild(ctx.guild).creation_minutes()
         deletion_hours = await self.config.guild(ctx.guild).deletion_hours()
         role_format = await self.config.guild(ctx.guild).role_format()
         channel_format = await self.config.guild(ctx.guild).channel_format()
@@ -135,6 +151,7 @@ class EventChannels(commands.Cog):
         embed = discord.Embed(title="Event Channels Settings", color=discord.Color.blue())
         embed.add_field(name="Category", value=category_name, inline=False)
         embed.add_field(name="Timezone", value=timezone, inline=False)
+        embed.add_field(name="Creation Time", value=f"{creation_minutes} minutes before start", inline=False)
         embed.add_field(name="Deletion Time", value=f"{deletion_hours} hours after start", inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
@@ -147,6 +164,7 @@ class EventChannels(commands.Cog):
                 f"**Event Channels Settings**\n"
                 f"**Category:** {category_name}\n"
                 f"**Timezone:** {timezone}\n"
+                f"**Creation Time:** {creation_minutes} minutes before start\n"
                 f"**Deletion Time:** {deletion_hours} hours after start\n"
                 f"**Role Format:** `{role_format}`\n"
                 f"**Channel Format:** `{channel_format}`"
@@ -176,17 +194,18 @@ class EventChannels(commands.Cog):
     async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent):
         try:
             start_time = event.start_time.astimezone(timezone.utc)
-            create_time = start_time - timedelta(minutes=15)
+            creation_minutes = await self.config.guild(guild).creation_minutes()
+            create_time = start_time - timedelta(minutes=creation_minutes)
             deletion_hours = await self.config.guild(guild).deletion_hours()
             delete_time = start_time + timedelta(hours=deletion_hours)
             now = datetime.now(timezone.utc)
 
-            # If event starts in less than 15 minutes, create channels immediately
+            # If event starts in less than configured minutes, create channels immediately
             if now >= create_time:
                 # Already past the create time, do it now
                 pass
             else:
-                # Wait until 15 minutes before start
+                # Wait until configured minutes before start
                 await asyncio.sleep((create_time - now).total_seconds())
 
             stored = await self.config.guild(guild).event_channels()
