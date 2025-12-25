@@ -35,6 +35,7 @@ class EventChannels(commands.Cog):
             announcement_message="{role} Your event **{name}** is starting soon!",  # {role}, {name}, {time}, {description}
             announcement_enabled=True,
             deletion_enabled=True,  # Allow disabling automatic deletion
+            notification_channel_id=None,  # NEW: Channel for error notifications
         )
         self.active_tasks: Dict[int, asyncio.Task] = {}
         self._startup_complete = False
@@ -97,6 +98,21 @@ class EventChannels(commands.Cog):
         
         await self.config.guild(ctx.guild).creation_minutes.set(minutes)
         await ctx.send(f"✅ Event channels will be created **{minutes} minutes** before event start.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def seteventnotifications(self, ctx, channel: Optional[discord.TextChannel] = None):
+        """Set a channel to receive error notifications for event creation issues.
+        
+        Use without arguments to disable notifications.
+        """
+        if channel is None:
+            await self.config.guild(ctx.guild).notification_channel_id.set(None)
+            await ctx.send("✅ Event error notifications **disabled**.")
+        else:
+            await self.config.guild(ctx.guild).notification_channel_id.set(channel.id)
+            await ctx.send(f"✅ Event errors will be posted to {channel.mention}.")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -182,9 +198,13 @@ class EventChannels(commands.Cog):
         role_format = await self.config.guild(ctx.guild).role_format()
         announcement_enabled = await self.config.guild(ctx.guild).announcement_enabled()
         announcement_message = await self.config.guild(ctx.guild).announcement_message()
+        notification_channel_id = await self.config.guild(ctx.guild).notification_channel_id()
         
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
+        
+        notification_channel = ctx.guild.get_channel(notification_channel_id) if notification_channel_id else None
+        notification_text = notification_channel.mention if notification_channel else "Disabled"
         
         deletion_text = f"{deletion_hours} hours after start" if deletion_enabled else "Disabled"
         announcement_text = f"Enabled\n```{announcement_message}```" if announcement_enabled else "Disabled"
@@ -196,6 +216,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Deletion Time", value=deletion_text, inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Announcement", value=announcement_text, inline=False)
+        embed.add_field(name="Error Notifications", value=notification_text, inline=False)
         
         await ctx.send(embed=embed)
 
@@ -438,6 +459,30 @@ class EventChannels(commands.Cog):
         
         return role
 
+    async def _send_error_notification(self, guild: discord.Guild, error_message: str, event_name: str = None):
+        """Send error notification to configured channel."""
+        notification_channel_id = await self.config.guild(guild).notification_channel_id()
+        if not notification_channel_id:
+            return
+        
+        channel = guild.get_channel(notification_channel_id)
+        if not channel:
+            return
+        
+        try:
+            embed = discord.Embed(
+                title="⚠️ Event Channel Creation Failed",
+                description=error_message,
+                color=discord.Color.red(),
+                timestamp=datetime.now(timezone.utc)
+            )
+            if event_name:
+                embed.add_field(name="Event", value=event_name, inline=False)
+            
+            await channel.send(embed=embed)
+        except Exception as e:
+            log.error(f"Failed to send error notification: {e}", exc_info=True)
+
     # ---------- Startup ----------
 
     async def _startup_scan(self):
@@ -480,6 +525,9 @@ class EventChannels(commands.Cog):
 
     async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent):
         """Main event handling logic."""
+        text_channel = None
+        voice_channel = None
+        
         try:
             creation_minutes = await self.config.guild(guild).creation_minutes()
             start_time = event.start_time.astimezone(timezone.utc)
@@ -498,7 +546,21 @@ class EventChannels(commands.Cog):
 
             # Get configuration
             category_id = await self.config.guild(guild).category_id()
-            category = guild.get_channel(category_id) if category_id else None
+            
+            # CRITICAL CHECK: Category must be set
+            if not category_id:
+                error_msg = "❌ **No category set!** Use `seteventcategory` command to configure where event channels should be created."
+                log.error(f"Cannot create channels for event '{event.name}': {error_msg}")
+                await self._send_error_notification(guild, error_msg, event.name)
+                return
+            
+            category = guild.get_channel(category_id)
+            if not category:
+                error_msg = f"❌ **Configured category not found!** The category (ID: {category_id}) no longer exists. Please reconfigure with `seteventcategory`."
+                log.error(f"Cannot create channels for event '{event.name}': {error_msg}")
+                await self._send_error_notification(guild, error_msg, event.name)
+                return
+            
             tz_name = await self.config.guild(guild).timezone()
             server_tz = ZoneInfo(tz_name)
             event_local_time = event.start_time.astimezone(server_tz)
@@ -511,8 +573,20 @@ class EventChannels(commands.Cog):
             role = await self._wait_for_role(guild, expected_role_name, start_time)
             
             if not role:
-                log.warning(f"No matching role found for event '{event.name}'. Expected: '{expected_role_name}'. "
-                          f"Check role format ('{role_format}') and timezone ('{tz_name}') settings.")
+                error_msg = (
+                    f"❌ **No matching role found!**\n"
+                    f"**Expected role name:** `{expected_role_name}`\n"
+                    f"**Event:** {event.name}\n"
+                    f"**Start time:** {event_local_time.strftime('%Y-%m-%d %H:%M')} {tz_name}\n\n"
+                    f"**Possible causes:**\n"
+                    f"• Role hasn't been created yet (check Raid-Helper or create manually)\n"
+                    f"• Role format mismatch (current: `{role_format}`)\n"
+                    f"• Timezone mismatch (current: `{tz_name}`)\n"
+                    f"• Role name doesn't match exactly\n\n"
+                    f"Use `testeventrole {event.id}` to debug this issue."
+                )
+                log.warning(f"No matching role found for event '{event.name}'. Expected: '{expected_role_name}'")
+                await self._send_error_notification(guild, error_msg, event.name)
                 return
 
             log.info(f"Found matching role '{expected_role_name}' for event '{event.name}'")
@@ -520,7 +594,13 @@ class EventChannels(commands.Cog):
             # Verify permissions
             perm_issues = await self._verify_permissions(guild, category, role)
             if perm_issues:
+                error_msg = (
+                    f"❌ **Permission issues detected:**\n" +
+                    "\n".join(f"• {issue}" for issue in perm_issues) +
+                    f"\n\nPlease grant the necessary permissions to the bot."
+                )
                 log.error(f"Permission issues for event '{event.name}': {', '.join(perm_issues)}")
+                await self._send_error_notification(guild, error_msg, event.name)
                 return
 
             # Create channels with permissions
@@ -550,57 +630,58 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            text_channel = None
-            voice_channel = None
-
+            # Create text channel
             try:
-                # Create text channel WITH permissions
                 text_channel = await guild.create_text_channel(
-                    name=f"{base_name}-text",
+                    name=f"📅-{base_name}",
                     category=category,
-                    overwrites=overwrites,
                     topic=topic,
-                    reason=f"Scheduled event '{event.name}' starting soon",
-                )
-                log.info(f"Created text channel: {text_channel.name}")
-                
-                # Rate limit protection
-                await asyncio.sleep(RATE_LIMIT_DELAY)
-                
-                # Create voice channel WITH permissions
-                voice_channel = await guild.create_voice_channel(
-                    name=f"{base_name}-voice",
-                    category=category,
                     overwrites=overwrites,
-                    reason=f"Scheduled event '{event.name}' starting soon",
+                    reason=f"Event: {event.name}"
                 )
-                log.info(f"Created voice channel: {voice_channel.name}")
-                
+                log.info(f"Created text channel '{text_channel.name}' for event '{event.name}'")
             except discord.Forbidden as e:
-                log.error(f"Permission denied creating channels for '{event.name}': {e}")
-                # Clean up any partially created channels
-                if text_channel:
-                    try:
-                        await text_channel.delete(reason="Cleanup after permission error")
-                    except Exception:
-                        pass
-                if voice_channel:
-                    try:
-                        await voice_channel.delete(reason="Cleanup after permission error")
-                    except Exception:
-                        pass
+                error_msg = f"❌ **Failed to create text channel:** Missing permissions - {e}"
+                log.error(f"Permission error creating text channel: {e}", exc_info=True)
+                await self._send_error_notification(guild, error_msg, event.name)
                 return
             except Exception as e:
-                log.error(f"Error creating channels for '{event.name}': {e}", exc_info=True)
-                # Clean up any partially created channels
+                error_msg = f"❌ **Failed to create text channel:** {str(e)}"
+                log.error(f"Error creating text channel: {e}", exc_info=True)
+                await self._send_error_notification(guild, error_msg, event.name)
+                return
+
+            # Rate limit protection
+            await asyncio.sleep(RATE_LIMIT_DELAY)
+
+            # Create voice channel
+            try:
+                voice_channel = await guild.create_voice_channel(
+                    name=f"🔊 {event.name}",
+                    category=category,
+                    overwrites=overwrites,
+                    reason=f"Event: {event.name}"
+                )
+                log.info(f"Created voice channel '{voice_channel.name}' for event '{event.name}'")
+            except discord.Forbidden as e:
+                error_msg = f"❌ **Failed to create voice channel:** Missing permissions - {e}"
+                log.error(f"Permission error creating voice channel: {e}", exc_info=True)
+                await self._send_error_notification(guild, error_msg, event.name)
+                # Cleanup text channel
                 if text_channel:
                     try:
                         await text_channel.delete(reason="Cleanup after error")
                     except Exception:
                         pass
-                if voice_channel:
+                return
+            except Exception as e:
+                error_msg = f"❌ **Failed to create voice channel:** {str(e)}"
+                log.error(f"Error creating voice channel: {e}", exc_info=True)
+                await self._send_error_notification(guild, error_msg, event.name)
+                # Cleanup text channel
+                if text_channel:
                     try:
-                        await voice_channel.delete(reason="Cleanup after error")
+                        await text_channel.delete(reason="Cleanup after error")
                     except Exception:
                         pass
                 return
@@ -630,6 +711,25 @@ class EventChannels(commands.Cog):
                 "role": role.id,
             }
             await self.config.guild(guild).event_channels.set(stored)
+            
+            # Send success notification
+            notification_channel_id = await self.config.guild(guild).notification_channel_id()
+            if notification_channel_id:
+                channel = guild.get_channel(notification_channel_id)
+                if channel:
+                    try:
+                        embed = discord.Embed(
+                            title="✅ Event Channels Created",
+                            description=f"Channels created for **{event.name}**",
+                            color=discord.Color.green(),
+                            timestamp=datetime.now(timezone.utc)
+                        )
+                        embed.add_field(name="Text Channel", value=text_channel.mention, inline=True)
+                        embed.add_field(name="Voice Channel", value=voice_channel.mention, inline=True)
+                        embed.add_field(name="Role", value=role.mention, inline=True)
+                        await channel.send(embed=embed)
+                    except Exception:
+                        pass
 
             # ---------- Cleanup ----------
             deletion_enabled = await self.config.guild(guild).deletion_enabled()
@@ -704,7 +804,9 @@ class EventChannels(commands.Cog):
                 await self.config.guild(guild).event_channels.set(stored)
             raise
         except Exception as e:
+            error_msg = f"❌ **Unhandled error:** {str(e)}\n\nCheck bot logs for details."
             log.error(f"Unhandled error in event handler for '{event.name}': {e}", exc_info=True)
+            await self._send_error_notification(guild, error_msg, event.name)
         finally:
             # Clean up task reference
             self.active_tasks.pop(event.id, None)
