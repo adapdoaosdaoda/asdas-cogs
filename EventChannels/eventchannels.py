@@ -388,30 +388,57 @@ class EventChannels(commands.Cog):
 
             base_name = event.name.lower().replace(" ", "᲼")
 
+            text_channel = None
+            voice_channel = None
+
             try:
-                # Create channels with overwrites applied during creation
+                # Create channels without overwrites first
                 text_channel = await guild.create_text_channel(
-                    name=f"{base_name}-text",
+                    name=f"{base_name}᲼text",
                     category=category,
-                    overwrites=overwrites,
                     reason=f"Scheduled event '{event.name}' starting soon",
                 )
-                log.info(f"Created text channel with permissions: {text_channel.name}")
+                log.info(f"Created text channel: {text_channel.name}")
 
                 voice_channel = await guild.create_voice_channel(
-                    name=f"{base_name}-voice",
+                    name=f"{base_name}᲼voice",
                     category=category,
-                    overwrites=overwrites,
                     reason=f"Scheduled event '{event.name}' starting soon",
                 )
-                log.info(f"Created voice channel with permissions: {voice_channel.name}")
+                log.info(f"Created voice channel: {voice_channel.name}")
 
-                log.info(f"Successfully created channels with permissions for event '{event.name}': {text_channel.name}, {voice_channel.name}")
+                # Now apply permission overwrites
+                await text_channel.edit(overwrites=overwrites)
+                await voice_channel.edit(overwrites=overwrites)
+                log.info(f"Successfully applied permissions to both channels for event '{event.name}'")
+
             except discord.Forbidden as e:
-                log.error(f"Missing permissions to create channels for event '{event.name}': {e}")
+                log.error(f"Permission error while creating/configuring channels for event '{event.name}': {e}")
+                # Clean up any created channels
+                if text_channel:
+                    try:
+                        await text_channel.delete(reason="Failed to apply permissions")
+                    except:
+                        pass
+                if voice_channel:
+                    try:
+                        await voice_channel.delete(reason="Failed to apply permissions")
+                    except:
+                        pass
                 return
             except Exception as e:
                 log.error(f"Failed to create channels for event '{event.name}': {e}")
+                # Clean up any created channels
+                if text_channel:
+                    try:
+                        await text_channel.delete(reason="Creation failed")
+                    except:
+                        pass
+                if voice_channel:
+                    try:
+                        await voice_channel.delete(reason="Creation failed")
+                    except:
+                        pass
                 return
 
             stored[str(event.id)] = {
