@@ -7,8 +7,8 @@ The cog also automatically deletes the channels 4 hours (changeable) after the e
 
 ## Instalation 
 
-`[p]repo add asdas-cogs https://github.com/adapdoaosdaoda/asdas-cogs`  
-`[p]cog install asdas-cogs RaidHelperEventThing`
+`[p]repo add asdasd-cogs https://github.com/adapdoaosdaoda/asdasd-cogs`  
+`[p]cog install asdasd-cogs RaidHelperEventThing`
 
 ---
 
@@ -46,8 +46,7 @@ The bot requires the following permissions
 **Category:** Configuration  
 **Permission:** Manage Server or Administrator
 
-Sets the Discord category where event text and voice channels will be automatically created. The bot will place all event-related channels in this category for better organization.  
-You may also use the category's ID instead.
+Sets the Discord category where event text and voice channels will be automatically created. The bot will place all event-related channels in this category for better organization.
 
 **Example:** `[p]seteventcategory Events`
 
