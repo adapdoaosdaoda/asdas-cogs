@@ -1,22 +1,12 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
-from typing import Optional, Dict, Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import discord
 from redbot.core import commands, Config
 from redbot.core.bot import Red
 
 log = logging.getLogger("red.eventchannels")
-
-# Constants
-CHANNEL_CREATE_ADVANCE_MINUTES = 15  # Default, configurable per guild
-ROLE_WAIT_TIMEOUT_SECONDS = 60
-INITIAL_ROLE_RETRY_DELAY = 5
-IMMINENT_EVENT_THRESHOLD = 15  # seconds
-POST_START_ROLE_WAIT = 60  # seconds
-RATE_LIMIT_DELAY = 1.5  # seconds between channel operations
 
 
 class EventChannels(commands.Cog):
@@ -28,17 +18,11 @@ class EventChannels(commands.Cog):
         self.config.register_guild(
             event_channels={},
             category_id=None,
-            timezone="UTC",
-            role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",
-            deletion_hours=4,
-            creation_minutes=15,  # How many minutes before event to create channels
-            announcement_message="{role} Your event **{name}** is starting soon!",  # {role}, {name}, {time}, {description}
-            announcement_enabled=True,
-            deletion_enabled=True,  # Allow disabling automatic deletion
+            timezone="UTC",  # Default timezone
+            role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
+            deletion_hours=4,  # Default deletion time in hours
         )
-        self.active_tasks: Dict[int, asyncio.Task] = {}
-        self._startup_complete = False
-        self._pending_events = []  # Buffer for events during startup
+        self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
 
     # ---------- Setup Commands ----------
@@ -56,7 +40,10 @@ class EventChannels(commands.Cog):
     @commands.command()
     async def seteventtimezone(self, ctx, tz: str):
         """Set the timezone for event role matching (e.g., Europe/Amsterdam, America/New_York)."""
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        
         try:
+            # Validate the timezone
             ZoneInfo(tz)
             await self.config.guild(ctx.guild).timezone.set(tz)
             await ctx.send(f"✅ Event timezone set to **{tz}**.")
@@ -67,36 +54,12 @@ class EventChannels(commands.Cog):
     @commands.guild_only()
     @commands.command()
     async def seteventdeletion(self, ctx, hours: int):
-        """Set how many hours after event start channels are deleted (default: 4).
-        
-        Set to 0 to disable automatic deletion entirely.
-        """
+        """Set how many hours after event start channels are deleted (default: 4)."""
         if hours < 0:
-            await ctx.send("❌ Hours must be 0 or a positive number. Use 0 to disable automatic deletion.")
+            await ctx.send("❌ Hours must be a positive number.")
             return
-        
-        if hours == 0:
-            await self.config.guild(ctx.guild).deletion_enabled.set(False)
-            await ctx.send("✅ Automatic channel deletion **disabled**. Channels will remain until manually cleaned up.")
-        else:
-            await self.config.guild(ctx.guild).deletion_enabled.set(True)
-            await self.config.guild(ctx.guild).deletion_hours.set(hours)
-            await ctx.send(f"✅ Event channels will be deleted **{hours} hours** after event start.")
-
-    @commands.admin_or_permissions(manage_guild=True)
-    @commands.guild_only()
-    @commands.command()
-    async def seteventcreation(self, ctx, minutes: int):
-        """Set how many minutes before event start to create channels (default: 15).
-        
-        Minimum: 1 minute, Maximum: 1440 minutes (24 hours)
-        """
-        if minutes < 1 or minutes > 1440:
-            await ctx.send("❌ Minutes must be between 1 and 1440 (24 hours).")
-            return
-        
-        await self.config.guild(ctx.guild).creation_minutes.set(minutes)
-        await ctx.send(f"✅ Event channels will be created **{minutes} minutes** before event start.")
+        await self.config.guild(ctx.guild).deletion_hours.set(hours)
+        await ctx.send(f"✅ Event channels will be deleted **{hours} hours** after event start.")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -113,61 +76,17 @@ class EventChannels(commands.Cog):
         
         Example: `{name} {day_abbrev} {day}. {month_abbrev} {time}`
         """
+        # Validate the format string has valid placeholders
         valid_placeholders = {'{name}', '{day_abbrev}', '{day}', '{month_abbrev}', '{time}'}
         
+        # Check if format contains at least one valid placeholder
         has_valid = any(placeholder in format_string for placeholder in valid_placeholders)
         if not has_valid:
             await ctx.send(f"❌ Format must contain at least one valid placeholder: {', '.join(valid_placeholders)}")
             return
         
-        # Test format length (Discord role name limit is 100 chars)
-        test_name = format_string.format(
-            name="X" * 50,
-            day_abbrev="Wed",
-            day="25",
-            month_abbrev="Dec",
-            time="23:59"
-        )
-        if len(test_name) > 100:
-            await ctx.send(f"⚠️ Warning: Format may exceed Discord's 100 character role name limit. Current test length: {len(test_name)}")
-        
         await self.config.guild(ctx.guild).role_format.set(format_string)
         await ctx.send(f"✅ Event role format set to: `{format_string}`")
-
-    @commands.admin_or_permissions(manage_guild=True)
-    @commands.guild_only()
-    @commands.command()
-    async def seteventannouncement(self, ctx, *, message: Optional[str] = None):
-        """Set or disable the announcement message posted in new event channels.
-        
-        Available placeholders:
-        - {role} - Mentions the event role
-        - {name} - Event name
-        - {time} - Event start time
-        - {description} - Event description
-        
-        Use without arguments to disable announcements.
-        
-        Example: `{role} Your event **{name}** starts at {time}!`
-        """
-        if message is None:
-            await self.config.guild(ctx.guild).announcement_enabled.set(False)
-            await ctx.send("✅ Event announcements **disabled**.")
-        else:
-            # Validate message length (Discord message limit is 2000 chars)
-            test_msg = message.format(
-                role="@Role",
-                name="Test Event Name",
-                time="2024-12-25 20:00",
-                description="Test description"
-            )
-            if len(test_msg) > 2000:
-                await ctx.send(f"❌ Message too long. Maximum length after placeholder expansion: 2000 characters. Current: {len(test_msg)}")
-                return
-            
-            await self.config.guild(ctx.guild).announcement_message.set(message)
-            await self.config.guild(ctx.guild).announcement_enabled.set(True)
-            await ctx.send(f"✅ Event announcement message set to:\n```{message}```")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -177,25 +96,16 @@ class EventChannels(commands.Cog):
         category_id = await self.config.guild(ctx.guild).category_id()
         timezone = await self.config.guild(ctx.guild).timezone()
         deletion_hours = await self.config.guild(ctx.guild).deletion_hours()
-        deletion_enabled = await self.config.guild(ctx.guild).deletion_enabled()
-        creation_minutes = await self.config.guild(ctx.guild).creation_minutes()
         role_format = await self.config.guild(ctx.guild).role_format()
-        announcement_enabled = await self.config.guild(ctx.guild).announcement_enabled()
-        announcement_message = await self.config.guild(ctx.guild).announcement_message()
         
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
         
-        deletion_text = f"{deletion_hours} hours after start" if deletion_enabled else "Disabled"
-        announcement_text = f"Enabled\n```{announcement_message}```" if announcement_enabled else "Disabled"
-        
         embed = discord.Embed(title="Event Channels Settings", color=discord.Color.blue())
         embed.add_field(name="Category", value=category_name, inline=False)
         embed.add_field(name="Timezone", value=timezone, inline=False)
-        embed.add_field(name="Creation Time", value=f"{creation_minutes} minutes before start", inline=False)
-        embed.add_field(name="Deletion Time", value=deletion_text, inline=False)
+        embed.add_field(name="Deletion Time", value=f"{deletion_hours} hours after start", inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
-        embed.add_field(name="Announcement", value=announcement_text, inline=False)
         
         await ctx.send(embed=embed)
 
@@ -245,47 +155,29 @@ class EventChannels(commands.Cog):
         task = self.active_tasks.get(int(event_id))
         if task and not task.done():
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
         
         deleted_items = []
         
-        # Delete text channel
-        text_channel = ctx.guild.get_channel(data.get("text"))
-        if text_channel:
-            try:
-                await text_channel.delete(reason=f"Manual cleanup by {ctx.author}")
-                deleted_items.append("✅ text channel")
-            except discord.Forbidden:
-                deleted_items.append("❌ text channel (no permission)")
-            except discord.NotFound:
-                deleted_items.append("⚠️ text channel (already deleted)")
-        
-        # Delete voice channel
-        voice_channel = ctx.guild.get_channel(data.get("voice"))
-        if voice_channel:
-            try:
-                await asyncio.sleep(RATE_LIMIT_DELAY)  # Rate limit protection
-                await voice_channel.delete(reason=f"Manual cleanup by {ctx.author}")
-                deleted_items.append("✅ voice channel")
-            except discord.Forbidden:
-                deleted_items.append("❌ voice channel (no permission)")
-            except discord.NotFound:
-                deleted_items.append("⚠️ voice channel (already deleted)")
+        # Delete channels
+        for channel_type, channel_id in [("text", data.get("text")), ("voice", data.get("voice"))]:
+            channel = ctx.guild.get_channel(channel_id)
+            if channel:
+                try:
+                    await channel.delete(reason=f"Manual cleanup by {ctx.author}")
+                    deleted_items.append(f"✅ {channel_type} channel")
+                except discord.Forbidden:
+                    deleted_items.append(f"❌ {channel_type} channel (no permission)")
+                except discord.NotFound:
+                    deleted_items.append(f"⚠️ {channel_type} channel (already deleted)")
         
         # Delete role
         role = ctx.guild.get_role(data.get("role"))
         if role:
             try:
-                await asyncio.sleep(RATE_LIMIT_DELAY)  # Rate limit protection
                 await role.delete(reason=f"Manual cleanup by {ctx.author}")
                 deleted_items.append("✅ role")
             except discord.Forbidden:
                 deleted_items.append("❌ role (no permission)")
-            except discord.NotFound:
-                deleted_items.append("⚠️ role (already deleted)")
         
         # Remove from config
         stored.pop(event_id, None)
@@ -314,13 +206,29 @@ class EventChannels(commands.Cog):
                 await ctx.send(f"❌ Event `{event.name}` has no start time.")
                 return
             
+            # Get server timezone and convert event time
+            from zoneinfo import ZoneInfo
             tz_name = await self.config.guild(ctx.guild).timezone()
             server_tz = ZoneInfo(tz_name)
             event_local_time = event.start_time.astimezone(server_tz)
             
+            # Build the expected role name using the configured format
             role_format = await self.config.guild(ctx.guild).role_format()
-            expected_role_name = self._build_role_name(event.name, event_local_time, role_format)
             
+            day_abbrev = event_local_time.strftime("%a")
+            day = event_local_time.strftime("%d").lstrip("0")
+            month_abbrev = event_local_time.strftime("%b")
+            time_str = event_local_time.strftime("%H:%M")
+            
+            expected_role_name = role_format.format(
+                name=event.name,
+                day_abbrev=day_abbrev,
+                day=day,
+                month_abbrev=month_abbrev,
+                time=time_str
+            )
+            
+            # Check if role exists
             role = discord.utils.get(ctx.guild.roles, name=expected_role_name)
             
             embed = discord.Embed(title="Event Role Name Test", color=discord.Color.blue())
@@ -332,20 +240,6 @@ class EventChannels(commands.Cog):
             
             if role:
                 embed.add_field(name="Role Mention", value=role.mention, inline=False)
-                
-                # Check role hierarchy
-                if ctx.guild.me.top_role.position <= role.position:
-                    embed.add_field(
-                        name="⚠️ Warning",
-                        value=f"Bot's role position ({ctx.guild.me.top_role.position}) is not higher than event role ({role.position}). The bot won't be able to delete this role.",
-                        inline=False
-                    )
-            else:
-                embed.add_field(
-                    name="💡 Tip",
-                    value=f"Role not found. Check:\n• Role format setting: `{role_format}`\n• Timezone setting: `{tz_name}`\n• Make sure Raid-Helper has created the role",
-                    inline=False
-                )
             
             await ctx.send(embed=embed)
             
@@ -354,185 +248,129 @@ class EventChannels(commands.Cog):
         except discord.Forbidden:
             await ctx.send("❌ I don't have permission to fetch scheduled events.")
         except Exception as e:
-            log.error(f"Error in testeventrole: {e}", exc_info=True)
             await ctx.send(f"❌ Error: {str(e)}")
-
-    # ---------- Helper Methods ----------
-
-    def _build_role_name(self, event_name: str, event_time: datetime, role_format: str) -> str:
-        """Build the expected role name from format string."""
-        day_abbrev = event_time.strftime("%a")
-        day = event_time.strftime("%d").lstrip("0")
-        month_abbrev = event_time.strftime("%b")
-        time_str = event_time.strftime("%H:%M")
-        
-        return role_format.format(
-            name=event_name,
-            day_abbrev=day_abbrev,
-            day=day,
-            month_abbrev=month_abbrev,
-            time=time_str
-        )
-
-    async def _verify_permissions(self, guild: discord.Guild, category: Optional[discord.CategoryChannel], role: discord.Role) -> list[str]:
-        """Verify bot has necessary permissions. Returns list of issues."""
-        issues = []
-        
-        if not guild.me.guild_permissions.manage_channels:
-            issues.append("Missing server-level 'Manage Channels' permission")
-        
-        if not guild.me.guild_permissions.manage_roles:
-            issues.append("Missing server-level 'Manage Roles' permission")
-        
-        if category:
-            cat_perms = category.permissions_for(guild.me)
-            if not cat_perms.manage_channels:
-                issues.append(f"Cannot manage channels in category '{category.name}'")
-            if not cat_perms.manage_permissions:
-                issues.append(f"Cannot manage permissions in category '{category.name}'")
-        
-        if role and guild.me.top_role.position <= role.position:
-            issues.append(f"Bot role (position {guild.me.top_role.position}) must be higher than event role '{role.name}' (position {role.position})")
-        
-        return issues
-
-    async def _wait_for_role(self, guild: discord.Guild, expected_role_name: str, event_start: datetime) -> Optional[discord.Role]:
-        """Wait for role to appear with exponential backoff."""
-        role = discord.utils.get(guild.roles, name=expected_role_name)
-        if role:
-            return role
-        
-        # Initial waiting with exponential backoff
-        delay = INITIAL_ROLE_RETRY_DELAY
-        total_waited = 0
-        while not role and total_waited < ROLE_WAIT_TIMEOUT_SECONDS:
-            await asyncio.sleep(delay)
-            total_waited += delay
-            role = discord.utils.get(guild.roles, name=expected_role_name)
-            if not role:
-                delay = min(delay * 2, 30)  # Cap at 30 seconds
-        
-        if role:
-            return role
-        
-        # If event is imminent, wait longer
-        now = datetime.now(timezone.utc)
-        time_until_start = (event_start - now).total_seconds()
-        
-        if -POST_START_ROLE_WAIT <= time_until_start <= IMMINENT_EVENT_THRESHOLD:
-            log.info(f"Event starting imminently. Waiting up to {POST_START_ROLE_WAIT}s after start for role '{expected_role_name}'")
-            
-            one_min_after_start = event_start + timedelta(seconds=POST_START_ROLE_WAIT)
-            deadline = one_min_after_start.timestamp()
-            
-            delay = INITIAL_ROLE_RETRY_DELAY
-            while not role and datetime.now(timezone.utc).timestamp() < deadline:
-                remaining_time = deadline - datetime.now(timezone.utc).timestamp()
-                sleep_time = min(delay, remaining_time)
-                
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-                    role = discord.utils.get(guild.roles, name=expected_role_name)
-                    if not role:
-                        delay = min(delay * 2, 30)
-        
-        return role
 
     # ---------- Startup ----------
 
     async def _startup_scan(self):
-        """Scan for existing events on startup."""
         await self.bot.wait_until_ready()
-        
         for guild in self.bot.guilds:
             await self._schedule_existing_events(guild)
-        
-        # Mark startup complete and process any buffered events
-        self._startup_complete = True
-        
-        if self._pending_events:
-            log.info(f"Processing {len(self._pending_events)} events buffered during startup")
-            for guild, event in self._pending_events:
-                if event.status == discord.EventStatus.scheduled:
-                    task = self.bot.loop.create_task(self._handle_event(guild, event))
-                    self.active_tasks[event.id] = task
-            self._pending_events.clear()
 
     async def _schedule_existing_events(self, guild: discord.Guild):
-        """Schedule tasks for existing events."""
         try:
             events = await guild.fetch_scheduled_events()
         except discord.Forbidden:
-            log.warning(f"No permission to fetch events in {guild.name}")
             return
 
         for event in events:
             if event.start_time and event.status == discord.EventStatus.scheduled:
-                # Check if channels already exist for this event
-                stored = await self.config.guild(guild).event_channels()
-                if str(event.id) not in stored:
-                    task = self.bot.loop.create_task(self._handle_event(guild, event))
-                    self.active_tasks[event.id] = task
-                else:
-                    log.info(f"Channels already exist for event '{event.name}' (ID: {event.id})")
+                task = self.bot.loop.create_task(self._handle_event(guild, event))
+                self.active_tasks[event.id] = task
 
     # ---------- Core Logic ----------
 
     async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent):
-        """Main event handling logic."""
         try:
-            creation_minutes = await self.config.guild(guild).creation_minutes()
             start_time = event.start_time.astimezone(timezone.utc)
-            create_time = start_time - timedelta(minutes=creation_minutes)
+            create_time = start_time - timedelta(minutes=15)
+            deletion_hours = await self.config.guild(guild).deletion_hours()
+            delete_time = start_time + timedelta(hours=deletion_hours)
             now = datetime.now(timezone.utc)
 
-            # Wait until creation time
-            if now < create_time:
+            # If event starts in less than 15 minutes, create channels immediately
+            if now >= create_time:
+                # Already past the create time, do it now
+                pass
+            else:
+                # Wait until 15 minutes before start
                 await asyncio.sleep((create_time - now).total_seconds())
 
-            # Check if channels already exist
             stored = await self.config.guild(guild).event_channels()
             if str(event.id) in stored:
-                log.info(f"Channels already exist for event '{event.name}', skipping creation")
                 return
 
-            # Get configuration
             category_id = await self.config.guild(guild).category_id()
             category = guild.get_channel(category_id) if category_id else None
+
+            # Get server timezone and convert event time
+            from zoneinfo import ZoneInfo
             tz_name = await self.config.guild(guild).timezone()
             server_tz = ZoneInfo(tz_name)
             event_local_time = event.start_time.astimezone(server_tz)
             
-            # Build expected role name
+            # Build the expected role name using the configured format
             role_format = await self.config.guild(guild).role_format()
-            expected_role_name = self._build_role_name(event.name, event_local_time, role_format)
             
-            # Wait for role to appear
-            role = await self._wait_for_role(guild, expected_role_name, start_time)
+            day_abbrev = event_local_time.strftime("%a")  # Sun, Mon, etc.
+            day = event_local_time.strftime("%d").lstrip("0")  # 28 (no leading zero)
+            month_abbrev = event_local_time.strftime("%b")  # Dec, Jan, etc.
+            time_str = event_local_time.strftime("%H:%M")  # 21:00
             
+            expected_role_name = role_format.format(
+                name=event.name,
+                day_abbrev=day_abbrev,
+                day=day,
+                month_abbrev=month_abbrev,
+                time=time_str
+            )
+            
+            # Check for role with exponential backoff
+            role = discord.utils.get(guild.roles, name=expected_role_name)
             if not role:
-                log.warning(f"No matching role found for event '{event.name}'. Expected: '{expected_role_name}'. "
-                          f"Check role format ('{role_format}') and timezone ('{tz_name}') settings.")
-                return
-
+                # Try with exponential backoff: 5s, 10s, 20s, 40s... up to 60s total
+                delay = 5
+                total_waited = 0
+                while not role and total_waited < 60:
+                    await asyncio.sleep(delay)
+                    total_waited += delay
+                    role = discord.utils.get(guild.roles, name=expected_role_name)
+                    if not role:
+                        delay *= 2  # Double the delay each time
+                
+                # If still no role and event is starting soon/now, wait up to 1 minute after start time
+                if not role:
+                    now = datetime.now(timezone.utc)
+                    time_until_start = (start_time - now).total_seconds()
+                    
+                    # If event starts within 15 seconds or already started (up to 1 min ago)
+                    if -60 <= time_until_start <= 15:
+                        log.info(f"Event '{event.name}' is starting imminently. Waiting up to 1 minute after start for role...")
+                        
+                        # Wait until 1 minute after event start using exponential backoff
+                        one_min_after_start = start_time + timedelta(minutes=1)
+                        deadline = one_min_after_start.timestamp()
+                        
+                        delay = 5
+                        total_waited = 0
+                        while not role and datetime.now(timezone.utc).timestamp() < deadline:
+                            remaining_time = deadline - datetime.now(timezone.utc).timestamp()
+                            sleep_time = min(delay, remaining_time)
+                            
+                            if sleep_time > 0:
+                                await asyncio.sleep(sleep_time)
+                                total_waited += sleep_time
+                                role = discord.utils.get(guild.roles, name=expected_role_name)
+                                if not role:
+                                    delay *= 2  # Double the delay each time
+                
+                if not role:
+                    log.warning(f"No matching role found for event '{event.name}'. Expected role: '{expected_role_name}'")
+                    return  # Still no matching role → no channels created
+            
             log.info(f"Found matching role '{expected_role_name}' for event '{event.name}'")
 
-            # Verify permissions
-            perm_issues = await self._verify_permissions(guild, category, role)
-            if perm_issues:
-                log.error(f"Permission issues for event '{event.name}': {', '.join(perm_issues)}")
-                return
-
-            # Create channels with permissions
-            base_name = event.name.lower().replace(" ", "-")
+            # Check bot permissions
+            bot_perms = guild.me.guild_permissions
+            log.info(f"Bot permissions - manage_channels: {bot_perms.manage_channels}, administrator: {bot_perms.administrator}")
             
-            # Build channel topic
-            topic = f"Event: {event.name}"
-            if event.start_time:
-                topic += f" | Starts: {event_local_time.strftime('%Y-%m-%d %H:%M')} {tz_name}"
-            if event.description:
-                topic += f" | {event.description[:100]}"  # Limit description length
-            topic = topic[:1024]  # Discord limit
+            if category:
+                cat_perms = category.permissions_for(guild.me)
+                log.info(f"Bot permissions in category '{category.name}' - manage_channels: {cat_perms.manage_channels}, manage_permissions: {cat_perms.manage_permissions}")
+
+            # Check if bot's role is higher than the event role
+            bot_top_role = guild.me.top_role
+            log.info(f"Bot's top role: {bot_top_role.name} (position: {bot_top_role.position}), Event role: {role.name} (position: {role.position})")
 
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -540,7 +378,6 @@ class EventChannels(commands.Cog):
                     view_channel=True,
                     send_messages=True,
                     manage_channels=True,
-                    manage_permissions=True,
                 ),
                 role: discord.PermissionOverwrite(
                     view_channel=True,
@@ -550,80 +387,40 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            text_channel = None
-            voice_channel = None
+            base_name = event.name.lower().replace(" ", "-")
 
             try:
-                # Create text channel WITH permissions
+                # Try creating without overwrites first to isolate the issue
                 text_channel = await guild.create_text_channel(
                     name=f"{base_name}-text",
                     category=category,
-                    overwrites=overwrites,
-                    topic=topic,
-                    reason=f"Scheduled event '{event.name}' starting soon",
+                    reason="Scheduled event starting soon",
                 )
-                log.info(f"Created text channel: {text_channel.name}")
-                
-                # Rate limit protection
-                await asyncio.sleep(RATE_LIMIT_DELAY)
-                
-                # Create voice channel WITH permissions
+                log.info(f"Created text channel without overwrites: {text_channel.name}")
+
                 voice_channel = await guild.create_voice_channel(
                     name=f"{base_name}-voice",
                     category=category,
-                    overwrites=overwrites,
-                    reason=f"Scheduled event '{event.name}' starting soon",
+                    reason="Scheduled event starting soon",
                 )
-                log.info(f"Created voice channel: {voice_channel.name}")
+                log.info(f"Created voice channel without overwrites: {voice_channel.name}")
                 
+                # Now try to apply the overwrites
+                try:
+                    await text_channel.edit(overwrites=overwrites)
+                    await voice_channel.edit(overwrites=overwrites)
+                    log.info(f"Successfully applied permissions to channels for event '{event.name}'")
+                except discord.Forbidden as e:
+                    log.error(f"Could not apply permissions, but channels created: {e}")
+                
+                log.info(f"Created channels for event '{event.name}': {text_channel.name}, {voice_channel.name}")
             except discord.Forbidden as e:
-                log.error(f"Permission denied creating channels for '{event.name}': {e}")
-                # Clean up any partially created channels
-                if text_channel:
-                    try:
-                        await text_channel.delete(reason="Cleanup after permission error")
-                    except Exception:
-                        pass
-                if voice_channel:
-                    try:
-                        await voice_channel.delete(reason="Cleanup after permission error")
-                    except Exception:
-                        pass
+                log.error(f"Missing permissions to create channels for event '{event.name}': {e}")
                 return
             except Exception as e:
-                log.error(f"Error creating channels for '{event.name}': {e}", exc_info=True)
-                # Clean up any partially created channels
-                if text_channel:
-                    try:
-                        await text_channel.delete(reason="Cleanup after error")
-                    except Exception:
-                        pass
-                if voice_channel:
-                    try:
-                        await voice_channel.delete(reason="Cleanup after error")
-                    except Exception:
-                        pass
+                log.error(f"Failed to create channels for event '{event.name}': {e}")
                 return
 
-            # Post announcement if enabled
-            announcement_enabled = await self.config.guild(guild).announcement_enabled()
-            if announcement_enabled and text_channel:
-                try:
-                    announcement_msg = await self.config.guild(guild).announcement_message()
-                    
-                    formatted_msg = announcement_msg.format(
-                        role=role.mention,
-                        name=event.name,
-                        time=event_local_time.strftime('%Y-%m-%d %H:%M'),
-                        description=event.description or "No description"
-                    )
-                    
-                    await text_channel.send(formatted_msg)
-                    log.info(f"Posted announcement in {text_channel.name}")
-                except Exception as e:
-                    log.error(f"Error posting announcement: {e}", exc_info=True)
-
-            # Save to config
             stored[str(event.id)] = {
                 "text": text_channel.id,
                 "voice": voice_channel.id,
@@ -632,79 +429,45 @@ class EventChannels(commands.Cog):
             await self.config.guild(guild).event_channels.set(stored)
 
             # ---------- Cleanup ----------
-            deletion_enabled = await self.config.guild(guild).deletion_enabled()
-            if not deletion_enabled:
-                log.info(f"Automatic deletion disabled for event '{event.name}'")
-                return
 
-            deletion_hours = await self.config.guild(guild).deletion_hours()
-            delete_time = start_time + timedelta(hours=deletion_hours)
-            
-            sleep_seconds = (delete_time - datetime.now(timezone.utc)).total_seconds()
-            if sleep_seconds > 0:
-                await asyncio.sleep(sleep_seconds)
+            await asyncio.sleep(max(0, (delete_time - datetime.now(timezone.utc)).total_seconds()))
 
-            # Perform cleanup
             data = stored.get(str(event.id))
             if not data:
                 return
 
-            # Delete text channel
-            text_ch = guild.get_channel(data["text"])
-            if text_ch:
+            for channel_id in (data["text"], data["voice"]):
+                channel = guild.get_channel(channel_id)
+                if channel:
+                    try:
+                        await channel.delete(reason="Scheduled event ended")
+                    except discord.NotFound:
+                        pass
+
+            role = guild.get_role(data["role"])
+            if role:
                 try:
-                    await text_ch.delete(reason="Scheduled event ended")
-                    log.info(f"Deleted text channel for event '{event.name}'")
-                except (discord.NotFound, discord.Forbidden) as e:
-                    log.warning(f"Could not delete text channel: {e}")
-            
-            # Rate limit protection
-            await asyncio.sleep(RATE_LIMIT_DELAY)
-            
-            # Delete voice channel
-            voice_ch = guild.get_channel(data["voice"])
-            if voice_ch:
-                try:
-                    await voice_ch.delete(reason="Scheduled event ended")
-                    log.info(f"Deleted voice channel for event '{event.name}'")
-                except (discord.NotFound, discord.Forbidden) as e:
-                    log.warning(f"Could not delete voice channel: {e}")
-            
-            # Rate limit protection
-            await asyncio.sleep(RATE_LIMIT_DELAY)
-            
-            # Delete role
-            evt_role = guild.get_role(data["role"])
-            if evt_role:
-                try:
-                    await evt_role.delete(reason="Scheduled event ended")
-                    log.info(f"Deleted role for event '{event.name}'")
-                except (discord.NotFound, discord.Forbidden) as e:
-                    log.warning(f"Could not delete role: {e}")
+                    await role.delete(reason="Scheduled event ended")
+                except discord.Forbidden:
+                    pass
 
             stored.pop(str(event.id), None)
             await self.config.guild(guild).event_channels.set(stored)
-            
         except asyncio.CancelledError:
-            log.info(f"Task cancelled for event '{event.name}'")
-            # Clean up any created channels
+            # Task was cancelled - clean up if channels were created
             stored = await self.config.guild(guild).event_channels()
             data = stored.get(str(event.id))
             if data:
-                for channel_id in (data.get("text"), data.get("voice")):
-                    if channel_id:
-                        channel = guild.get_channel(channel_id)
-                        if channel:
-                            try:
-                                await channel.delete(reason="Event cancelled")
-                                await asyncio.sleep(RATE_LIMIT_DELAY)
-                            except (discord.NotFound, discord.Forbidden):
-                                pass
+                for channel_id in (data["text"], data["voice"]):
+                    channel = guild.get_channel(channel_id)
+                    if channel:
+                        try:
+                            await channel.delete(reason="Scheduled event cancelled")
+                        except (discord.NotFound, discord.Forbidden):
+                            pass
                 stored.pop(str(event.id), None)
                 await self.config.guild(guild).event_channels.set(stored)
-            raise
-        except Exception as e:
-            log.error(f"Unhandled error in event handler for '{event.name}': {e}", exc_info=True)
+            raise 
         finally:
             # Clean up task reference
             self.active_tasks.pop(event.id, None)
@@ -713,23 +476,9 @@ class EventChannels(commands.Cog):
 
     @commands.Cog.listener()
     async def on_scheduled_event_create(self, event: discord.ScheduledEvent):
-        """Handle new scheduled event creation."""
-        if not event.guild or event.status != discord.EventStatus.scheduled:
-            return
-        
-        # If startup isn't complete, buffer the event
-        if not self._startup_complete:
-            self._pending_events.append((event.guild, event))
-            log.info(f"Buffered event '{event.name}' during startup")
-            return
-        
-        # Check if task already exists
-        if event.id in self.active_tasks:
-            log.info(f"Task already exists for event '{event.name}'")
-            return
-        
-        task = self.bot.loop.create_task(self._handle_event(event.guild, event))
-        self.active_tasks[event.id] = task
+        if event.guild and event.status == discord.EventStatus.scheduled:
+            task = self.bot.loop.create_task(self._handle_event(event.guild, event))
+            self.active_tasks[event.id] = task
 
     @commands.Cog.listener()
     async def on_scheduled_event_delete(self, event: discord.ScheduledEvent):
@@ -737,41 +486,26 @@ class EventChannels(commands.Cog):
         task = self.active_tasks.get(event.id)
         if task and not task.done():
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
 
     @commands.Cog.listener()
     async def on_scheduled_event_update(self, before: discord.ScheduledEvent, after: discord.ScheduledEvent):
-        """Handle event updates - cancellation or time changes."""
+        """Cancel task and clean up if event is cancelled or start time changes significantly."""
         if after.status == discord.EventStatus.cancelled:
             task = self.active_tasks.get(after.id)
             if task and not task.done():
                 task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
         elif before.start_time != after.start_time and after.status == discord.EventStatus.scheduled:
             # Start time changed - cancel old task and create new one
             task = self.active_tasks.get(after.id)
             if task and not task.done():
                 task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-            
-            # Small delay to ensure cleanup is complete
-            await asyncio.sleep(0.5)
-            
+            # Give a moment for cancellation to complete
+            await asyncio.sleep(0.1)
             new_task = self.bot.loop.create_task(self._handle_event(after.guild, after))
             self.active_tasks[after.id] = new_task
     
     def cog_unload(self):
         """Cancel all active tasks when cog is unloaded."""
-        log.info(f"Unloading cog, cancelling {len(self.active_tasks)} active tasks")
-        for event_id, task in self.active_tasks.items():
+        for task in self.active_tasks.values():
             if not task.done():
                 task.cancel()

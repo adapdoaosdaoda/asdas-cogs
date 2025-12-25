@@ -8,7 +8,7 @@ The cog also automatically deletes the channels 4 hours (changeable) after the e
 ## Instalation 
 
 `[p]repo add asdas-cogs https://github.com/adapdoaosdaoda/asdas-cogs`  
-`[p]cog install asdas-cogs EventChannels`
+`[p]cog install asdas-cogs RaidHelperEventThing`
 
 ---
 
