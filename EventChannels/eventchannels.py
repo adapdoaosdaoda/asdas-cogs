@@ -387,33 +387,27 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            base_name = event.name.lower().replace(" ", "-")
+            base_name = event.name.lower().replace(" ", "᲼")
 
             try:
-                # Try creating without overwrites first to isolate the issue
+                # Create channels with overwrites applied during creation
                 text_channel = await guild.create_text_channel(
                     name=f"{base_name}-text",
                     category=category,
-                    reason="Scheduled event starting soon",
+                    overwrites=overwrites,
+                    reason=f"Scheduled event '{event.name}' starting soon",
                 )
-                log.info(f"Created text channel without overwrites: {text_channel.name}")
+                log.info(f"Created text channel with permissions: {text_channel.name}")
 
                 voice_channel = await guild.create_voice_channel(
                     name=f"{base_name}-voice",
                     category=category,
-                    reason="Scheduled event starting soon",
+                    overwrites=overwrites,
+                    reason=f"Scheduled event '{event.name}' starting soon",
                 )
-                log.info(f"Created voice channel without overwrites: {voice_channel.name}")
-                
-                # Now try to apply the overwrites
-                try:
-                    await text_channel.edit(overwrites=overwrites)
-                    await voice_channel.edit(overwrites=overwrites)
-                    log.info(f"Successfully applied permissions to channels for event '{event.name}'")
-                except discord.Forbidden as e:
-                    log.error(f"Could not apply permissions, but channels created: {e}")
-                
-                log.info(f"Created channels for event '{event.name}': {text_channel.name}, {voice_channel.name}")
+                log.info(f"Created voice channel with permissions: {voice_channel.name}")
+
+                log.info(f"Successfully created channels with permissions for event '{event.name}': {text_channel.name}, {voice_channel.name}")
             except discord.Forbidden as e:
                 log.error(f"Missing permissions to create channels for event '{event.name}': {e}")
                 return
