@@ -21,6 +21,7 @@ class EventChannels(commands.Cog):
             timezone="UTC",  # Default timezone
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
             channel_format="{name}᲼{type}",  # Default channel name format
+            space_replacer="᲼",  # Character to replace spaces in channel names
             creation_minutes=15,  # Default creation time in minutes before event
             deletion_hours=4,  # Default deletion time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
@@ -162,8 +163,8 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
-    async def seteventchannelformat(self, ctx, *, format_string: str):
-        """Set the channel name format pattern.
+    async def seteventchannelformat(self, ctx, format_string: str, space_replacer: str = None):
+        """Set the channel name format pattern and optionally the space replacer.
 
         Available placeholders:
         - {name} - Event name (lowercase, spaces replaced)
@@ -171,8 +172,11 @@ class EventChannels(commands.Cog):
 
         Examples:
         - `{name}᲼{type}` → "raid᲼night᲼text" (default)
-        - `{name}-{type}` → "raid-night-text"
+        - `{name}-{type} -` → "raid-night-text" (spaces replaced with -)
+        - `{name}_{type} _` → "raid_night_text" (spaces replaced with _)
         - `event-{name}-{type}` → "event-raid-night-text"
+
+        The second parameter is the character to replace spaces with (default: ᲼)
         """
         # Validate the format string has valid placeholders
         valid_placeholders = {'{name}', '{type}'}
@@ -186,7 +190,12 @@ class EventChannels(commands.Cog):
             return
 
         await self.config.guild(ctx.guild).channel_format.set(format_string)
-        await ctx.send(f"✅ Event channel format set to: `{format_string}`")
+
+        if space_replacer is not None:
+            await self.config.guild(ctx.guild).space_replacer.set(space_replacer)
+            await ctx.send(f"✅ Event channel format set to: `{format_string}` with space replacer: `{space_replacer}`")
+        else:
+            await ctx.send(f"✅ Event channel format set to: `{format_string}`")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -279,6 +288,7 @@ class EventChannels(commands.Cog):
         deletion_hours = await self.config.guild(ctx.guild).deletion_hours()
         role_format = await self.config.guild(ctx.guild).role_format()
         channel_format = await self.config.guild(ctx.guild).channel_format()
+        space_replacer = await self.config.guild(ctx.guild).space_replacer()
         announcement_message = await self.config.guild(ctx.guild).announcement_message()
         divider_enabled = await self.config.guild(ctx.guild).divider_enabled()
         divider_name = await self.config.guild(ctx.guild).divider_name()
@@ -295,6 +305,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Deletion Time", value=f"{deletion_hours} hours after start", inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
+        embed.add_field(name="Space Replacer", value=f"`{space_replacer}`", inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
         embed.add_field(name="Divider Channel", value=divider_display, inline=False)
 
@@ -310,6 +321,7 @@ class EventChannels(commands.Cog):
                 f"**Deletion Time:** {deletion_hours} hours after start\n"
                 f"**Role Format:** `{role_format}`\n"
                 f"**Channel Format:** `{channel_format}`\n"
+                f"**Space Replacer:** `{space_replacer}`\n"
                 f"**Announcement:** {announcement_display}\n"
                 f"**Divider Channel:** {divider_display}"
             )
@@ -610,7 +622,8 @@ class EventChannels(commands.Cog):
 
             # Get channel format and prepare channel names
             channel_format = await self.config.guild(guild).channel_format()
-            base_name = event.name.lower().replace(" ", "᲼")
+            space_replacer = await self.config.guild(guild).space_replacer()
+            base_name = event.name.lower().replace(" ", space_replacer)
 
             text_channel_name = channel_format.format(name=base_name, type="text")
             voice_channel_name = channel_format.format(name=base_name, type="voice")
