@@ -7,7 +7,7 @@ It was made to complement `Raid-Helper <https://raid-helper.dev/>`_ (premium), w
 
 The cog also automatically deletes the channels after a configurable time (default: 4 hours) after the event start time, and if it has the permissions, the role that raid-helper creates.
 
-Reminders is simply a `cloned reminders <https://github.com/AAA3A-AAA3A/AAA3A-cogs/tree/main/reminders>`_ cog from `AAA3A-cogs <https://github.com/AAA3A-AAA3A/AAA3A-cogs>`_ but including a {time} variable to insert a discord relative time into the reminders.
+Reminders is simply a `cloned reminders <https://github.com/AAA3A-AAA3A/AAA3A-cogs/tree/main/reminders>`_ cog from `AAA3A-cogs <https://github.com/AAA3A-AAA3A/AAA3A-cogs>`_ but including a {time} variable to allow for inserting a discord relative time into the reminders.
 
 Installation
 ============
