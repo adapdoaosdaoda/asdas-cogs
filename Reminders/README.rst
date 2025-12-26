@@ -18,6 +18,16 @@ About this cog:
 
 Don't forget anything anymore! Reminders in DMs, channels, FIFO commands scheduler, say scheduler... With 'Me Too', snooze and buttons.
 
+-------------------
+Text Variables:
+-------------------
+
+You can use the following variables in your reminder messages:
+
+* ``{time}`` - Displays a Discord relative timestamp showing when the reminder will expire (e.g., "in 5 minutes", "in 2 hours")
+
+Example: ``[p]remindme 1h Don't forget the meeting {time}!`` will send a reminder saying "Don't forget the meeting in 1 hour!"
+
 ---------
 Commands:
 ---------
