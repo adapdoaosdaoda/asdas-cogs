@@ -679,6 +679,23 @@ class Reminder:
         embed.set_footer(text=footer or None)
         return embed
 
+    async def _auto_delete_message(
+        self, message: discord.Message, minutes: int
+    ) -> None:
+        """Auto-delete a reminder message after the specified number of minutes."""
+        try:
+            await asyncio.sleep(minutes * 60)  # Convert minutes to seconds
+            await message.delete()
+        except discord.NotFound:
+            # Message was already deleted
+            pass
+        except discord.Forbidden:
+            # Bot doesn't have permission to delete the message
+            pass
+        except discord.HTTPException:
+            # Other HTTP exception occurred
+            pass
+
     async def process(
         self,
         utc_now: datetime.datetime = None,
@@ -893,6 +910,11 @@ class Reminder:
                             replied_user=False,
                         ),
                     )
+
+                # Auto-delete the reminder message after configured time
+                auto_delete_minutes = await self.cog.config.auto_delete_minutes()
+                if auto_delete_minutes > 0 and not testing:
+                    asyncio.create_task(self._auto_delete_message(message, auto_delete_minutes))
             except discord.HTTPException:
                 if not testing:
                     await self.delete()

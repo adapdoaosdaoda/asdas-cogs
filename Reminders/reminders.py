@@ -93,6 +93,7 @@ class Reminders(DashboardIntegration, Cog):
             snooze_view=True,
             seconds_allowed=True,
             replies=True,
+            auto_delete_minutes=0,  # 0 = disabled, otherwise delete reminder message after N minutes
         )
         self.config.register_user(
             timezone=None,
@@ -140,6 +141,11 @@ class Reminders(DashboardIntegration, Cog):
             "replies": {
                 "converter": bool,
                 "description": "Allow the bot to reply to commands that create reminders.",
+            },
+            "auto_delete_minutes": {
+                "converter": commands.Range[int, 0, None],
+                "description": "Auto-delete reminder messages after N minutes (0 to disable).",
+                "aliases": ["autodeleteminutes"],
             },
         }
         self.settings: Settings = Settings(
