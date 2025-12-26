@@ -348,25 +348,28 @@ class EventChannels(commands.Cog):
     # ---------- Core Logic ----------
 
     async def _cleanup_divider_if_empty(self, guild: discord.Guild):
-        """Delete the divider channel if no event roles remain."""
-        divider_roles = await self.config.guild(guild).divider_roles()
+        """Delete the divider channel if no event channels remain."""
+        # Check if there are any active event channels
+        stored = await self.config.guild(guild).event_channels()
 
-        # Check if there are any active roles
-        active_roles = []
-        for role_id in divider_roles:
-            role = guild.get_role(role_id)
-            if role:
-                active_roles.append(role_id)
+        # Check if any events still have active channels
+        has_active_channels = False
+        for event_id, data in stored.items():
+            text_channel = guild.get_channel(data.get("text"))
+            voice_channel = guild.get_channel(data.get("voice"))
+            if text_channel or voice_channel:
+                has_active_channels = True
+                break
 
-        # If no active roles remain, delete the divider channel
-        if not active_roles:
+        # Only delete divider if no event channels remain
+        if not has_active_channels:
             divider_channel_id = await self.config.guild(guild).divider_channel_id()
             if divider_channel_id:
                 divider_channel = guild.get_channel(divider_channel_id)
                 if divider_channel:
                     try:
-                        await divider_channel.delete(reason="No event roles remain - cleaning up divider channel")
-                        log.info(f"Deleted divider channel in '{guild.name}' - no event roles remain")
+                        await divider_channel.delete(reason="No event channels remain - cleaning up divider channel")
+                        log.info(f"Deleted divider channel in '{guild.name}' - no event channels remain")
                     except (discord.Forbidden, discord.NotFound):
                         pass
 
@@ -395,6 +398,12 @@ class EventChannels(commands.Cog):
         divider_channel = guild.get_channel(divider_channel_id)
         if not divider_channel:
             log.warning(f"Divider channel {divider_channel_id} not found when trying to update permissions for role '{role.name}'")
+            return
+
+        # Check if bot's role is high enough to manage this role's permissions
+        bot_top_role = guild.me.top_role
+        if role.position >= bot_top_role.position:
+            log.warning(f"⚠️ Cannot manage permissions for role '{role.name}' (position: {role.position}) - bot's top role '{bot_top_role.name}' (position: {bot_top_role.position}) is not high enough. Skipping divider permissions update.")
             return
 
         divider_roles = await self.config.guild(guild).divider_roles()
