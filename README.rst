@@ -7,6 +7,8 @@ It was made to complement `Raid-Helper <https://raid-helper.dev/>`_ (premium), w
 
 The cog also automatically deletes the channels after a configurable time (default: 4 hours) after the event start time, and if it has the permissions, the role that raid-helper creates.
 
+Reminders is simply a [cloned reminders](https://github.com/AAA3A-AAA3A/AAA3A-cogs/tree/main/reminders) cog from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs) but including a {time} variable to insert a discord relative time into the reminders.
+
 Installation
 ============
 
@@ -60,7 +62,7 @@ Commands Overview
 | ``[p]vieweventsettings``     | Display current settings                               |
 +------------------------------+--------------------------------------------------------+
 
-Setup Commands
+Commands
 ==============
 
 seteventcategory
@@ -73,7 +75,7 @@ Sets the Discord category where event text and voice channels will be automatica
 
 **Example:** ``[p]seteventcategory Events``
 
-----
+⠀
 
 seteventtimezone
 ----------------
@@ -85,7 +87,7 @@ Configures the timezone used for matching event roles. This ensures the bot gene
 
 **Example:** ``[p]seteventtimezone Europe/Amsterdam``
 
-----
+⠀
 
 seteventcreationtime
 --------------------
@@ -97,7 +99,7 @@ Sets how many minutes before an event starts that the bot will create the event 
 
 **Example:** ``[p]seteventcreationtime 30``
 
-----
+⠀
 
 seteventdeletion
 ----------------
@@ -109,7 +111,7 @@ Sets how many hours after an event starts before the bot automatically deletes t
 
 **Example:** ``[p]seteventdeletion 6``
 
-----
+⠀
 
 seteventroleformat
 ------------------
@@ -130,7 +132,7 @@ Customizes the pattern used to match event roles. The bot looks for roles matchi
 **Example:** ``[p]seteventroleformat {name} {day_abbrev} {day}. {month_abbrev} {time}``
 **Result:** ``Raid Night Wed 25. Dec 21:00``
 
-----
+⠀
 
 seteventchannelformat
 ---------------------
@@ -153,7 +155,7 @@ Customizes the pattern used for channel names. This allows you to control how th
 
 **Example:** ``[p]seteventchannelformat {name}-{type}``
 
-----
+⠀
 
 seteventannouncement
 --------------------
@@ -179,7 +181,7 @@ Sets the announcement message that will be posted in the event text channel when
 
 **Example:** ``[p]seteventannouncement {role} {event} starts {time}! Get ready!``
 
-----
+⠀
 
 vieweventsettings
 -----------------
