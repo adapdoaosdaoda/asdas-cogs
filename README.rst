@@ -19,10 +19,10 @@ Installation
 
 ----
 
-Bot Permissions
+Cog Permissions
 ===============
 
-The bot requires the following permissions:
+The cog requires the following permissions:
 
 Server-Level Permissions
 ------------------------
@@ -72,6 +72,7 @@ seteventcategory
 **Permission:** Manage Server or Administrator
 
 Sets the Discord category where event text and voice channels will be automatically created. The bot will place all event-related channels in this category for better organization.
+Also works with a category ID.
 
 **Example:** ``[p]seteventcategory Events``
 
@@ -192,3 +193,5 @@ vieweventsettings
 Displays all current configuration settings in an organized embed, including the category, timezone, creation time, deletion time, role format, channel format, and announcement message. Use this to verify your setup is correct.
 
 **Example:** ``[p]vieweventsettings``
+
+⠀
