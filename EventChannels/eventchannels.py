@@ -373,6 +373,13 @@ class EventChannels(commands.Cog):
         divider_roles = await self.config.guild(guild).divider_roles()
         log.info(f"Updating divider permissions: add={add}, role='{role.name}', current_roles={divider_roles}")
 
+        # Check if bot's role is high enough to manage this role
+        bot_top_role = guild.me.top_role
+        if role.position >= bot_top_role.position:
+            log.warning(f"Cannot update divider permissions for role '{role.name}' - role position ({role.position}) is >= bot's top role position ({bot_top_role.position})")
+            log.warning(f"Please move the bot's role '{bot_top_role.name}' above the event role '{role.name}' in the server settings")
+            return
+
         try:
             if add and role.id not in divider_roles:
                 # Add role to divider permissions - can see but not send messages
