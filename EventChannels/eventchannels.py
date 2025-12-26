@@ -21,6 +21,7 @@ class EventChannels(commands.Cog):
             timezone="UTC",  # Default timezone
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
             channel_format="{name}᲼{type}",  # Default channel name format
+            space_replacer="᲼",  # Character to replace spaces in channel names
             creation_minutes=15,  # Default creation time in minutes before event
             deletion_hours=4,  # Default deletion time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
@@ -61,7 +62,6 @@ class EventChannels(commands.Cog):
         # Divider Commands
         divider_commands = (
             f"`{prefix}seteventdivider <true/false> [name]` - Enable/disable divider channel\n"
-            f"`{prefix}renamedivider <new_name>` - Rename the existing divider channel\n"
             f"`{prefix}deletedivider` - Delete the divider channel\n"
         )
         embed.add_field(name="Divider Channel", value=divider_commands, inline=False)
@@ -163,8 +163,8 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
-    async def seteventchannelformat(self, ctx, *, format_string: str):
-        """Set the channel name format pattern.
+    async def seteventchannelformat(self, ctx, format_string: str, space_replacer: str = None):
+        """Set the channel name format pattern and optionally the space replacer.
 
         Available placeholders:
         - {name} - Event name (lowercase, spaces replaced)
@@ -172,8 +172,11 @@ class EventChannels(commands.Cog):
 
         Examples:
         - `{name}᲼{type}` → "raid᲼night᲼text" (default)
-        - `{name}-{type}` → "raid-night-text"
+        - `{name}-{type} -` → "raid-night-text" (spaces replaced with -)
+        - `{name}_{type} _` → "raid_night_text" (spaces replaced with _)
         - `event-{name}-{type}` → "event-raid-night-text"
+
+        The second parameter is the character to replace spaces with (default: ᲼)
         """
         # Validate the format string has valid placeholders
         valid_placeholders = {'{name}', '{type}'}
@@ -187,7 +190,12 @@ class EventChannels(commands.Cog):
             return
 
         await self.config.guild(ctx.guild).channel_format.set(format_string)
-        await ctx.send(f"✅ Event channel format set to: `{format_string}`")
+
+        if space_replacer is not None:
+            await self.config.guild(ctx.guild).space_replacer.set(space_replacer)
+            await ctx.send(f"✅ Event channel format set to: `{format_string}` with space replacer: `{space_replacer}`")
+        else:
+            await ctx.send(f"✅ Event channel format set to: `{format_string}`")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -239,39 +247,6 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
-    async def renamedivider(self, ctx, *, new_name: str):
-        """Rename the existing divider channel.
-
-        Example:
-        - `[p]renamedivider ━━━━━━ MY EVENTS ━━━━━━`
-
-        This will immediately rename the existing divider channel if it exists.
-        """
-        divider_channel_id = await self.config.guild(ctx.guild).divider_channel_id()
-
-        if not divider_channel_id:
-            await ctx.send("❌ No divider channel exists yet. It will be created when the first event channels are made.")
-            return
-
-        divider_channel = ctx.guild.get_channel(divider_channel_id)
-
-        if not divider_channel:
-            await ctx.send("❌ The stored divider channel no longer exists. It will be recreated when needed.")
-            await self.config.guild(ctx.guild).divider_channel_id.set(None)
-            return
-
-        try:
-            await divider_channel.edit(name=new_name, reason=f"Divider renamed by {ctx.author}")
-            await self.config.guild(ctx.guild).divider_name.set(new_name)
-            await ctx.send(f"✅ Divider channel renamed to: `{new_name}`")
-        except discord.Forbidden:
-            await ctx.send("❌ I don't have permission to rename the divider channel.")
-        except Exception as e:
-            await ctx.send(f"❌ Failed to rename divider channel: {e}")
-
-    @commands.admin_or_permissions(manage_guild=True)
-    @commands.guild_only()
-    @commands.command()
     async def deletedivider(self, ctx):
         """Delete the divider channel.
 
@@ -313,6 +288,7 @@ class EventChannels(commands.Cog):
         deletion_hours = await self.config.guild(ctx.guild).deletion_hours()
         role_format = await self.config.guild(ctx.guild).role_format()
         channel_format = await self.config.guild(ctx.guild).channel_format()
+        space_replacer = await self.config.guild(ctx.guild).space_replacer()
         announcement_message = await self.config.guild(ctx.guild).announcement_message()
         divider_enabled = await self.config.guild(ctx.guild).divider_enabled()
         divider_name = await self.config.guild(ctx.guild).divider_name()
@@ -329,6 +305,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Deletion Time", value=f"{deletion_hours} hours after start", inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
+        embed.add_field(name="Space Replacer", value=f"`{space_replacer}`", inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
         embed.add_field(name="Divider Channel", value=divider_display, inline=False)
 
@@ -344,6 +321,7 @@ class EventChannels(commands.Cog):
                 f"**Deletion Time:** {deletion_hours} hours after start\n"
                 f"**Role Format:** `{role_format}`\n"
                 f"**Channel Format:** `{channel_format}`\n"
+                f"**Space Replacer:** `{space_replacer}`\n"
                 f"**Announcement:** {announcement_display}\n"
                 f"**Divider Channel:** {divider_display}"
             )
@@ -379,17 +357,21 @@ class EventChannels(commands.Cog):
         """
         divider_enabled = await self.config.guild(guild).divider_enabled()
         if not divider_enabled:
+            log.info(f"Divider not enabled, skipping permission update for role '{role.name}'")
             return
 
         divider_channel_id = await self.config.guild(guild).divider_channel_id()
         if not divider_channel_id:
+            log.warning(f"No divider channel ID found when trying to update permissions for role '{role.name}'")
             return
 
         divider_channel = guild.get_channel(divider_channel_id)
         if not divider_channel:
+            log.warning(f"Divider channel {divider_channel_id} not found when trying to update permissions for role '{role.name}'")
             return
 
         divider_roles = await self.config.guild(guild).divider_roles()
+        log.info(f"Updating divider permissions: add={add}, role='{role.name}', current_roles={divider_roles}")
 
         try:
             if add and role.id not in divider_roles:
@@ -399,6 +381,7 @@ class EventChannels(commands.Cog):
                     send_messages=False,
                     add_reactions=False
                 )
+                log.info(f"Adding permission overwrite for role '{role.name}' (ID: {role.id}) to divider channel '{divider_channel.name}'")
                 await divider_channel.set_permissions(
                     role,
                     overwrite=overwrite,
@@ -406,9 +389,10 @@ class EventChannels(commands.Cog):
                 )
                 divider_roles.append(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"Added role '{role.name}' to divider channel permissions - can view but not send messages")
+                log.info(f"✅ Successfully added role '{role.name}' to divider channel permissions - can view but not send messages")
             elif not add and role.id in divider_roles:
                 # Remove role from divider permissions
+                log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
                 await divider_channel.set_permissions(
                     role,
                     overwrite=None,  # Remove the overwrite
@@ -416,11 +400,13 @@ class EventChannels(commands.Cog):
                 )
                 divider_roles.remove(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"Removed role '{role.name}' from divider channel permissions")
+                log.info(f"✅ Removed role '{role.name}' from divider channel permissions")
+            else:
+                log.info(f"Skipping divider permission update for role '{role.name}' - add={add}, already_tracked={role.id in divider_roles}")
         except discord.Forbidden as e:
-            log.error(f"Permission error while updating divider permissions for role '{role.name}': {e}")
+            log.error(f"❌ Permission error while updating divider permissions for role '{role.name}': {e}")
         except Exception as e:
-            log.error(f"Failed to update divider permissions for role '{role.name}': {e}")
+            log.error(f"❌ Failed to update divider permissions for role '{role.name}': {e}")
 
     async def _ensure_divider_channel(self, guild: discord.Guild, category: discord.CategoryChannel = None):
         """Ensure the divider channel exists in the specified category.
@@ -495,6 +481,7 @@ class EventChannels(commands.Cog):
 
             # Store the divider channel ID
             await self.config.guild(guild).divider_channel_id.set(divider_channel.id)
+            log.info(f"Stored divider channel ID: {divider_channel.id} (name: '{divider_channel.name}')")
             return divider_channel
 
         except discord.Forbidden as e:
@@ -635,7 +622,8 @@ class EventChannels(commands.Cog):
 
             # Get channel format and prepare channel names
             channel_format = await self.config.guild(guild).channel_format()
-            base_name = event.name.lower().replace(" ", "᲼")
+            space_replacer = await self.config.guild(guild).space_replacer()
+            base_name = event.name.lower().replace(" ", space_replacer)
 
             text_channel_name = channel_format.format(name=base_name, type="text")
             voice_channel_name = channel_format.format(name=base_name, type="voice")
