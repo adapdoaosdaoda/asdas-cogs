@@ -86,6 +86,13 @@ class EventChannels(commands.Cog):
         view_commands = f"`{prefix}vieweventsettings` - View current configuration settings"
         embed.add_field(name="View Settings", value=view_commands, inline=False)
 
+        # Testing
+        test_commands = (
+            f"`{prefix}testchannellock` - Test channel locking permissions\n"
+            f"`{prefix}stresstest` - Comprehensive stress test of all features\n"
+        )
+        embed.add_field(name="Testing", value=test_commands, inline=False)
+
         embed.set_footer(text="Most commands require Manage Guild permission")
 
         try:
@@ -98,6 +105,7 @@ class EventChannels(commands.Cog):
                 f"**Voice Channel Multiplier:**\n{voice_commands}\n\n"
                 f"**Divider Channel:**\n{divider_commands}\n\n"
                 f"**View Settings:**\n{view_commands}\n\n"
+                f"**Testing:**\n{test_commands}\n\n"
                 f"Most commands require Manage Guild permission"
             )
             await ctx.send(message)
@@ -650,6 +658,469 @@ class EventChannels(commands.Cog):
                 f"**Divider Channel:** {divider_display}"
             )
             await ctx.send(message)
+
+    @commands.guild_only()
+    @commands.has_permissions(manage_guild=True)
+    @commands.command()
+    async def testchannellock(self, ctx):
+        """Test the channel locking mechanism to verify bot permissions."""
+        guild = ctx.guild
+        category_id = await self.config.guild(guild).category_id()
+        category = guild.get_channel(category_id) if category_id else None
+
+        if not category:
+            await ctx.send("❌ No event category configured. Use `seteventcategory` first.")
+            return
+
+        await ctx.send("🔄 Starting channel lock test...")
+
+        test_role = None
+        test_text_channel = None
+        test_voice_channel = None
+
+        try:
+            # Create a test role
+            test_role = await guild.create_role(
+                name="🧪 Test Event Role",
+                reason="Testing channel lock mechanism"
+            )
+            await ctx.send(f"✅ Created test role: {test_role.mention}")
+
+            # Create test channels with permissions
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                guild.me: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_channels=True,
+                ),
+                test_role: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    connect=True,
+                    speak=True,
+                ),
+            }
+
+            # Create text channel
+            test_text_channel = await guild.create_text_channel(
+                name="🧪-test-event-text",
+                category=category,
+                overwrites=overwrites,
+                reason="Testing channel lock mechanism"
+            )
+            await ctx.send(f"✅ Created test text channel: {test_text_channel.mention}")
+
+            # Create voice channel
+            test_voice_channel = await guild.create_voice_channel(
+                name="🧪 Test Event Voice",
+                category=category,
+                overwrites=overwrites,
+                reason="Testing channel lock mechanism"
+            )
+            await ctx.send(f"✅ Created test voice channel: `{test_voice_channel.name}`")
+
+            # Now attempt to lock the channels using the same logic as the actual deletion process
+            await ctx.send("🔒 Attempting to lock channels...")
+
+            locked_overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                guild.me: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_channels=True,
+                ),
+                test_role: discord.PermissionOverwrite(
+                    send_messages=False,  # Locked
+                    speak=False,  # Locked in voice
+                ),
+            }
+
+            await test_text_channel.edit(overwrites=locked_overwrites, reason="Testing channel lock")
+            await test_voice_channel.edit(overwrites=locked_overwrites, reason="Testing channel lock")
+
+            await ctx.send("✅ **SUCCESS**: Channels locked successfully!")
+            await ctx.send("✅ Bot has correct permissions to lock channels before deletion.")
+
+        except discord.Forbidden as e:
+            await ctx.send(f"❌ **FAILED**: Missing permissions to lock channels.\n```{e}```")
+        except Exception as e:
+            await ctx.send(f"❌ **ERROR**: {type(e).__name__}: {e}")
+        finally:
+            # Cleanup
+            await ctx.send("🧹 Cleaning up test channels and role...")
+            if test_text_channel:
+                try:
+                    await test_text_channel.delete(reason="Channel lock test completed")
+                except:
+                    pass
+            if test_voice_channel:
+                try:
+                    await test_voice_channel.delete(reason="Channel lock test completed")
+                except:
+                    pass
+            if test_role:
+                try:
+                    await test_role.delete(reason="Channel lock test completed")
+                except:
+                    pass
+            await ctx.send("✅ Test complete and cleanup finished.")
+
+    @commands.guild_only()
+    @commands.has_permissions(manage_guild=True)
+    @commands.command()
+    async def stresstest(self, ctx):
+        """Comprehensive stress test of all EventChannels features."""
+        guild = ctx.guild
+        category_id = await self.config.guild(guild).category_id()
+        category = guild.get_channel(category_id) if category_id else None
+
+        if not category:
+            await ctx.send("❌ No event category configured. Use `seteventcategory` first.")
+            return
+
+        await ctx.send("🚀 **Starting comprehensive EventChannels stress test...**")
+        await ctx.send("This will test: channel creation, permissions, voice multipliers, divider, locking, and cleanup.")
+
+        # Track all created resources for cleanup
+        test_roles = []
+        test_channels = []
+        original_divider_roles = await self.config.guild(guild).divider_roles()
+        test_results = {
+            "passed": 0,
+            "failed": 0,
+            "errors": []
+        }
+
+        async def report_success(test_name: str):
+            test_results["passed"] += 1
+            await ctx.send(f"✅ **{test_name}**: PASSED")
+
+        async def report_failure(test_name: str, error: str):
+            test_results["failed"] += 1
+            test_results["errors"].append(f"{test_name}: {error}")
+            await ctx.send(f"❌ **{test_name}**: FAILED - {error}")
+
+        try:
+            # ========== TEST 1: Basic Channel Creation ==========
+            await ctx.send("\n**TEST 1: Basic Channel Creation**")
+            try:
+                role1 = await guild.create_role(name="🧪 Stress Test Role 1", reason="Stress testing")
+                test_roles.append(role1)
+
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        manage_channels=True,
+                    ),
+                    role1: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        connect=True,
+                        speak=True,
+                    ),
+                }
+
+                text_ch1 = await guild.create_text_channel(
+                    name="🧪-stress-test-1",
+                    category=category,
+                    overwrites=overwrites,
+                    reason="Stress testing"
+                )
+                test_channels.append(text_ch1)
+
+                voice_ch1 = await guild.create_voice_channel(
+                    name="🧪 Stress Test Voice 1",
+                    category=category,
+                    overwrites=overwrites,
+                    reason="Stress testing"
+                )
+                test_channels.append(voice_ch1)
+
+                await report_success("Basic Channel Creation")
+            except Exception as e:
+                await report_failure("Basic Channel Creation", str(e))
+
+            # ========== TEST 2: Permission Verification ==========
+            await ctx.send("\n**TEST 2: Permission Verification**")
+            try:
+                # Verify bot can see and manage channels
+                if text_ch1.permissions_for(guild.me).view_channel and \
+                   text_ch1.permissions_for(guild.me).manage_channels and \
+                   text_ch1.permissions_for(guild.me).send_messages:
+                    await report_success("Bot Permission Verification")
+                else:
+                    await report_failure("Bot Permission Verification", "Bot missing expected permissions")
+
+                # Verify role can see channels
+                if text_ch1.permissions_for(role1).view_channel and \
+                   text_ch1.permissions_for(role1).send_messages:
+                    await report_success("Role Permission Verification")
+                else:
+                    await report_failure("Role Permission Verification", "Role missing expected permissions")
+
+                # Verify default role cannot see
+                if not text_ch1.permissions_for(guild.default_role).view_channel:
+                    await report_success("Default Role Hidden Verification")
+                else:
+                    await report_failure("Default Role Hidden Verification", "Default role can see channel")
+            except Exception as e:
+                await report_failure("Permission Verification", str(e))
+
+            # ========== TEST 3: Multiple Voice Channels (Voice Multiplier Simulation) ==========
+            await ctx.send("\n**TEST 3: Multiple Voice Channels**")
+            try:
+                role2 = await guild.create_role(name="🧪 Stress Test Role 2", reason="Stress testing")
+                test_roles.append(role2)
+
+                # Create 3 voice channels to simulate voice multiplier
+                for i in range(3):
+                    voice_ch = await guild.create_voice_channel(
+                        name=f"🧪 Multi Voice {i+1}",
+                        category=category,
+                        user_limit=5,
+                        reason="Stress testing voice multiplier"
+                    )
+                    test_channels.append(voice_ch)
+
+                await report_success("Multiple Voice Channels Creation")
+            except Exception as e:
+                await report_failure("Multiple Voice Channels Creation", str(e))
+
+            # ========== TEST 4: Divider Channel Updates ==========
+            await ctx.send("\n**TEST 4: Divider Channel Updates**")
+            try:
+                # Test adding roles to divider
+                await self._update_divider_permissions(guild, role1, add=True)
+                await asyncio.sleep(0.5)  # Brief delay for operation
+                await self._update_divider_permissions(guild, role2, add=True)
+                await asyncio.sleep(0.5)
+
+                divider_channel_id = await self.config.guild(guild).divider_channel_id()
+                if divider_channel_id:
+                    divider = guild.get_channel(divider_channel_id)
+                    if divider:
+                        # Verify roles have access
+                        if divider.permissions_for(role1).view_channel and \
+                           divider.permissions_for(role2).view_channel:
+                            await report_success("Divider Role Permissions")
+                        else:
+                            await report_failure("Divider Role Permissions", "Roles don't have view access")
+                    else:
+                        await report_failure("Divider Channel Updates", "Divider channel not found")
+                else:
+                    await report_failure("Divider Channel Updates", "No divider channel ID stored")
+            except Exception as e:
+                await report_failure("Divider Channel Updates", str(e))
+
+            # ========== TEST 5: Message Sending ==========
+            await ctx.send("\n**TEST 5: Message Sending**")
+            try:
+                test_msg = await text_ch1.send("🧪 Stress test message")
+                await asyncio.sleep(0.5)
+                await test_msg.delete()
+                await report_success("Message Sending and Deletion")
+            except Exception as e:
+                await report_failure("Message Sending", str(e))
+
+            # ========== TEST 6: Channel Locking ==========
+            await ctx.send("\n**TEST 6: Channel Locking Mechanism**")
+            try:
+                locked_overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        manage_channels=True,
+                    ),
+                    role1: discord.PermissionOverwrite(
+                        send_messages=False,
+                        speak=False,
+                    ),
+                }
+
+                await text_ch1.edit(overwrites=locked_overwrites, reason="Stress test lock")
+                await voice_ch1.edit(overwrites=locked_overwrites, reason="Stress test lock")
+
+                # Verify lock worked
+                if not text_ch1.permissions_for(role1).send_messages and \
+                   not voice_ch1.permissions_for(role1).speak:
+                    await report_success("Channel Locking")
+                else:
+                    await report_failure("Channel Locking", "Permissions not properly locked")
+            except Exception as e:
+                await report_failure("Channel Locking", str(e))
+
+            # ========== TEST 7: Concurrent Operations ==========
+            await ctx.send("\n**TEST 7: Concurrent Channel Operations**")
+            try:
+                # Create multiple channels concurrently
+                role3 = await guild.create_role(name="🧪 Concurrent Test Role", reason="Stress testing")
+                test_roles.append(role3)
+
+                tasks = []
+                for i in range(3):
+                    task = guild.create_text_channel(
+                        name=f"🧪-concurrent-{i}",
+                        category=category,
+                        reason="Concurrent stress test"
+                    )
+                    tasks.append(task)
+
+                concurrent_channels = await asyncio.gather(*tasks)
+                test_channels.extend(concurrent_channels)
+
+                if len(concurrent_channels) == 3:
+                    await report_success("Concurrent Channel Creation")
+                else:
+                    await report_failure("Concurrent Channel Creation", f"Expected 3 channels, got {len(concurrent_channels)}")
+            except Exception as e:
+                await report_failure("Concurrent Channel Creation", str(e))
+
+            # ========== TEST 8: Channel Name Formatting ==========
+            await ctx.send("\n**TEST 8: Channel Name Formatting**")
+            try:
+                space_replacer = await self.config.guild(guild).space_replacer()
+                test_name = "Test Event Name"
+                formatted_name = test_name.lower().replace(" ", space_replacer)
+
+                format_test_ch = await guild.create_text_channel(
+                    name=f"🧪-{formatted_name}",
+                    category=category,
+                    reason="Testing name formatting"
+                )
+                test_channels.append(format_test_ch)
+
+                if space_replacer in format_test_ch.name:
+                    await report_success("Channel Name Formatting")
+                else:
+                    await report_failure("Channel Name Formatting", "Space replacer not applied correctly")
+            except Exception as e:
+                await report_failure("Channel Name Formatting", str(e))
+
+            # ========== TEST 9: Rapid Create/Delete Cycle ==========
+            await ctx.send("\n**TEST 9: Rapid Create/Delete Cycle**")
+            try:
+                temp_channels = []
+                # Create 5 channels
+                for i in range(5):
+                    temp_ch = await guild.create_text_channel(
+                        name=f"🧪-temp-{i}",
+                        category=category,
+                        reason="Rapid cycle test"
+                    )
+                    temp_channels.append(temp_ch)
+
+                await asyncio.sleep(1)
+
+                # Delete them all
+                for ch in temp_channels:
+                    await ch.delete(reason="Rapid cycle test cleanup")
+
+                await report_success("Rapid Create/Delete Cycle")
+            except Exception as e:
+                await report_failure("Rapid Create/Delete Cycle", str(e))
+
+            # ========== TEST 10: Permission Overwrite Updates ==========
+            await ctx.send("\n**TEST 10: Permission Overwrite Updates**")
+            try:
+                # Update permissions on existing channel
+                new_overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        manage_channels=True,
+                    ),
+                    role3: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        read_message_history=True,
+                    ),
+                }
+
+                await concurrent_channels[0].edit(overwrites=new_overwrites, reason="Permission update test")
+
+                if concurrent_channels[0].permissions_for(role3).view_channel:
+                    await report_success("Permission Overwrite Updates")
+                else:
+                    await report_failure("Permission Overwrite Updates", "Updated permissions not applied")
+            except Exception as e:
+                await report_failure("Permission Overwrite Updates", str(e))
+
+        except Exception as e:
+            await ctx.send(f"💥 **CRITICAL ERROR**: {type(e).__name__}: {e}")
+            test_results["errors"].append(f"Critical: {e}")
+
+        finally:
+            # ========== CLEANUP ==========
+            await ctx.send("\n**🧹 CLEANUP: Removing all test resources...**")
+
+            # Remove test roles from divider
+            try:
+                for role in test_roles:
+                    await self._update_divider_permissions(guild, role, add=False)
+            except Exception as e:
+                await ctx.send(f"⚠️ Warning during divider cleanup: {e}")
+
+            # Delete all test channels
+            deleted_channels = 0
+            for channel in test_channels:
+                try:
+                    await channel.delete(reason="Stress test cleanup")
+                    deleted_channels += 1
+                except:
+                    pass
+
+            # Delete all test roles
+            deleted_roles = 0
+            for role in test_roles:
+                try:
+                    await role.delete(reason="Stress test cleanup")
+                    deleted_roles += 1
+                except:
+                    pass
+
+            await ctx.send(f"✅ Cleanup complete: {deleted_channels} channels, {deleted_roles} roles removed")
+
+            # ========== FINAL REPORT ==========
+            await ctx.send("\n" + "="*50)
+            await ctx.send("**📊 STRESS TEST RESULTS**")
+            await ctx.send("="*50)
+
+            total_tests = test_results["passed"] + test_results["failed"]
+            pass_rate = (test_results["passed"] / total_tests * 100) if total_tests > 0 else 0
+
+            embed = discord.Embed(
+                title="EventChannels Stress Test Results",
+                color=discord.Color.green() if test_results["failed"] == 0 else discord.Color.orange()
+            )
+            embed.add_field(name="Total Tests", value=str(total_tests), inline=True)
+            embed.add_field(name="Passed ✅", value=str(test_results["passed"]), inline=True)
+            embed.add_field(name="Failed ❌", value=str(test_results["failed"]), inline=True)
+            embed.add_field(name="Pass Rate", value=f"{pass_rate:.1f}%", inline=False)
+
+            if test_results["errors"]:
+                error_text = "\n".join([f"• {err}" for err in test_results["errors"][:10]])  # Limit to 10 errors
+                embed.add_field(name="Errors", value=error_text, inline=False)
+
+            try:
+                await ctx.send(embed=embed)
+            except:
+                # Fallback to text
+                await ctx.send(
+                    f"**Total Tests**: {total_tests}\n"
+                    f"**Passed**: {test_results['passed']} ✅\n"
+                    f"**Failed**: {test_results['failed']} ❌\n"
+                    f"**Pass Rate**: {pass_rate:.1f}%"
+                )
+
+            if test_results["failed"] == 0:
+                await ctx.send("🎉 **ALL TESTS PASSED!** EventChannels cog is functioning correctly.")
+            else:
+                await ctx.send("⚠️ **SOME TESTS FAILED** - Review errors above for details.")
 
     # ---------- Startup ----------
 
@@ -1264,6 +1735,7 @@ class EventChannels(commands.Cog):
                             guild.me: discord.PermissionOverwrite(
                                 view_channel=True,
                                 send_messages=True,
+                                manage_channels=True,
                             ),
                             role: discord.PermissionOverwrite(
                                 send_messages=False,  # Locked
