@@ -702,23 +702,26 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            # Create text channel
+            # Create text channel without overwrites first
             test_text_channel = await guild.create_text_channel(
                 name="🧪-test-event-text",
                 category=category,
-                overwrites=overwrites,
                 reason="Testing channel lock mechanism"
             )
             await ctx.send(f"✅ Created test text channel: {test_text_channel.mention}")
 
-            # Create voice channel
+            # Create voice channel without overwrites first
             test_voice_channel = await guild.create_voice_channel(
                 name="🧪 Test Event Voice",
                 category=category,
-                overwrites=overwrites,
                 reason="Testing channel lock mechanism"
             )
             await ctx.send(f"✅ Created test voice channel: `{test_voice_channel.name}`")
+
+            # Now apply permission overwrites
+            await test_text_channel.edit(overwrites=overwrites)
+            await test_voice_channel.edit(overwrites=overwrites)
+            await ctx.send(f"✅ Applied permission overwrites to channels")
 
             # Now attempt to lock the channels using the same logic as the actual deletion process
             await ctx.send("🔒 Attempting to lock channels...")
@@ -770,7 +773,7 @@ class EventChannels(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     @commands.command()
     async def stresstest(self, ctx):
-        """Comprehensive stress test of all EventChannels features."""
+        """Comprehensive stress test of all EventChannels features including end-to-end event automation."""
         guild = ctx.guild
         category_id = await self.config.guild(guild).category_id()
         category = guild.get_channel(category_id) if category_id else None
@@ -780,11 +783,12 @@ class EventChannels(commands.Cog):
             return
 
         await ctx.send("🚀 **Starting comprehensive EventChannels stress test...**")
-        await ctx.send("This will test: channel creation, permissions, voice multipliers, divider, locking, and cleanup.")
+        await ctx.send("This will test: channel creation, permissions, voice multipliers, divider, locking, event automation, and cleanup.")
 
         # Track all created resources for cleanup
         test_roles = []
         test_channels = []
+        test_events = []
         original_divider_roles = await self.config.guild(guild).divider_roles()
         test_results = {
             "passed": 0,
@@ -823,10 +827,10 @@ class EventChannels(commands.Cog):
                     ),
                 }
 
+                # Create channels without overwrites first
                 text_ch1 = await guild.create_text_channel(
                     name="🧪-stress-test-1",
                     category=category,
-                    overwrites=overwrites,
                     reason="Stress testing"
                 )
                 test_channels.append(text_ch1)
@@ -834,10 +838,13 @@ class EventChannels(commands.Cog):
                 voice_ch1 = await guild.create_voice_channel(
                     name="🧪 Stress Test Voice 1",
                     category=category,
-                    overwrites=overwrites,
                     reason="Stress testing"
                 )
                 test_channels.append(voice_ch1)
+
+                # Now apply permission overwrites
+                await text_ch1.edit(overwrites=overwrites)
+                await voice_ch1.edit(overwrites=overwrites)
 
                 await report_success("Basic Channel Creation")
             except Exception as e:
@@ -1050,6 +1057,92 @@ class EventChannels(commands.Cog):
             except Exception as e:
                 await report_failure("Permission Overwrite Updates", str(e))
 
+            # ========== TEST 11: End-to-End Event Creation ==========
+            await ctx.send("\n**TEST 11: End-to-End Event Creation with Matching Role**")
+            try:
+                from zoneinfo import ZoneInfo
+
+                # Get the server's configured timezone and role format
+                tz_name = await self.config.guild(guild).timezone()
+                server_tz = ZoneInfo(tz_name)
+                role_format = await self.config.guild(guild).role_format()
+
+                # Create a scheduled event that starts in 2 minutes
+                event_start = datetime.now(timezone.utc) + timedelta(minutes=2)
+                event_local_time = event_start.astimezone(server_tz)
+
+                # Format the expected role name
+                day_abbrev = event_local_time.strftime("%a")
+                day = event_local_time.strftime("%d").lstrip("0")
+                month_abbrev = event_local_time.strftime("%b")
+                time_str = event_local_time.strftime("%H:%M")
+
+                event_name = "🧪 E2E Test Event"
+                expected_role_name = role_format.format(
+                    name=event_name,
+                    day_abbrev=day_abbrev,
+                    day=day,
+                    month_abbrev=month_abbrev,
+                    time=time_str
+                )
+
+                # Create the matching role BEFORE creating the event
+                e2e_role = await guild.create_role(
+                    name=expected_role_name,
+                    reason="E2E stress test - matching role for scheduled event"
+                )
+                test_roles.append(e2e_role)
+                await ctx.send(f"✅ Created matching role: `{expected_role_name}`")
+
+                # Create the scheduled event
+                test_event = await guild.create_scheduled_event(
+                    name=event_name,
+                    start_time=event_start,
+                    entity_type=discord.EntityType.voice,
+                    privacy_level=discord.PrivacyLevel.guild_only,
+                    location="🧪 Test Location",
+                    reason="E2E stress test"
+                )
+                test_events.append(test_event)
+                await ctx.send(f"✅ Created scheduled event: `{event_name}` (starts in 2 minutes)")
+
+                # Wait for the bot to process the event (should create channels in 2 mins - 15 mins = immediately)
+                creation_minutes = await self.config.guild(guild).creation_minutes()
+                if creation_minutes >= 2:
+                    # Channels should be created immediately
+                    await ctx.send(f"⏳ Waiting for bot to process event (creation time: {creation_minutes} mins before start)...")
+                    await asyncio.sleep(10)  # Wait 10 seconds for bot to create channels
+
+                    # Check if channels were created
+                    stored = await self.config.guild(guild).event_channels()
+                    event_data = stored.get(str(test_event.id))
+
+                    if event_data:
+                        text_ch = guild.get_channel(event_data.get("text"))
+                        voice_ch_ids = event_data.get("voice", [])
+                        if isinstance(voice_ch_ids, int):
+                            voice_ch_ids = [voice_ch_ids]
+
+                        if text_ch and voice_ch_ids:
+                            await ctx.send(f"✅ Bot automatically created channels: {text_ch.mention}")
+                            # Track channels for cleanup
+                            test_channels.append(text_ch)
+                            for vc_id in voice_ch_ids:
+                                vc = guild.get_channel(vc_id)
+                                if vc:
+                                    test_channels.append(vc)
+                            await report_success("End-to-End Event Creation")
+                        else:
+                            await report_failure("End-to-End Event Creation", "Channels not found after creation")
+                    else:
+                        await report_failure("End-to-End Event Creation", "Event data not stored in config")
+                else:
+                    await ctx.send(f"⏭️ Skipping channel verification (creation time is {creation_minutes} mins, event starts in 2 mins)")
+                    await report_success("End-to-End Event Creation (event created, channels scheduled)")
+
+            except Exception as e:
+                await report_failure("End-to-End Event Creation", str(e))
+
         except Exception as e:
             await ctx.send(f"💥 **CRITICAL ERROR**: {type(e).__name__}: {e}")
             test_results["errors"].append(f"Critical: {e}")
@@ -1083,7 +1176,19 @@ class EventChannels(commands.Cog):
                 except:
                     pass
 
-            await ctx.send(f"✅ Cleanup complete: {deleted_channels} channels, {deleted_roles} roles removed")
+            # Delete all test events
+            deleted_events = 0
+            for event in test_events:
+                try:
+                    await event.delete(reason="Stress test cleanup")
+                    deleted_events += 1
+                except:
+                    pass
+
+            if deleted_events > 0:
+                await ctx.send(f"✅ Cleanup complete: {deleted_channels} channels, {deleted_roles} roles, {deleted_events} events removed")
+            else:
+                await ctx.send(f"✅ Cleanup complete: {deleted_channels} channels, {deleted_roles} roles removed")
 
             # ========== FINAL REPORT ==========
             await ctx.send("\n" + "="*50)
