@@ -61,7 +61,6 @@ class EventChannels(commands.Cog):
         # Divider Commands
         divider_commands = (
             f"`{prefix}seteventdivider <true/false> [name]` - Enable/disable divider channel\n"
-            f"`{prefix}renamedivider <new_name>` - Rename the existing divider channel\n"
             f"`{prefix}deletedivider` - Delete the divider channel\n"
         )
         embed.add_field(name="Divider Channel", value=divider_commands, inline=False)
@@ -235,39 +234,6 @@ class EventChannels(commands.Cog):
             await ctx.send(f"✅ Divider channel {'enabled' if enabled else 'disabled'} with name: `{divider_name}`")
         else:
             await ctx.send(f"✅ Divider channel {'enabled' if enabled else 'disabled'}.")
-
-    @commands.admin_or_permissions(manage_guild=True)
-    @commands.guild_only()
-    @commands.command()
-    async def renamedivider(self, ctx, *, new_name: str):
-        """Rename the existing divider channel.
-
-        Example:
-        - `[p]renamedivider ━━━━━━ MY EVENTS ━━━━━━`
-
-        This will immediately rename the existing divider channel if it exists.
-        """
-        divider_channel_id = await self.config.guild(ctx.guild).divider_channel_id()
-
-        if not divider_channel_id:
-            await ctx.send("❌ No divider channel exists yet. It will be created when the first event channels are made.")
-            return
-
-        divider_channel = ctx.guild.get_channel(divider_channel_id)
-
-        if not divider_channel:
-            await ctx.send("❌ The stored divider channel no longer exists. It will be recreated when needed.")
-            await self.config.guild(ctx.guild).divider_channel_id.set(None)
-            return
-
-        try:
-            await divider_channel.edit(name=new_name, reason=f"Divider renamed by {ctx.author}")
-            await self.config.guild(ctx.guild).divider_name.set(new_name)
-            await ctx.send(f"✅ Divider channel renamed to: `{new_name}`")
-        except discord.Forbidden:
-            await ctx.send("❌ I don't have permission to rename the divider channel.")
-        except Exception as e:
-            await ctx.send(f"❌ Failed to rename divider channel: {e}")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
