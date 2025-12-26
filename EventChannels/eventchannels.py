@@ -31,6 +31,9 @@ class EventChannels(commands.Cog):
             divider_name="━━━━━━ EVENT CHANNELS ━━━━━━",  # Default divider name
             divider_channel_id=None,  # Stores the divider channel ID
             divider_roles=[],  # Track role IDs that have access to the divider
+            channel_name_limit=100,  # Character limit for channel names (Discord max is 100)
+            voice_multiplier_keyword="",  # Keyword to trigger multiple voice channel creation (empty = disabled)
+            voice_multiplier_count=1,  # Number of voice channels to create when keyword is detected
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -60,8 +63,16 @@ class EventChannels(commands.Cog):
             f"`{prefix}seteventannouncement <message>` - Set announcement message in event channels\n"
             f"`{prefix}seteventstartmessage <message>` - Set message posted when event starts\n"
             f"`{prefix}setdeletionwarning <message>` - Set warning message before channel deletion\n"
+            f"`{prefix}setchannelnamelimit <limit>` - Set maximum character limit for channel names (default: 100)\n"
         )
         embed.add_field(name="Configuration", value=config_commands, inline=False)
+
+        # Voice Multiplier Commands
+        voice_commands = (
+            f"`{prefix}setvoicemultiplier <keyword> <count>` - Create multiple voice channels when keyword is in event name\n"
+            f"`{prefix}disablevoicemultiplier` - Disable multiple voice channel creation\n"
+        )
+        embed.add_field(name="Voice Channel Multiplier", value=voice_commands, inline=False)
 
         # Divider Commands
         divider_commands = (
@@ -82,6 +93,7 @@ class EventChannels(commands.Cog):
             message = (
                 f"**EventChannels Commands**\n\n"
                 f"**Configuration:**\n{config_commands}\n\n"
+                f"**Voice Channel Multiplier:**\n{voice_commands}\n\n"
                 f"**Divider Channel:**\n{divider_commands}\n\n"
                 f"**View Settings:**\n{view_commands}\n\n"
                 f"Most commands require Manage Guild permission"
@@ -227,17 +239,31 @@ class EventChannels(commands.Cog):
                     except Exception as e:
                         log.error(f"Failed to rename text channel: {e}")
 
-                # Rename voice channel
-                voice_channel = ctx.guild.get_channel(data.get("voice"))
-                if voice_channel and voice_channel.name != new_voice_name:
-                    try:
-                        await voice_channel.edit(name=new_voice_name, reason=f"Channel format updated by {ctx.author}")
-                        renamed_count += 1
-                        log.info(f"Renamed voice channel to '{new_voice_name}'")
-                    except discord.Forbidden:
-                        pass
-                    except Exception as e:
-                        log.error(f"Failed to rename voice channel: {e}")
+                # Rename voice channel(s)
+                voice_channel_ids = data.get("voice", [])
+                # Handle both old format (single ID) and new format (list of IDs)
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+
+                voice_count = len(voice_channel_ids)
+                for i, vc_id in enumerate(voice_channel_ids):
+                    voice_channel = ctx.guild.get_channel(vc_id)
+                    if voice_channel:
+                        # Generate new name based on count
+                        if voice_count > 1:
+                            new_vc_name = f"{new_voice_name} {i + 1}"
+                        else:
+                            new_vc_name = new_voice_name
+
+                        if voice_channel.name != new_vc_name:
+                            try:
+                                await voice_channel.edit(name=new_vc_name, reason=f"Channel format updated by {ctx.author}")
+                                renamed_count += 1
+                                log.info(f"Renamed voice channel to '{new_vc_name}'")
+                            except discord.Forbidden:
+                                pass
+                            except Exception as e:
+                                log.error(f"Failed to rename voice channel: {e}")
 
             except discord.NotFound:
                 # Event no longer exists
@@ -256,6 +282,76 @@ class EventChannels(commands.Cog):
                 await ctx.send(f"✅ Event channel format set to: `{format_string}`. Renamed {renamed_count} existing channel(s).")
             else:
                 await ctx.send(f"✅ Event channel format set to: `{format_string}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def setchannelnamelimit(self, ctx, limit: int):
+        """Set the maximum character limit for channel names.
+
+        Discord's maximum is 100 characters. This limit will truncate channel names
+        if they exceed the specified length.
+
+        Examples:
+        - `[p]setchannelnamelimit 50` - Limit channel names to 50 characters
+        - `[p]setchannelnamelimit 100` - Use Discord's maximum (default)
+        """
+        if limit < 1:
+            await ctx.send("❌ Character limit must be at least 1.")
+            return
+        if limit > 100:
+            await ctx.send("❌ Character limit cannot exceed 100 (Discord's maximum).")
+            return
+
+        await self.config.guild(ctx.guild).channel_name_limit.set(limit)
+        await ctx.send(f"✅ Channel name limit set to **{limit} characters**.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def setvoicemultiplier(self, ctx, keyword: str, count: int):
+        """Set up multiple voice channel creation based on a keyword in the event name.
+
+        When an event name contains the specified keyword, the bot will create multiple
+        voice channels instead of just one. The channels will be numbered (e.g., "voice 1",
+        "voice 2") if count > 1, or use the base name if count = 1.
+
+        Parameters:
+        - keyword: The keyword to detect in event names (case-insensitive)
+        - count: Number of voice channels to create (1-10)
+
+        Examples:
+        - `[p]setvoicemultiplier raid 3` - Create 3 voice channels for events with "raid" in the name
+        - `[p]setvoicemultiplier voice 5` - Create 5 voice channels for events with "voice" in the name
+
+        To disable this feature, use `[p]disablevoicemultiplier`
+        """
+        if count < 1:
+            await ctx.send("❌ Count must be at least 1.")
+            return
+        if count > 10:
+            await ctx.send("❌ Count cannot exceed 10 to avoid creating too many channels.")
+            return
+
+        await self.config.guild(ctx.guild).voice_multiplier_keyword.set(keyword.lower())
+        await self.config.guild(ctx.guild).voice_multiplier_count.set(count)
+
+        if count == 1:
+            await ctx.send(f"✅ Voice multiplier set: Events with **'{keyword}'** will create **1 voice channel** (standard behavior).")
+        else:
+            await ctx.send(f"✅ Voice multiplier set: Events with **'{keyword}'** will create **{count} voice channels** (numbered).")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def disablevoicemultiplier(self, ctx):
+        """Disable multiple voice channel creation.
+
+        This will restore the default behavior of creating only one voice channel per event.
+        """
+        await self.config.guild(ctx.guild).voice_multiplier_keyword.set("")
+        await self.config.guild(ctx.guild).voice_multiplier_count.set(1)
+        await ctx.send("✅ Voice multiplier disabled. All events will create a single voice channel.")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -386,6 +482,9 @@ class EventChannels(commands.Cog):
         deletion_warning_message = await self.config.guild(ctx.guild).deletion_warning_message()
         divider_enabled = await self.config.guild(ctx.guild).divider_enabled()
         divider_name = await self.config.guild(ctx.guild).divider_name()
+        channel_name_limit = await self.config.guild(ctx.guild).channel_name_limit()
+        voice_multiplier_keyword = await self.config.guild(ctx.guild).voice_multiplier_keyword()
+        voice_multiplier_count = await self.config.guild(ctx.guild).voice_multiplier_count()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
@@ -393,6 +492,7 @@ class EventChannels(commands.Cog):
         event_start_display = f"`{event_start_message}`" if event_start_message else "Disabled"
         deletion_warning_display = f"`{deletion_warning_message}`" if deletion_warning_message else "Disabled"
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
+        voice_multiplier_display = f"Keyword: `{voice_multiplier_keyword}`, Count: {voice_multiplier_count}" if voice_multiplier_keyword else "Disabled"
 
         embed = discord.Embed(title="Event Channels Settings", color=discord.Color.blue())
         embed.add_field(name="Category", value=category_name, inline=False)
@@ -402,6 +502,8 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
         embed.add_field(name="Space Replacer", value=f"`{space_replacer}`", inline=False)
+        embed.add_field(name="Channel Name Limit", value=f"{channel_name_limit} characters", inline=False)
+        embed.add_field(name="Voice Multiplier", value=voice_multiplier_display, inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
         embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
         embed.add_field(name="Deletion Warning", value=deletion_warning_display, inline=False)
@@ -420,6 +522,8 @@ class EventChannels(commands.Cog):
                 f"**Role Format:** `{role_format}`\n"
                 f"**Channel Format:** `{channel_format}`\n"
                 f"**Space Replacer:** `{space_replacer}`\n"
+                f"**Channel Name Limit:** {channel_name_limit} characters\n"
+                f"**Voice Multiplier:** {voice_multiplier_display}\n"
                 f"**Announcement:** {announcement_display}\n"
                 f"**Event Start Message:** {event_start_display}\n"
                 f"**Deletion Warning:** {deletion_warning_display}\n"
@@ -456,8 +560,15 @@ class EventChannels(commands.Cog):
         has_active_channels = False
         for event_id, data in stored.items():
             text_channel = guild.get_channel(data.get("text"))
-            voice_channel = guild.get_channel(data.get("voice"))
-            if text_channel or voice_channel:
+
+            # Handle both old format (single ID) and new format (list of IDs)
+            voice_channel_ids = data.get("voice", [])
+            if isinstance(voice_channel_ids, int):
+                voice_channel_ids = [voice_channel_ids]
+
+            has_voice_channels = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
+
+            if text_channel or has_voice_channels:
                 has_active_channels = True
                 break
 
@@ -812,19 +923,30 @@ class EventChannels(commands.Cog):
             # Get channel format and prepare channel names
             channel_format = await self.config.guild(guild).channel_format()
             space_replacer = await self.config.guild(guild).space_replacer()
+            channel_name_limit = await self.config.guild(guild).channel_name_limit()
             base_name = event.name.lower().replace(" ", space_replacer)
 
+            # Apply character limit to base name
             text_channel_name = channel_format.format(name=base_name, type="text")
-            voice_channel_name = channel_format.format(name=base_name, type="voice")
+            if len(text_channel_name) > channel_name_limit:
+                text_channel_name = text_channel_name[:channel_name_limit]
+
+            # Check if voice multiplier is enabled
+            voice_multiplier_keyword = await self.config.guild(guild).voice_multiplier_keyword()
+            voice_multiplier_count = await self.config.guild(guild).voice_multiplier_count()
+
+            # Determine if this event should use voice multiplier
+            use_multiplier = voice_multiplier_keyword and voice_multiplier_keyword in event.name.lower()
+            voice_count = voice_multiplier_count if use_multiplier else 1
 
             text_channel = None
-            voice_channel = None
+            voice_channels = []
 
             # Ensure divider channel exists before creating event channels
             await self._ensure_divider_channel(guild, category)
 
             try:
-                # Create channels without overwrites first
+                # Create text channel
                 text_channel = await guild.create_text_channel(
                     name=text_channel_name,
                     category=category,
@@ -832,17 +954,34 @@ class EventChannels(commands.Cog):
                 )
                 log.info(f"Created text channel: {text_channel.name}")
 
-                voice_channel = await guild.create_voice_channel(
-                    name=voice_channel_name,
-                    category=category,
-                    reason=f"Scheduled event '{event.name}' starting soon",
-                )
-                log.info(f"Created voice channel: {voice_channel.name}")
+                # Create voice channel(s)
+                for i in range(voice_count):
+                    # Generate voice channel name
+                    if voice_count > 1:
+                        # Multiple channels: append number (e.g., "voice 1", "voice 2")
+                        voice_channel_name = channel_format.format(name=base_name, type="voice")
+                        voice_channel_name = f"{voice_channel_name} {i + 1}"
+                    else:
+                        # Single channel: use base name
+                        voice_channel_name = channel_format.format(name=base_name, type="voice")
+
+                    # Apply character limit
+                    if len(voice_channel_name) > channel_name_limit:
+                        voice_channel_name = voice_channel_name[:channel_name_limit]
+
+                    voice_channel = await guild.create_voice_channel(
+                        name=voice_channel_name,
+                        category=category,
+                        reason=f"Scheduled event '{event.name}' starting soon",
+                    )
+                    voice_channels.append(voice_channel)
+                    log.info(f"Created voice channel: {voice_channel.name}")
 
                 # Now apply permission overwrites
                 await text_channel.edit(overwrites=overwrites)
-                await voice_channel.edit(overwrites=overwrites)
-                log.info(f"Successfully applied permissions to both channels for event '{event.name}'")
+                for voice_channel in voice_channels:
+                    await voice_channel.edit(overwrites=overwrites)
+                log.info(f"Successfully applied permissions to {len(voice_channels) + 1} channel(s) for event '{event.name}'")
 
                 # Add role to divider permissions
                 await self._update_divider_permissions(guild, role, add=True)
@@ -880,7 +1019,7 @@ class EventChannels(commands.Cog):
                         await text_channel.delete(reason="Failed to apply permissions")
                     except:
                         pass
-                if voice_channel:
+                for voice_channel in voice_channels:
                     try:
                         await voice_channel.delete(reason="Failed to apply permissions")
                     except:
@@ -894,7 +1033,7 @@ class EventChannels(commands.Cog):
                         await text_channel.delete(reason="Creation failed")
                     except:
                         pass
-                if voice_channel:
+                for voice_channel in voice_channels:
                     try:
                         await voice_channel.delete(reason="Creation failed")
                     except:
@@ -903,7 +1042,7 @@ class EventChannels(commands.Cog):
 
             stored[str(event.id)] = {
                 "text": text_channel.id,
-                "voice": voice_channel.id,
+                "voice": [vc.id for vc in voice_channels],  # Store list of voice channel IDs
                 "role": role.id,
             }
             await self.config.guild(guild).event_channels.set(stored)
@@ -963,10 +1102,14 @@ class EventChannels(commands.Cog):
             event_data = stored_data.get(str(event.id))
             if event_data:
                 text_channel = guild.get_channel(event_data.get("text"))
-                voice_channel = guild.get_channel(event_data.get("voice"))
+                voice_channel_ids = event_data.get("voice", [])
+                # Handle both old format (single ID) and new format (list of IDs)
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+                voice_channels = [guild.get_channel(vc_id) for vc_id in voice_channel_ids if guild.get_channel(vc_id)]
                 role = guild.get_role(event_data.get("role"))
 
-                if text_channel and voice_channel and role:
+                if text_channel and voice_channels and role:
                     try:
                         locked_overwrites = {
                             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -982,8 +1125,9 @@ class EventChannels(commands.Cog):
                             ),
                         }
                         await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                        await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                        log.info(f"Locked channels for event '{event.name}'")
+                        for voice_channel in voice_channels:
+                            await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
+                        log.info(f"Locked {len(voice_channels) + 1} channel(s) for event '{event.name}'")
                     except discord.Forbidden:
                         log.warning(f"Could not lock channels for event '{event.name}' - missing permissions")
                     except Exception as e:
@@ -1004,11 +1148,25 @@ class EventChannels(commands.Cog):
             if not data:
                 return
 
-            for channel_id in (data["text"], data["voice"]):
-                channel = guild.get_channel(channel_id)
-                if channel:
+            # Delete text channel
+            text_channel = guild.get_channel(data.get("text"))
+            if text_channel:
+                try:
+                    await text_channel.delete(reason="Scheduled event ended")
+                except discord.NotFound:
+                    pass
+
+            # Delete all voice channels
+            voice_channel_ids = data.get("voice", [])
+            # Handle both old format (single ID) and new format (list of IDs)
+            if isinstance(voice_channel_ids, int):
+                voice_channel_ids = [voice_channel_ids]
+
+            for vc_id in voice_channel_ids:
+                voice_channel = guild.get_channel(vc_id)
+                if voice_channel:
                     try:
-                        await channel.delete(reason="Scheduled event ended")
+                        await voice_channel.delete(reason="Scheduled event ended")
                     except discord.NotFound:
                         pass
 
@@ -1031,13 +1189,28 @@ class EventChannels(commands.Cog):
             stored = await self.config.guild(guild).event_channels()
             data = stored.get(str(event.id))
             if data:
-                for channel_id in (data["text"], data["voice"]):
-                    channel = guild.get_channel(channel_id)
-                    if channel:
+                # Delete text channel
+                text_channel = guild.get_channel(data.get("text"))
+                if text_channel:
+                    try:
+                        await text_channel.delete(reason="Scheduled event cancelled")
+                    except (discord.NotFound, discord.Forbidden):
+                        pass
+
+                # Delete all voice channels
+                voice_channel_ids = data.get("voice", [])
+                # Handle both old format (single ID) and new format (list of IDs)
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+
+                for vc_id in voice_channel_ids:
+                    voice_channel = guild.get_channel(vc_id)
+                    if voice_channel:
                         try:
-                            await channel.delete(reason="Scheduled event cancelled")
+                            await voice_channel.delete(reason="Scheduled event cancelled")
                         except (discord.NotFound, discord.Forbidden):
                             pass
+
                 # Remove role from divider permissions
                 role = guild.get_role(data["role"])
                 if role:
@@ -1097,16 +1270,31 @@ class EventChannels(commands.Cog):
                 events_to_remove.append(event_id)
                 log.info(f"Event role '{role.name}' was deleted externally - cleaning up channels for event {event_id}")
 
-                # Delete the associated channels
-                for channel_id in (data.get("text"), data.get("voice")):
-                    if channel_id:
-                        channel = guild.get_channel(channel_id)
-                        if channel:
-                            try:
-                                await channel.delete(reason=f"Event role '{role.name}' was deleted")
-                                log.info(f"Deleted channel {channel.name} - associated role was deleted")
-                            except (discord.NotFound, discord.Forbidden) as e:
-                                log.warning(f"Could not delete channel {channel_id}: {e}")
+                # Delete text channel
+                text_channel_id = data.get("text")
+                if text_channel_id:
+                    text_channel = guild.get_channel(text_channel_id)
+                    if text_channel:
+                        try:
+                            await text_channel.delete(reason=f"Event role '{role.name}' was deleted")
+                            log.info(f"Deleted channel {text_channel.name} - associated role was deleted")
+                        except (discord.NotFound, discord.Forbidden) as e:
+                            log.warning(f"Could not delete channel {text_channel_id}: {e}")
+
+                # Delete all voice channels
+                voice_channel_ids = data.get("voice", [])
+                # Handle both old format (single ID) and new format (list of IDs)
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+
+                for vc_id in voice_channel_ids:
+                    voice_channel = guild.get_channel(vc_id)
+                    if voice_channel:
+                        try:
+                            await voice_channel.delete(reason=f"Event role '{role.name}' was deleted")
+                            log.info(f"Deleted channel {voice_channel.name} - associated role was deleted")
+                        except (discord.NotFound, discord.Forbidden) as e:
+                            log.warning(f"Could not delete channel {vc_id}: {e}")
 
                 # Cancel any active task for this event
                 task = self.active_tasks.get(int(event_id))
@@ -1147,16 +1335,26 @@ class EventChannels(commands.Cog):
         # Check if this is an event channel
         event_to_remove = None
         for event_id, data in stored.items():
-            if channel.id in (data.get("text"), data.get("voice")):
+            # Check if it's the text channel
+            is_text_channel = channel.id == data.get("text")
+
+            # Check if it's a voice channel
+            voice_channel_ids = data.get("voice", [])
+            # Handle both old format (single ID) and new format (list of IDs)
+            if isinstance(voice_channel_ids, int):
+                voice_channel_ids = [voice_channel_ids]
+            is_voice_channel = channel.id in voice_channel_ids
+
+            if is_text_channel or is_voice_channel:
                 log.info(f"Event channel '{channel.name}' was deleted externally - checking if cleanup is needed")
 
-                # Check if both channels are gone
+                # Check if all channels are gone
                 text_channel = guild.get_channel(data.get("text")) if data.get("text") else None
-                voice_channel = guild.get_channel(data.get("voice")) if data.get("voice") else None
+                voice_channels_exist = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
 
-                if not text_channel and not voice_channel:
-                    # Both channels are gone, clean up completely
-                    log.info(f"Both event channels are gone for event {event_id} - cleaning up completely")
+                if not text_channel and not voice_channels_exist:
+                    # All channels are gone, clean up completely
+                    log.info(f"All event channels are gone for event {event_id} - cleaning up completely")
                     event_to_remove = event_id
 
                     # Delete the role if it exists
