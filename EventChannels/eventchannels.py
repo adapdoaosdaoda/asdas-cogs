@@ -334,37 +334,50 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
-    async def setvoicemultiplier(self, ctx, keyword: str, count: int):
-        """Set up multiple voice channel creation based on a keyword in the event name.
+    async def setvoicemultiplier(self, ctx, keyword: str, capacity: int):
+        """Set up dynamic voice channel creation based on role member count.
 
-        When an event name contains the specified keyword, the bot will create multiple
-        voice channels instead of just one. The channels will be numbered (e.g., "voice 1",
-        "voice 2") if count > 1, or use the base name if count = 1.
+        When an event name contains the specified keyword, the bot will create voice
+        channels dynamically based on the number of people in the event role.
 
-        Parameters:
+        **How it works:**
+        - Capacity = maximum users per voice channel
+        - Channels created = floor(role_members / capacity), minimum 1
+        - Each channel has a user limit set to the capacity
+
+        **Parameters:**
         - keyword: The keyword to detect in event names (case-insensitive)
-        - count: Number of voice channels to create (1-10)
+        - capacity: Maximum users per voice channel (1-99)
 
-        Examples:
-        - `[p]setvoicemultiplier raid 3` - Create 3 voice channels for events with "raid" in the name
-        - `[p]setvoicemultiplier voice 5` - Create 5 voice channels for events with "voice" in the name
+        **Examples:**
+        - `[p]setvoicemultiplier hero 9`
+          - 10 role members → 1 channel (limit: 9 users)
+          - 18 role members → 2 channels (limit: 9 users each)
+          - 27 role members → 3 channels (limit: 9 users each)
+
+        - `[p]setvoicemultiplier sword 5`
+          - 5 role members → 1 channel (limit: 5 users)
+          - 12 role members → 2 channels (limit: 5 users each)
+          - 20 role members → 4 channels (limit: 5 users each)
 
         To disable this feature, use `[p]disablevoicemultiplier`
         """
-        if count < 1:
-            await ctx.send("❌ Count must be at least 1.")
+        if capacity < 1:
+            await ctx.send("❌ Capacity must be at least 1.")
             return
-        if count > 10:
-            await ctx.send("❌ Count cannot exceed 10 to avoid creating too many channels.")
+        if capacity > 99:
+            await ctx.send("❌ Capacity cannot exceed 99 (Discord's voice channel user limit).")
             return
 
         await self.config.guild(ctx.guild).voice_multiplier_keyword.set(keyword.lower())
-        await self.config.guild(ctx.guild).voice_multiplier_count.set(count)
+        await self.config.guild(ctx.guild).voice_multiplier_count.set(capacity)
 
-        if count == 1:
-            await ctx.send(f"✅ Voice multiplier set: Events with **'{keyword}'** will create **1 voice channel** (standard behavior).")
-        else:
-            await ctx.send(f"✅ Voice multiplier set: Events with **'{keyword}'** will create **{count} voice channels** (numbered).")
+        await ctx.send(
+            f"✅ Voice multiplier set for keyword **'{keyword}'**:\n"
+            f"• Capacity: **{capacity} users per channel**\n"
+            f"• Channels will be created dynamically based on role member count\n"
+            f"• Formula: `channels = floor(members / {capacity}), minimum 1`"
+        )
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -518,7 +531,7 @@ class EventChannels(commands.Cog):
         event_start_display = f"`{event_start_message}`" if event_start_message else "Disabled"
         deletion_warning_display = f"`{deletion_warning_message}`" if deletion_warning_message else "Disabled"
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
-        voice_multiplier_display = f"Keyword: `{voice_multiplier_keyword}`, Count: {voice_multiplier_count}" if voice_multiplier_keyword else "Disabled"
+        voice_multiplier_display = f"Keyword: `{voice_multiplier_keyword}`, Capacity: {voice_multiplier_count} users/channel" if voice_multiplier_keyword else "Disabled"
 
         # Display channel name limit setting
         if channel_name_limit_char:
@@ -978,11 +991,21 @@ class EventChannels(commands.Cog):
 
             # Check if voice multiplier is enabled
             voice_multiplier_keyword = await self.config.guild(guild).voice_multiplier_keyword()
-            voice_multiplier_count = await self.config.guild(guild).voice_multiplier_count()
+            voice_multiplier_capacity = await self.config.guild(guild).voice_multiplier_count()
 
             # Determine if this event should use voice multiplier
             use_multiplier = voice_multiplier_keyword and voice_multiplier_keyword in event.name.lower()
-            voice_count = voice_multiplier_count if use_multiplier else 1
+
+            # Calculate number of voice channels based on role member count
+            if use_multiplier and role:
+                role_member_count = len(role.members)
+                # Formula: max(1, floor(members / capacity))
+                voice_count = max(1, role_member_count // voice_multiplier_capacity)
+                user_limit = voice_multiplier_capacity
+                log.info(f"Voice multiplier active: {role_member_count} members / {voice_multiplier_capacity} capacity = {voice_count} channel(s)")
+            else:
+                voice_count = 1
+                user_limit = 0  # 0 = unlimited
 
             text_channel = None
             voice_channels = []
@@ -1013,10 +1036,11 @@ class EventChannels(commands.Cog):
                     voice_channel = await guild.create_voice_channel(
                         name=voice_channel_name,
                         category=category,
+                        user_limit=user_limit,  # Set user limit (0 = unlimited)
                         reason=f"Scheduled event '{event.name}' starting soon",
                     )
                     voice_channels.append(voice_channel)
-                    log.info(f"Created voice channel: {voice_channel.name}")
+                    log.info(f"Created voice channel: {voice_channel.name} (user limit: {user_limit if user_limit > 0 else 'unlimited'})")
 
                 # Now apply permission overwrites
                 await text_channel.edit(overwrites=overwrites)
