@@ -1264,6 +1264,7 @@ class EventChannels(commands.Cog):
                             guild.me: discord.PermissionOverwrite(
                                 view_channel=True,
                                 send_messages=True,
+                                manage_channels=True,
                             ),
                             role: discord.PermissionOverwrite(
                                 send_messages=False,  # Locked
