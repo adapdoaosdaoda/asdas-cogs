@@ -25,6 +25,8 @@ class EventChannels(commands.Cog):
             creation_minutes=15,  # Default creation time in minutes before event
             deletion_hours=4,  # Default deletion time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
+            event_start_message="{role} The event is starting now!",  # Message sent at event start
+            deletion_warning_message="⚠️ These channels will be deleted in 15 minutes.",  # Warning before deletion
             divider_enabled=True,  # Enable divider channel by default
             divider_name="━━━━━━ EVENT CHANNELS ━━━━━━",  # Default divider name
             divider_channel_id=None,  # Stores the divider channel ID
@@ -56,13 +58,14 @@ class EventChannels(commands.Cog):
             f"`{prefix}seteventroleformat <format>` - Customize role name format pattern\n"
             f"`{prefix}seteventchannelformat <format>` - Customize channel name format pattern\n"
             f"`{prefix}seteventannouncement <message>` - Set announcement message in event channels\n"
+            f"`{prefix}seteventstartmessage <message>` - Set message posted when event starts\n"
+            f"`{prefix}setdeletionwarning <message>` - Set warning message before channel deletion\n"
         )
         embed.add_field(name="Configuration", value=config_commands, inline=False)
 
         # Divider Commands
         divider_commands = (
             f"`{prefix}seteventdivider <true/false> [name]` - Enable/disable divider channel\n"
-            f"`{prefix}deletedivider` - Delete the divider channel\n"
         )
         embed.add_field(name="Divider Channel", value=divider_commands, inline=False)
 
@@ -193,9 +196,66 @@ class EventChannels(commands.Cog):
 
         if space_replacer is not None:
             await self.config.guild(ctx.guild).space_replacer.set(space_replacer)
-            await ctx.send(f"✅ Event channel format set to: `{format_string}` with space replacer: `{space_replacer}`")
         else:
-            await ctx.send(f"✅ Event channel format set to: `{format_string}`")
+            space_replacer = await self.config.guild(ctx.guild).space_replacer()
+
+        # Rename existing event channels
+        stored = await self.config.guild(ctx.guild).event_channels()
+        renamed_count = 0
+
+        for event_id, data in stored.items():
+            try:
+                # Fetch the event to get its name
+                event = await ctx.guild.fetch_scheduled_event(int(event_id))
+                if not event:
+                    continue
+
+                # Generate new channel names
+                base_name = event.name.lower().replace(" ", space_replacer)
+                new_text_name = format_string.format(name=base_name, type="text")
+                new_voice_name = format_string.format(name=base_name, type="voice")
+
+                # Rename text channel
+                text_channel = ctx.guild.get_channel(data.get("text"))
+                if text_channel and text_channel.name != new_text_name:
+                    try:
+                        await text_channel.edit(name=new_text_name, reason=f"Channel format updated by {ctx.author}")
+                        renamed_count += 1
+                        log.info(f"Renamed text channel to '{new_text_name}'")
+                    except discord.Forbidden:
+                        pass
+                    except Exception as e:
+                        log.error(f"Failed to rename text channel: {e}")
+
+                # Rename voice channel
+                voice_channel = ctx.guild.get_channel(data.get("voice"))
+                if voice_channel and voice_channel.name != new_voice_name:
+                    try:
+                        await voice_channel.edit(name=new_voice_name, reason=f"Channel format updated by {ctx.author}")
+                        renamed_count += 1
+                        log.info(f"Renamed voice channel to '{new_voice_name}'")
+                    except discord.Forbidden:
+                        pass
+                    except Exception as e:
+                        log.error(f"Failed to rename voice channel: {e}")
+
+            except discord.NotFound:
+                # Event no longer exists
+                continue
+            except Exception as e:
+                log.error(f"Failed to process event {event_id}: {e}")
+                continue
+
+        if space_replacer is not None:
+            if renamed_count > 0:
+                await ctx.send(f"✅ Event channel format set to: `{format_string}` with space replacer: `{space_replacer}`. Renamed {renamed_count} existing channel(s).")
+            else:
+                await ctx.send(f"✅ Event channel format set to: `{format_string}` with space replacer: `{space_replacer}`")
+        else:
+            if renamed_count > 0:
+                await ctx.send(f"✅ Event channel format set to: `{format_string}`. Renamed {renamed_count} existing channel(s).")
+            else:
+                await ctx.send(f"✅ Event channel format set to: `{format_string}`")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -225,6 +285,54 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
+    async def seteventstartmessage(self, ctx, *, message: str):
+        """Set the message posted when the event starts.
+
+        Available placeholders:
+        - {role} - Mentions the event role
+        - {event} - Event name
+
+        Examples:
+        - `{role} The event is starting now!` (default)
+        - `{role} {event} has begun!`
+        - `{role} Time to join!`
+
+        To disable event start messages, use: `none`
+        """
+        if message.lower() == "none":
+            await self.config.guild(ctx.guild).event_start_message.set("")
+            await ctx.send("✅ Event start messages disabled.")
+        else:
+            await self.config.guild(ctx.guild).event_start_message.set(message)
+            await ctx.send(f"✅ Event start message set to: `{message}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def setdeletionwarning(self, ctx, *, message: str):
+        """Set the warning message posted 15 minutes before channel deletion.
+
+        Available placeholders:
+        - {role} - Mentions the event role
+        - {event} - Event name
+
+        Examples:
+        - `⚠️ These channels will be deleted in 15 minutes.` (default)
+        - `{role} Event channels closing in 15 minutes!`
+        - `⚠️ {event} channels will be removed shortly.`
+
+        To disable deletion warnings, use: `none`
+        """
+        if message.lower() == "none":
+            await self.config.guild(ctx.guild).deletion_warning_message.set("")
+            await ctx.send("✅ Deletion warnings disabled.")
+        else:
+            await self.config.guild(ctx.guild).deletion_warning_message.set(message)
+            await ctx.send(f"✅ Deletion warning message set to: `{message}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
     async def seteventdivider(self, ctx, enabled: bool, *, divider_name: str = None):
         """Enable/disable divider channel and optionally set its name.
 
@@ -238,44 +346,28 @@ class EventChannels(commands.Cog):
         """
         await self.config.guild(ctx.guild).divider_enabled.set(enabled)
 
+        # If a new divider name is provided, update it and rename existing divider
         if divider_name:
             await self.config.guild(ctx.guild).divider_name.set(divider_name)
+
+            # Rename existing divider channel if it exists
+            divider_channel_id = await self.config.guild(ctx.guild).divider_channel_id()
+            if divider_channel_id:
+                divider_channel = ctx.guild.get_channel(divider_channel_id)
+                if divider_channel:
+                    try:
+                        await divider_channel.edit(name=divider_name, reason=f"Divider name updated by {ctx.author}")
+                        log.info(f"Renamed divider channel to '{divider_name}'")
+                    except discord.Forbidden:
+                        await ctx.send("⚠️ Settings updated but couldn't rename existing divider - missing permissions.")
+                        return
+                    except Exception as e:
+                        await ctx.send(f"⚠️ Settings updated but failed to rename existing divider: {e}")
+                        return
+
             await ctx.send(f"✅ Divider channel {'enabled' if enabled else 'disabled'} with name: `{divider_name}`")
         else:
             await ctx.send(f"✅ Divider channel {'enabled' if enabled else 'disabled'}.")
-
-    @commands.admin_or_permissions(manage_guild=True)
-    @commands.guild_only()
-    @commands.command()
-    async def deletedivider(self, ctx):
-        """Delete the divider channel.
-
-        The divider will be recreated automatically when the next event channels are created.
-        This is useful if you want to reset the divider or if it's in the wrong category.
-        """
-        divider_channel_id = await self.config.guild(ctx.guild).divider_channel_id()
-
-        if not divider_channel_id:
-            await ctx.send("❌ No divider channel exists.")
-            return
-
-        divider_channel = ctx.guild.get_channel(divider_channel_id)
-
-        if not divider_channel:
-            await ctx.send("❌ The stored divider channel no longer exists.")
-            await self.config.guild(ctx.guild).divider_channel_id.set(None)
-            await self.config.guild(ctx.guild).divider_roles.set([])
-            return
-
-        try:
-            await divider_channel.delete(reason=f"Divider deleted by {ctx.author}")
-            await self.config.guild(ctx.guild).divider_channel_id.set(None)
-            await self.config.guild(ctx.guild).divider_roles.set([])
-            await ctx.send("✅ Divider channel deleted. It will be recreated when the next event channels are created.")
-        except discord.Forbidden:
-            await ctx.send("❌ I don't have permission to delete the divider channel.")
-        except Exception as e:
-            await ctx.send(f"❌ Failed to delete divider channel: {e}")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -290,12 +382,16 @@ class EventChannels(commands.Cog):
         channel_format = await self.config.guild(ctx.guild).channel_format()
         space_replacer = await self.config.guild(ctx.guild).space_replacer()
         announcement_message = await self.config.guild(ctx.guild).announcement_message()
+        event_start_message = await self.config.guild(ctx.guild).event_start_message()
+        deletion_warning_message = await self.config.guild(ctx.guild).deletion_warning_message()
         divider_enabled = await self.config.guild(ctx.guild).divider_enabled()
         divider_name = await self.config.guild(ctx.guild).divider_name()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
         announcement_display = f"`{announcement_message}`" if announcement_message else "Disabled"
+        event_start_display = f"`{event_start_message}`" if event_start_message else "Disabled"
+        deletion_warning_display = f"`{deletion_warning_message}`" if deletion_warning_message else "Disabled"
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
 
         embed = discord.Embed(title="Event Channels Settings", color=discord.Color.blue())
@@ -307,6 +403,8 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
         embed.add_field(name="Space Replacer", value=f"`{space_replacer}`", inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
+        embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
+        embed.add_field(name="Deletion Warning", value=deletion_warning_display, inline=False)
         embed.add_field(name="Divider Channel", value=divider_display, inline=False)
 
         try:
@@ -323,6 +421,8 @@ class EventChannels(commands.Cog):
                 f"**Channel Format:** `{channel_format}`\n"
                 f"**Space Replacer:** `{space_replacer}`\n"
                 f"**Announcement:** {announcement_display}\n"
+                f"**Event Start Message:** {event_start_display}\n"
+                f"**Deletion Warning:** {deletion_warning_display}\n"
                 f"**Divider Channel:** {divider_display}"
             )
             await ctx.send(message)
@@ -803,8 +903,67 @@ class EventChannels(commands.Cog):
             }
             await self.config.guild(guild).event_channels.set(stored)
 
+            # ---------- Event Start ----------
+
+            # Wait until event starts
+            await asyncio.sleep(max(0, (start_time - datetime.now(timezone.utc)).total_seconds()))
+
+            # Send event start message if configured
+            event_start_template = await self.config.guild(guild).event_start_message()
+            if event_start_template:
+                event_start_msg = event_start_template.format(
+                    role=role.mention,
+                    event=event.name
+                )
+                try:
+                    await text_channel.send(event_start_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+                    log.info(f"Sent event start message to {text_channel.name}")
+                except discord.Forbidden:
+                    log.warning(f"Could not send event start message to {text_channel.name} - missing permissions")
+
+            # ---------- Deletion Warning ----------
+
+            # Calculate when to send deletion warning (15 minutes before deletion)
+            warning_time = delete_time - timedelta(minutes=15)
+            await asyncio.sleep(max(0, (warning_time - datetime.now(timezone.utc)).total_seconds()))
+
+            # Send deletion warning and lock channels
+            deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
+            if deletion_warning_template:
+                deletion_warning_msg = deletion_warning_template.format(
+                    role=role.mention,
+                    event=event.name
+                )
+                try:
+                    await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+                    log.info(f"Sent deletion warning to {text_channel.name}")
+                except discord.Forbidden:
+                    log.warning(f"Could not send deletion warning to {text_channel.name} - missing permissions")
+
+            # Lock channels - remove send_messages permission for the role
+            try:
+                locked_overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                    ),
+                    role: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,  # Locked
+                        connect=True,
+                        speak=False,  # Locked in voice
+                    ),
+                }
+                await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
+                await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
+                log.info(f"Locked channels for event '{event.name}'")
+            except discord.Forbidden:
+                log.warning(f"Could not lock channels for event '{event.name}' - missing permissions")
+
             # ---------- Cleanup ----------
 
+            # Wait the remaining 15 minutes before deletion
             await asyncio.sleep(max(0, (delete_time - datetime.now(timezone.utc)).total_seconds()))
 
             data = stored.get(str(event.id))
