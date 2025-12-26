@@ -843,13 +843,22 @@ class EventChannels(commands.Cog):
                 test_roles.append(e2e_role)
                 await ctx.send(f"✅ Created matching role: `{expected_role_name}`")
 
+                # Create a voice channel for the event (required for voice entity type)
+                e2e_voice_channel = await guild.create_voice_channel(
+                    name="🧪 E2E Test Voice",
+                    category=category,
+                    reason="E2E stress test - voice channel for event"
+                )
+                test_channels.append(e2e_voice_channel)
+                await ctx.send(f"✅ Created voice channel for event: `{e2e_voice_channel.name}`")
+
                 # Create the scheduled event
                 test_event = await guild.create_scheduled_event(
                     name=event_name,
                     start_time=event_start,
                     entity_type=discord.EntityType.voice,
                     privacy_level=discord.PrivacyLevel.guild_only,
-                    location="🧪 Test Location",
+                    channel=e2e_voice_channel,
                     reason="E2E stress test"
                 )
                 test_events.append(test_event)
@@ -985,14 +994,18 @@ class EventChannels(commands.Cog):
             # ========== TEST 5: Divider Channel Updates ==========
             await ctx.send("\n**TEST 5: Divider Channel Updates**")
             try:
-                # Test adding roles to divider
-                await self._update_divider_permissions(guild, role1, add=True)
-                await asyncio.sleep(0.5)  # Brief delay for operation
-                await self._update_divider_permissions(guild, role2, add=True)
-                await asyncio.sleep(0.5)
-
+                # Check if divider is configured first
                 divider_channel_id = await self.config.guild(guild).divider_channel_id()
-                if divider_channel_id:
+                if not divider_channel_id:
+                    await ctx.send("⏭️ Skipping Divider Channel test (no divider configured)")
+                    await report_success("Divider Channel Updates (skipped - not configured)")
+                else:
+                    # Test adding roles to divider
+                    await self._update_divider_permissions(guild, role1, add=True)
+                    await asyncio.sleep(0.5)  # Brief delay for operation
+                    await self._update_divider_permissions(guild, role2, add=True)
+                    await asyncio.sleep(0.5)
+
                     divider = guild.get_channel(divider_channel_id)
                     if divider:
                         # Verify roles have access
@@ -1003,8 +1016,6 @@ class EventChannels(commands.Cog):
                             await report_failure("Divider Role Permissions", "Roles don't have view access")
                     else:
                         await report_failure("Divider Channel Updates", "Divider channel not found")
-                else:
-                    await report_failure("Divider Channel Updates", "No divider channel ID stored")
             except Exception as e:
                 await report_failure("Divider Channel Updates", str(e))
 
@@ -1029,7 +1040,9 @@ class EventChannels(commands.Cog):
                         manage_channels=True,
                     ),
                     role1: discord.PermissionOverwrite(
+                        view_channel=True,
                         send_messages=False,
+                        connect=True,
                         speak=False,
                     ),
                 }
