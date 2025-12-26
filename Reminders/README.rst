@@ -32,13 +32,16 @@ Example: ``[p]remindme 1h Don't forget the meeting {time}!`` will send a reminde
 Commands:
 ---------
 
-Here are all the commands included in this cog (31):
+Here are all the commands included in this cog (32):
 
 * ``[p]remind [destination] [targets]... <time> [message_or_text]``
  Create a reminder with optional reminder text or message, in a channel with an user/role ping.
 
 * ``[p]reminder``
  List, edit and delete existing reminders, or create FIFO/commands or Say reminders.
+
+* ``[p]reminder auto_delete <reminder> <minutes>``
+ Edit the auto-delete time of an existing Reminder from its ID. Set to 0 to disable, or -1 to use global default.
 
 * ``[p]reminder clear [confirmation=False]``
  Clear all your existing reminders.
@@ -81,6 +84,9 @@ Here are all the commands included in this cog (31):
 
 * ``[p]setreminders``
  Configure Reminders.
+
+* ``[p]setreminders autodeleteminutesreminders <auto_delete_minutes>``
+ Auto-delete reminder messages after N minutes (0 to disable).
 
 * ``[p]setreminders clearuserreminders <user> [confirmation=False]``
  Clear all existing reminders for a user.
