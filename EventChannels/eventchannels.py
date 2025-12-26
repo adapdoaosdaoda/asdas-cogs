@@ -453,7 +453,15 @@ class EventChannels(commands.Cog):
 
         # No divider exists, create one
         try:
-            # Create divider channel hidden by default (only visible to those with event access)
+            # Create divider channel without overwrites first
+            divider_channel = await guild.create_text_channel(
+                name=divider_name,
+                category=category,
+                reason="Creating divider channel for event channels",
+            )
+            log.info(f"Created new divider channel: {divider_channel.name}")
+
+            # Now apply permission overwrites in a separate step
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(
                     view_channel=False,  # Hidden by default
@@ -478,23 +486,31 @@ class EventChannels(commands.Cog):
                         add_reactions=False,
                     )
 
-            divider_channel = await guild.create_text_channel(
-                name=divider_name,
-                category=category,
-                overwrites=overwrites,
-                reason="Creating divider channel for event channels",
-            )
+            # Apply the overwrites
+            await divider_channel.edit(overwrites=overwrites)
+            log.info(f"Successfully applied permissions to divider channel")
 
             # Store the divider channel ID
             await self.config.guild(guild).divider_channel_id.set(divider_channel.id)
-            log.info(f"Created new divider channel: {divider_channel.name}")
             return divider_channel
 
-        except discord.Forbidden:
-            log.error(f"Permission error while creating divider channel in guild '{guild.name}'")
+        except discord.Forbidden as e:
+            log.error(f"Permission error while creating divider channel in guild '{guild.name}': {e}")
+            # Clean up the channel if it was created but permissions failed
+            if 'divider_channel' in locals():
+                try:
+                    await divider_channel.delete(reason="Failed to apply permissions")
+                except:
+                    pass
             return None
         except Exception as e:
             log.error(f"Failed to create divider channel in guild '{guild.name}': {e}")
+            # Clean up the channel if it was created
+            if 'divider_channel' in locals():
+                try:
+                    await divider_channel.delete(reason="Creation failed")
+                except:
+                    pass
             return None
 
     async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent):
