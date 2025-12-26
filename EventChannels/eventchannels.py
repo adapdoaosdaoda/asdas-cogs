@@ -34,6 +34,57 @@ class EventChannels(commands.Cog):
 
     # ---------- Setup Commands ----------
 
+    @commands.guild_only()
+    @commands.command()
+    async def eventchannels(self, ctx):
+        """Display all EventChannels commands with explanations."""
+        prefix = ctx.clean_prefix
+
+        embed = discord.Embed(
+            title="EventChannels Commands",
+            description="Automatically creates text & voice channels from Discord Scheduled Events and manages cleanup.",
+            color=discord.Color.blue()
+        )
+
+        # Configuration Commands
+        config_commands = (
+            f"`{prefix}seteventcategory <category>` - Set where event channels will be created\n"
+            f"`{prefix}seteventtimezone <timezone>` - Set timezone for event role matching (e.g., Europe/Amsterdam)\n"
+            f"`{prefix}seteventcreationtime <minutes>` - Set when channels are created before event start (default: 15)\n"
+            f"`{prefix}seteventdeletion <hours>` - Set when channels are deleted after event start (default: 4)\n"
+            f"`{prefix}seteventroleformat <format>` - Customize role name format pattern\n"
+            f"`{prefix}seteventchannelformat <format>` - Customize channel name format pattern\n"
+            f"`{prefix}seteventannouncement <message>` - Set announcement message in event channels\n"
+        )
+        embed.add_field(name="Configuration", value=config_commands, inline=False)
+
+        # Divider Commands
+        divider_commands = (
+            f"`{prefix}seteventdivider <true/false> [name]` - Enable/disable divider channel\n"
+            f"`{prefix}renamedivider <new_name>` - Rename the existing divider channel\n"
+            f"`{prefix}deletedivider` - Delete the divider channel\n"
+        )
+        embed.add_field(name="Divider Channel", value=divider_commands, inline=False)
+
+        # View Settings
+        view_commands = f"`{prefix}vieweventsettings` - View current configuration settings"
+        embed.add_field(name="View Settings", value=view_commands, inline=False)
+
+        embed.set_footer(text="Most commands require Manage Guild permission")
+
+        try:
+            await ctx.send(embed=embed)
+        except discord.Forbidden:
+            # Fallback to plain text if bot lacks embed permissions
+            message = (
+                f"**EventChannels Commands**\n\n"
+                f"**Configuration:**\n{config_commands}\n\n"
+                f"**Divider Channel:**\n{divider_commands}\n\n"
+                f"**View Settings:**\n{view_commands}\n\n"
+                f"Most commands require Manage Guild permission"
+            )
+            await ctx.send(message)
+
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
