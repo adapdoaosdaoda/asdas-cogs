@@ -702,23 +702,26 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            # Create text channel
+            # Create text channel without overwrites first
             test_text_channel = await guild.create_text_channel(
                 name="🧪-test-event-text",
                 category=category,
-                overwrites=overwrites,
                 reason="Testing channel lock mechanism"
             )
             await ctx.send(f"✅ Created test text channel: {test_text_channel.mention}")
 
-            # Create voice channel
+            # Create voice channel without overwrites first
             test_voice_channel = await guild.create_voice_channel(
                 name="🧪 Test Event Voice",
                 category=category,
-                overwrites=overwrites,
                 reason="Testing channel lock mechanism"
             )
             await ctx.send(f"✅ Created test voice channel: `{test_voice_channel.name}`")
+
+            # Now apply permission overwrites
+            await test_text_channel.edit(overwrites=overwrites)
+            await test_voice_channel.edit(overwrites=overwrites)
+            await ctx.send(f"✅ Applied permission overwrites to channels")
 
             # Now attempt to lock the channels using the same logic as the actual deletion process
             await ctx.send("🔒 Attempting to lock channels...")
@@ -823,10 +826,10 @@ class EventChannels(commands.Cog):
                     ),
                 }
 
+                # Create channels without overwrites first
                 text_ch1 = await guild.create_text_channel(
                     name="🧪-stress-test-1",
                     category=category,
-                    overwrites=overwrites,
                     reason="Stress testing"
                 )
                 test_channels.append(text_ch1)
@@ -834,10 +837,13 @@ class EventChannels(commands.Cog):
                 voice_ch1 = await guild.create_voice_channel(
                     name="🧪 Stress Test Voice 1",
                     category=category,
-                    overwrites=overwrites,
                     reason="Stress testing"
                 )
                 test_channels.append(voice_ch1)
+
+                # Now apply permission overwrites
+                await text_ch1.edit(overwrites=overwrites)
+                await voice_ch1.edit(overwrites=overwrites)
 
                 await report_success("Basic Channel Creation")
             except Exception as e:
