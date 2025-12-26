@@ -33,8 +33,7 @@ class EventChannels(commands.Cog):
             divider_roles=[],  # Track role IDs that have access to the divider
             channel_name_limit=100,  # Character limit for channel names (Discord max is 100)
             channel_name_limit_char="",  # Character to limit name at (empty = use numeric limit)
-            voice_multiplier_keyword="",  # Keyword to trigger multiple voice channel creation (empty = disabled)
-            voice_multiplier_count=1,  # Number of voice channels to create when keyword is detected
+            voice_multipliers={},  # Dictionary of keyword:multiplier pairs for dynamic voice channel creation
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -70,8 +69,10 @@ class EventChannels(commands.Cog):
 
         # Voice Multiplier Commands
         voice_commands = (
-            f"`{prefix}setvoicemultiplier <keyword> <count>` - Create multiple voice channels when keyword is in event name\n"
-            f"`{prefix}disablevoicemultiplier` - Disable multiple voice channel creation\n"
+            f"`{prefix}setvoicemultiplier <keyword> <count>` - Add/update voice multiplier for a keyword\n"
+            f"`{prefix}listvoicemultipliers` - List all configured voice multipliers\n"
+            f"`{prefix}removevoicemultiplier <keyword>` - Remove a specific voice multiplier\n"
+            f"`{prefix}disablevoicemultiplier` - Disable all voice multipliers\n"
         )
         embed.add_field(name="Voice Channel Multiplier", value=voice_commands, inline=False)
 
@@ -340,6 +341,9 @@ class EventChannels(commands.Cog):
         When an event name contains the specified keyword, the bot will create voice
         channels dynamically based on the number of people in the event role.
 
+        You can configure multiple keywords, each with their own multiplier.
+        If an event name matches multiple keywords, the first matching keyword will be used.
+
         **How it works:**
         - Multiplier = channel capacity minus 1
         - Channels created = floor(role_members / multiplier), minimum 1
@@ -360,7 +364,9 @@ class EventChannels(commands.Cog):
           - 12 role members → 3 channels (limit: 5 users each)
           - 20 role members → 5 channels (limit: 5 users each)
 
-        To disable this feature, use `[p]disablevoicemultiplier`
+        To remove a keyword, use `[p]removevoicemultiplier <keyword>`
+        To see all configured multipliers, use `[p]listvoicemultipliers`
+        To disable all multipliers, use `[p]disablevoicemultiplier`
         """
         if multiplier < 1:
             await ctx.send("❌ Multiplier must be at least 1.")
@@ -369,28 +375,89 @@ class EventChannels(commands.Cog):
             await ctx.send("❌ Multiplier cannot exceed 99.")
             return
 
-        await self.config.guild(ctx.guild).voice_multiplier_keyword.set(keyword.lower())
-        await self.config.guild(ctx.guild).voice_multiplier_count.set(multiplier)
+        # Get current multipliers dictionary
+        voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
+
+        # Add or update the keyword
+        keyword_lower = keyword.lower()
+        voice_multipliers[keyword_lower] = multiplier
+
+        # Save back to config
+        await self.config.guild(ctx.guild).voice_multipliers.set(voice_multipliers)
 
         await ctx.send(
             f"✅ Voice multiplier set for keyword **'{keyword}'**:\n"
             f"• Multiplier: **{multiplier}**\n"
             f"• User limit per channel: **{multiplier + 1}**\n"
             f"• Channels will be created dynamically based on role member count\n"
-            f"• Formula: `channels = floor(members / {multiplier}), minimum 1`"
+            f"• Formula: `channels = floor(members / {multiplier}), minimum 1`\n\n"
+            f"Use `{ctx.clean_prefix}listvoicemultipliers` to see all configured multipliers."
         )
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
     async def disablevoicemultiplier(self, ctx):
-        """Disable multiple voice channel creation.
+        """Disable all voice multipliers.
 
-        This will restore the default behavior of creating only one voice channel per event.
+        This will clear all configured keyword-multiplier pairs and restore the default
+        behavior of creating only one voice channel per event.
         """
-        await self.config.guild(ctx.guild).voice_multiplier_keyword.set("")
-        await self.config.guild(ctx.guild).voice_multiplier_count.set(1)
-        await ctx.send("✅ Voice multiplier disabled. All events will create a single voice channel.")
+        await self.config.guild(ctx.guild).voice_multipliers.set({})
+        await ctx.send("✅ All voice multipliers disabled. All events will create a single voice channel.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def listvoicemultipliers(self, ctx):
+        """List all configured voice multipliers.
+
+        Shows all keywords and their associated multipliers.
+        """
+        voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
+
+        if not voice_multipliers:
+            await ctx.send(f"❌ No voice multipliers configured. Use `{ctx.clean_prefix}setvoicemultiplier <keyword> <multiplier>` to add one.")
+            return
+
+        # Build the list
+        multiplier_list = []
+        for keyword, multiplier in sorted(voice_multipliers.items()):
+            multiplier_list.append(
+                f"• **{keyword}**: multiplier={multiplier}, limit={multiplier + 1} users/channel"
+            )
+
+        await ctx.send(
+            f"**Configured Voice Multipliers:**\n" + "\n".join(multiplier_list) + "\n\n"
+            f"Use `{ctx.clean_prefix}removevoicemultiplier <keyword>` to remove a multiplier."
+        )
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def removevoicemultiplier(self, ctx, keyword: str):
+        """Remove a specific voice multiplier keyword.
+
+        **Parameters:**
+        - keyword: The keyword to remove (case-insensitive)
+
+        **Example:**
+        - `[p]removevoicemultiplier hero`
+        """
+        voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
+        keyword_lower = keyword.lower()
+
+        if keyword_lower not in voice_multipliers:
+            await ctx.send(f"❌ Keyword **'{keyword}'** is not configured.")
+            return
+
+        # Remove the keyword
+        del voice_multipliers[keyword_lower]
+
+        # Save back to config
+        await self.config.guild(ctx.guild).voice_multipliers.set(voice_multipliers)
+
+        await ctx.send(f"✅ Removed voice multiplier for keyword **'{keyword}'**.")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -523,8 +590,7 @@ class EventChannels(commands.Cog):
         divider_name = await self.config.guild(ctx.guild).divider_name()
         channel_name_limit = await self.config.guild(ctx.guild).channel_name_limit()
         channel_name_limit_char = await self.config.guild(ctx.guild).channel_name_limit_char()
-        voice_multiplier_keyword = await self.config.guild(ctx.guild).voice_multiplier_keyword()
-        voice_multiplier_count = await self.config.guild(ctx.guild).voice_multiplier_count()
+        voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
@@ -532,7 +598,15 @@ class EventChannels(commands.Cog):
         event_start_display = f"`{event_start_message}`" if event_start_message else "Disabled"
         deletion_warning_display = f"`{deletion_warning_message}`" if deletion_warning_message else "Disabled"
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
-        voice_multiplier_display = f"Keyword: `{voice_multiplier_keyword}`, Multiplier: {voice_multiplier_count} (limit: {voice_multiplier_count + 1} users/channel)" if voice_multiplier_keyword else "Disabled"
+
+        # Format voice multipliers display
+        if voice_multipliers:
+            multiplier_list = []
+            for keyword, multiplier in sorted(voice_multipliers.items()):
+                multiplier_list.append(f"`{keyword}`: {multiplier} (limit: {multiplier + 1})")
+            voice_multiplier_display = ", ".join(multiplier_list)
+        else:
+            voice_multiplier_display = "Disabled"
 
         # Display channel name limit setting
         if channel_name_limit_char:
@@ -990,21 +1064,28 @@ class EventChannels(commands.Cog):
             # Now format with the limited base name
             text_channel_name = channel_format.format(name=base_name, type="text")
 
-            # Check if voice multiplier is enabled
-            voice_multiplier_keyword = await self.config.guild(guild).voice_multiplier_keyword()
-            voice_multiplier_capacity = await self.config.guild(guild).voice_multiplier_count()
+            # Check for voice multipliers
+            voice_multipliers = await self.config.guild(guild).voice_multipliers()
 
-            # Determine if this event should use voice multiplier
-            use_multiplier = voice_multiplier_keyword and voice_multiplier_keyword in event.name.lower()
+            # Find the first matching keyword in the event name
+            matched_keyword = None
+            voice_multiplier_capacity = None
+            event_name_lower = event.name.lower()
+
+            for keyword, multiplier in voice_multipliers.items():
+                if keyword in event_name_lower:
+                    matched_keyword = keyword
+                    voice_multiplier_capacity = multiplier
+                    break
 
             # Calculate number of voice channels based on role member count
-            if use_multiplier and role:
+            if matched_keyword and voice_multiplier_capacity and role:
                 role_member_count = len(role.members)
                 # Formula: max(1, floor(members / multiplier))
                 voice_count = max(1, role_member_count // voice_multiplier_capacity)
                 # User limit is multiplier + 1
                 user_limit = voice_multiplier_capacity + 1
-                log.info(f"Voice multiplier active: {role_member_count} members / {voice_multiplier_capacity} = {voice_count} channel(s) with limit {user_limit}")
+                log.info(f"Voice multiplier active for keyword '{matched_keyword}': {role_member_count} members / {voice_multiplier_capacity} = {voice_count} channel(s) with limit {user_limit}")
             else:
                 voice_count = 1
                 user_limit = 0  # 0 = unlimited
