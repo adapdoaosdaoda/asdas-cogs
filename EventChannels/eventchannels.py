@@ -86,6 +86,10 @@ class EventChannels(commands.Cog):
         view_commands = f"`{prefix}vieweventsettings` - View current configuration settings"
         embed.add_field(name="View Settings", value=view_commands, inline=False)
 
+        # Testing
+        test_commands = f"`{prefix}testchannellock` - Test channel locking permissions"
+        embed.add_field(name="Testing", value=test_commands, inline=False)
+
         embed.set_footer(text="Most commands require Manage Guild permission")
 
         try:
@@ -98,6 +102,7 @@ class EventChannels(commands.Cog):
                 f"**Voice Channel Multiplier:**\n{voice_commands}\n\n"
                 f"**Divider Channel:**\n{divider_commands}\n\n"
                 f"**View Settings:**\n{view_commands}\n\n"
+                f"**Testing:**\n{test_commands}\n\n"
                 f"Most commands require Manage Guild permission"
             )
             await ctx.send(message)
@@ -650,6 +655,113 @@ class EventChannels(commands.Cog):
                 f"**Divider Channel:** {divider_display}"
             )
             await ctx.send(message)
+
+    @commands.guild_only()
+    @commands.has_permissions(manage_guild=True)
+    @commands.command()
+    async def testchannellock(self, ctx):
+        """Test the channel locking mechanism to verify bot permissions."""
+        guild = ctx.guild
+        category_id = await self.config.guild(guild).category_id()
+        category = guild.get_channel(category_id) if category_id else None
+
+        if not category:
+            await ctx.send("❌ No event category configured. Use `seteventcategory` first.")
+            return
+
+        await ctx.send("🔄 Starting channel lock test...")
+
+        test_role = None
+        test_text_channel = None
+        test_voice_channel = None
+
+        try:
+            # Create a test role
+            test_role = await guild.create_role(
+                name="🧪 Test Event Role",
+                reason="Testing channel lock mechanism"
+            )
+            await ctx.send(f"✅ Created test role: {test_role.mention}")
+
+            # Create test channels with permissions
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                guild.me: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_channels=True,
+                ),
+                test_role: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    connect=True,
+                    speak=True,
+                ),
+            }
+
+            # Create text channel
+            test_text_channel = await guild.create_text_channel(
+                name="🧪-test-event-text",
+                category=category,
+                overwrites=overwrites,
+                reason="Testing channel lock mechanism"
+            )
+            await ctx.send(f"✅ Created test text channel: {test_text_channel.mention}")
+
+            # Create voice channel
+            test_voice_channel = await guild.create_voice_channel(
+                name="🧪 Test Event Voice",
+                category=category,
+                overwrites=overwrites,
+                reason="Testing channel lock mechanism"
+            )
+            await ctx.send(f"✅ Created test voice channel: `{test_voice_channel.name}`")
+
+            # Now attempt to lock the channels using the same logic as the actual deletion process
+            await ctx.send("🔒 Attempting to lock channels...")
+
+            locked_overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                guild.me: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_channels=True,
+                ),
+                test_role: discord.PermissionOverwrite(
+                    send_messages=False,  # Locked
+                    speak=False,  # Locked in voice
+                ),
+            }
+
+            await test_text_channel.edit(overwrites=locked_overwrites, reason="Testing channel lock")
+            await test_voice_channel.edit(overwrites=locked_overwrites, reason="Testing channel lock")
+
+            await ctx.send("✅ **SUCCESS**: Channels locked successfully!")
+            await ctx.send("✅ Bot has correct permissions to lock channels before deletion.")
+
+        except discord.Forbidden as e:
+            await ctx.send(f"❌ **FAILED**: Missing permissions to lock channels.\n```{e}```")
+        except Exception as e:
+            await ctx.send(f"❌ **ERROR**: {type(e).__name__}: {e}")
+        finally:
+            # Cleanup
+            await ctx.send("🧹 Cleaning up test channels and role...")
+            if test_text_channel:
+                try:
+                    await test_text_channel.delete(reason="Channel lock test completed")
+                except:
+                    pass
+            if test_voice_channel:
+                try:
+                    await test_voice_channel.delete(reason="Channel lock test completed")
+                except:
+                    pass
+            if test_role:
+                try:
+                    await test_role.delete(reason="Channel lock test completed")
+                except:
+                    pass
+            await ctx.send("✅ Test complete and cleanup finished.")
 
     # ---------- Startup ----------
 
