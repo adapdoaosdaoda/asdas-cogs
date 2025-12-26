@@ -34,6 +34,7 @@ class EventChannels(commands.Cog):
             channel_name_limit=100,  # Character limit for channel names (Discord max is 100)
             channel_name_limit_char="",  # Character to limit name at (empty = use numeric limit)
             voice_multipliers={},  # Dictionary of keyword:multiplier pairs for dynamic voice channel creation
+            role_readd_enabled=False,  # Automatically re-add event roles when removed by raid-helper
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -82,6 +83,12 @@ class EventChannels(commands.Cog):
         )
         embed.add_field(name="Divider Channel", value=divider_commands, inline=False)
 
+        # Role Management Commands
+        role_commands = (
+            f"`{prefix}setrolereadd <true/false>` - Enable/disable automatic role re-adding\n"
+        )
+        embed.add_field(name="Role Management", value=role_commands, inline=False)
+
         # View Settings
         view_commands = f"`{prefix}vieweventsettings` - View current configuration settings"
         embed.add_field(name="View Settings", value=view_commands, inline=False)
@@ -104,6 +111,7 @@ class EventChannels(commands.Cog):
                 f"**Configuration:**\n{config_commands}\n\n"
                 f"**Voice Channel Multiplier:**\n{voice_commands}\n\n"
                 f"**Divider Channel:**\n{divider_commands}\n\n"
+                f"**Role Management:**\n{role_commands}\n\n"
                 f"**View Settings:**\n{view_commands}\n\n"
                 f"**Testing:**\n{test_commands}\n\n"
                 f"Most commands require Manage Guild permission"
@@ -582,6 +590,22 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
+    async def setrolereadd(self, ctx, enabled: bool):
+        """Enable/disable automatic re-adding of event roles when removed.
+
+        When enabled, if a user has an event role removed (e.g., by raid-helper),
+        the bot will automatically re-add the role to maintain access to event channels.
+
+        Examples:
+        - `[p]setrolereadd True` - Enable automatic role re-adding
+        - `[p]setrolereadd False` - Disable automatic role re-adding
+        """
+        await self.config.guild(ctx.guild).role_readd_enabled.set(enabled)
+        await ctx.send(f"✅ Automatic event role re-adding {'enabled' if enabled else 'disabled'}.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
     async def vieweventsettings(self, ctx):
         """View current event channel settings."""
         category_id = await self.config.guild(ctx.guild).category_id()
@@ -599,6 +623,7 @@ class EventChannels(commands.Cog):
         channel_name_limit = await self.config.guild(ctx.guild).channel_name_limit()
         channel_name_limit_char = await self.config.guild(ctx.guild).channel_name_limit_char()
         voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
+        role_readd_enabled = await self.config.guild(ctx.guild).role_readd_enabled()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
@@ -606,6 +631,7 @@ class EventChannels(commands.Cog):
         event_start_display = f"`{event_start_message}`" if event_start_message else "Disabled"
         deletion_warning_display = f"`{deletion_warning_message}`" if deletion_warning_message else "Disabled"
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
+        role_readd_display = "Enabled" if role_readd_enabled else "Disabled"
 
         # Format voice multipliers display
         if voice_multipliers:
@@ -636,6 +662,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
         embed.add_field(name="Deletion Warning", value=deletion_warning_display, inline=False)
         embed.add_field(name="Divider Channel", value=divider_display, inline=False)
+        embed.add_field(name="Role Re-add", value=role_readd_display, inline=False)
 
         try:
             await ctx.send(embed=embed)
@@ -655,7 +682,8 @@ class EventChannels(commands.Cog):
                 f"**Announcement:** {announcement_display}\n"
                 f"**Event Start Message:** {event_start_display}\n"
                 f"**Deletion Warning:** {deletion_warning_display}\n"
-                f"**Divider Channel:** {divider_display}"
+                f"**Divider Channel:** {divider_display}\n"
+                f"**Role Re-add:** {role_readd_display}"
             )
             await ctx.send(message)
 
@@ -2121,6 +2149,36 @@ class EventChannels(commands.Cog):
 
             # Check if divider should be deleted (no more event roles)
             await self._cleanup_divider_if_empty(guild)
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        """Re-add event roles when they are removed from members (e.g., by raid-helper)."""
+        # Check if feature is enabled
+        role_readd_enabled = await self.config.guild(after.guild).role_readd_enabled()
+        if not role_readd_enabled:
+            return
+
+        # Check if any roles were removed
+        removed_roles = set(before.roles) - set(after.roles)
+        if not removed_roles:
+            return
+
+        # Get stored event channels to find active event roles
+        stored = await self.config.guild(after.guild).event_channels()
+
+        # Check each removed role to see if it matches an active event
+        for removed_role in removed_roles:
+            for event_id, data in stored.items():
+                if data.get("role") == removed_role.id:
+                    # This is an event role that was removed - re-add it
+                    try:
+                        await after.add_roles(removed_role, reason="EventChannels: Auto re-add event role")
+                        log.info(f"Re-added event role '{removed_role.name}' to {after.name} (ID: {after.id})")
+                    except discord.Forbidden:
+                        log.warning(f"Failed to re-add event role '{removed_role.name}' to {after.name} - insufficient permissions")
+                    except discord.HTTPException as e:
+                        log.error(f"Failed to re-add event role '{removed_role.name}' to {after.name}: {e}")
+                    break  # Only need to re-add once per role
 
     def cog_unload(self):
         """Cancel all active tasks when cog is unloaded."""
