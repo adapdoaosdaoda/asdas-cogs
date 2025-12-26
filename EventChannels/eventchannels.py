@@ -1185,9 +1185,7 @@ class EventChannels(commands.Cog):
                                 send_messages=True,
                             ),
                             role: discord.PermissionOverwrite(
-                                view_channel=True,
                                 send_messages=False,  # Locked
-                                connect=True,
                                 speak=False,  # Locked in voice
                             ),
                         }
