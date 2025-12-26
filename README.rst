@@ -5,7 +5,7 @@ README
 This cog automatically creates text and voice channels 15 minutes before (configurable), or immediately within that timeframe, a Discord event starts.
 It was made to complement `Raid-Helper <https://raid-helper.dev/>`_ (premium), which allows automatic event + matching role creation, but not automatic text channel creation nor automatic voice channel creation when using its web dashboard (automatic voice channels do work with manual text creation, but these are created instantly, not around event start).
 
-The cog also automatically deletes the channels after a configurable time (default: 4 hours) after the event start time, and if it has the permissions, the role that raid-helper creates.
+The cog also automatically deletes the channels after a configurable time (default: 4 hours) after the event start time, and if it has the permissions, the role that raid-helper creates. Before deletion, it sends a configurable warning message (default: 15 minutes before deletion) and locks the channels to prevent further messages.
 
 Reminders is simply a `cloned reminders <https://github.com/AAA3A-AAA3A/AAA3A-cogs/tree/main/reminders>`_ cog from `AAA3A-cogs <https://github.com/AAA3A-AAA3A/AAA3A-cogs>`_ but including a {time} variable to allow for inserting a discord relative time into the reminders.
 
@@ -57,13 +57,15 @@ Commands Overview
 +------------------------------+--------------------------------------------------------+
 | ``[p]seteventroleformat``    | Customize role name pattern                            |
 +------------------------------+--------------------------------------------------------+
-| ``[p]seteventchannelformat`` | Customize channel name pattern                         |
+| ``[p]seteventchannelformat`` | Customize channel name pattern and rename existing     |
 +------------------------------+--------------------------------------------------------+
 | ``[p]seteventannouncement``  | Configure announcement message in event channels       |
 +------------------------------+--------------------------------------------------------+
-| ``[p]seteventdivider``       | Enable/disable divider channel                         |
+| ``[p]seteventstartmessage``  | Configure message sent when event starts               |
 +------------------------------+--------------------------------------------------------+
-| ``[p]deletedivider``         | Delete the divider channel                             |
+| ``[p]setdeletionwarning``    | Configure warning message before channel deletion      |
++------------------------------+--------------------------------------------------------+
+| ``[p]seteventdivider``       | Enable/disable divider channel and rename existing     |
 +------------------------------+--------------------------------------------------------+
 | ``[p]vieweventsettings``     | Display current settings                               |
 +------------------------------+--------------------------------------------------------+
@@ -159,7 +161,7 @@ seteventchannelformat
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
 
-Customizes the pattern used for channel names. This allows you to control how the text and voice channels are named when they're automatically created.
+Customizes the pattern used for channel names. This allows you to control how the text and voice channels are named when they're automatically created. **This command will also rename all existing event channels** to match the new format.
 
 **Available placeholders:**
 
@@ -202,13 +204,63 @@ Sets the announcement message that will be posted in the event text channel when
 
 ⠀
 
+seteventstartmessage
+--------------------
+
+**Category:** Configuration
+**Permission:** Manage Server or Administrator
+
+Sets the message that will be posted in the event text channel when the event starts. This message is sent at the exact event start time.
+
+**Available placeholders:**
+
+- ``{role}`` - Mentions the event role
+- ``{event}`` - Event name
+
+**Examples:**
+
+- ``{role} The event is starting now!`` (default)
+- ``{role} {event} has begun!``
+- ``{role} Time to join!``
+
+**To disable event start messages:** ``[p]seteventstartmessage none``
+
+**Example:** ``[p]seteventstartmessage {role} {event} is now live!``
+
+⠀
+
+setdeletionwarning
+------------------
+
+**Category:** Configuration
+**Permission:** Manage Server or Administrator
+
+Sets the warning message that will be posted 15 minutes before the channels are deleted. After this message is sent, the channels are locked (users can no longer send messages or speak in voice).
+
+**Available placeholders:**
+
+- ``{role}`` - Mentions the event role
+- ``{event}`` - Event name
+
+**Examples:**
+
+- ``⚠️ These channels will be deleted in 15 minutes.`` (default)
+- ``{role} Event channels closing in 15 minutes!``
+- ``⚠️ {event} channels will be removed shortly.``
+
+**To disable deletion warnings:** ``[p]setdeletionwarning none``
+
+**Example:** ``[p]setdeletionwarning {role} Heads up! These channels close in 15 minutes.``
+
+⠀
+
 seteventdivider
 ---------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
 
-Enables or disables the divider channel feature and optionally sets a custom name for the divider. The divider channel is a special text channel created before all event channels to provide visual separation in the channel list. It persists across multiple events and is only visible to users with active event roles.
+Enables or disables the divider channel feature and optionally sets a custom name for the divider. The divider channel is a special text channel created before all event channels to provide visual separation in the channel list. It persists across multiple events and is only visible to users with active event roles. **If a new name is provided, the existing divider channel will be renamed automatically.**
 
 **Available options:**
 
@@ -221,20 +273,8 @@ The default divider name is: ``━━━━━━ EVENT CHANNELS ━━━━━
 **Examples:**
 
 - ``[p]seteventdivider True`` → Enable divider with default name
-- ``[p]seteventdivider True ════ RAID EVENTS ════`` → Enable with custom name
+- ``[p]seteventdivider True ════ RAID EVENTS ════`` → Enable with custom name (renames existing divider)
 - ``[p]seteventdivider False`` → Disable divider channel
-
-⠀
-
-deletedivider
--------------
-
-**Category:** Management
-**Permission:** Manage Server or Administrator
-
-Manually deletes the divider channel. The divider will be automatically recreated when the next event channels are created (if divider is enabled). This command is useful if you want to reset the divider position or if it's in the wrong category.
-
-**Example:** ``[p]deletedivider``
 
 ⠀
 
