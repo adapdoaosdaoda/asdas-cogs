@@ -379,17 +379,21 @@ class EventChannels(commands.Cog):
         """
         divider_enabled = await self.config.guild(guild).divider_enabled()
         if not divider_enabled:
+            log.info(f"Divider not enabled, skipping permission update for role '{role.name}'")
             return
 
         divider_channel_id = await self.config.guild(guild).divider_channel_id()
         if not divider_channel_id:
+            log.warning(f"No divider channel ID found when trying to update permissions for role '{role.name}'")
             return
 
         divider_channel = guild.get_channel(divider_channel_id)
         if not divider_channel:
+            log.warning(f"Divider channel {divider_channel_id} not found when trying to update permissions for role '{role.name}'")
             return
 
         divider_roles = await self.config.guild(guild).divider_roles()
+        log.info(f"Updating divider permissions: add={add}, role='{role.name}', current_roles={divider_roles}")
 
         try:
             if add and role.id not in divider_roles:
@@ -399,6 +403,7 @@ class EventChannels(commands.Cog):
                     send_messages=False,
                     add_reactions=False
                 )
+                log.info(f"Adding permission overwrite for role '{role.name}' (ID: {role.id}) to divider channel '{divider_channel.name}'")
                 await divider_channel.set_permissions(
                     role,
                     overwrite=overwrite,
@@ -406,9 +411,10 @@ class EventChannels(commands.Cog):
                 )
                 divider_roles.append(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"Added role '{role.name}' to divider channel permissions - can view but not send messages")
+                log.info(f"✅ Successfully added role '{role.name}' to divider channel permissions - can view but not send messages")
             elif not add and role.id in divider_roles:
                 # Remove role from divider permissions
+                log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
                 await divider_channel.set_permissions(
                     role,
                     overwrite=None,  # Remove the overwrite
@@ -416,11 +422,13 @@ class EventChannels(commands.Cog):
                 )
                 divider_roles.remove(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"Removed role '{role.name}' from divider channel permissions")
+                log.info(f"✅ Removed role '{role.name}' from divider channel permissions")
+            else:
+                log.info(f"Skipping divider permission update for role '{role.name}' - add={add}, already_tracked={role.id in divider_roles}")
         except discord.Forbidden as e:
-            log.error(f"Permission error while updating divider permissions for role '{role.name}': {e}")
+            log.error(f"❌ Permission error while updating divider permissions for role '{role.name}': {e}")
         except Exception as e:
-            log.error(f"Failed to update divider permissions for role '{role.name}': {e}")
+            log.error(f"❌ Failed to update divider permissions for role '{role.name}': {e}")
 
     async def _ensure_divider_channel(self, guild: discord.Guild, category: discord.CategoryChannel = None):
         """Ensure the divider channel exists in the specified category.
@@ -495,6 +503,7 @@ class EventChannels(commands.Cog):
 
             # Store the divider channel ID
             await self.config.guild(guild).divider_channel_id.set(divider_channel.id)
+            log.info(f"Stored divider channel ID: {divider_channel.id} (name: '{divider_channel.name}')")
             return divider_channel
 
         except discord.Forbidden as e:
