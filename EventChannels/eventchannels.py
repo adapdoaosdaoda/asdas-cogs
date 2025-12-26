@@ -926,10 +926,12 @@ class EventChannels(commands.Cog):
             channel_name_limit = await self.config.guild(guild).channel_name_limit()
             base_name = event.name.lower().replace(" ", space_replacer)
 
-            # Apply character limit to base name
+            # Apply character limit to base name only (not the full channel name)
+            if len(base_name) > channel_name_limit:
+                base_name = base_name[:channel_name_limit]
+
+            # Now format with the limited base name
             text_channel_name = channel_format.format(name=base_name, type="text")
-            if len(text_channel_name) > channel_name_limit:
-                text_channel_name = text_channel_name[:channel_name_limit]
 
             # Check if voice multiplier is enabled
             voice_multiplier_keyword = await self.config.guild(guild).voice_multiplier_keyword()
@@ -956,7 +958,7 @@ class EventChannels(commands.Cog):
 
                 # Create voice channel(s)
                 for i in range(voice_count):
-                    # Generate voice channel name
+                    # Generate voice channel name (base_name is already limited)
                     if voice_count > 1:
                         # Multiple channels: append number (e.g., "voice 1", "voice 2")
                         voice_channel_name = channel_format.format(name=base_name, type="voice")
@@ -964,10 +966,6 @@ class EventChannels(commands.Cog):
                     else:
                         # Single channel: use base name
                         voice_channel_name = channel_format.format(name=base_name, type="voice")
-
-                    # Apply character limit
-                    if len(voice_channel_name) > channel_name_limit:
-                        voice_channel_name = voice_channel_name[:channel_name_limit]
 
                     voice_channel = await guild.create_voice_channel(
                         name=voice_channel_name,
