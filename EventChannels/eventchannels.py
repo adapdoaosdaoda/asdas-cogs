@@ -334,49 +334,50 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
-    async def setvoicemultiplier(self, ctx, keyword: str, capacity: int):
+    async def setvoicemultiplier(self, ctx, keyword: str, multiplier: int):
         """Set up dynamic voice channel creation based on role member count.
 
         When an event name contains the specified keyword, the bot will create voice
         channels dynamically based on the number of people in the event role.
 
         **How it works:**
-        - Capacity = maximum users per voice channel
-        - Channels created = floor(role_members / capacity), minimum 1
-        - Each channel has a user limit set to the capacity
+        - Multiplier = channel capacity minus 1
+        - Channels created = floor(role_members / multiplier), minimum 1
+        - Each channel has a user limit set to (multiplier + 1)
 
         **Parameters:**
         - keyword: The keyword to detect in event names (case-insensitive)
-        - capacity: Maximum users per voice channel (1-99)
+        - multiplier: Divisor for calculating channels (1-99)
 
         **Examples:**
         - `[p]setvoicemultiplier hero 9`
-          - 10 role members → 1 channel (limit: 9 users)
-          - 18 role members → 2 channels (limit: 9 users each)
-          - 27 role members → 3 channels (limit: 9 users each)
+          - 10 role members → 1 channel (limit: 10 users)
+          - 18 role members → 2 channels (limit: 10 users each)
+          - 27 role members → 3 channels (limit: 10 users each)
 
-        - `[p]setvoicemultiplier sword 5`
+        - `[p]setvoicemultiplier sword 4`
           - 5 role members → 1 channel (limit: 5 users)
-          - 12 role members → 2 channels (limit: 5 users each)
-          - 20 role members → 4 channels (limit: 5 users each)
+          - 12 role members → 3 channels (limit: 5 users each)
+          - 20 role members → 5 channels (limit: 5 users each)
 
         To disable this feature, use `[p]disablevoicemultiplier`
         """
-        if capacity < 1:
-            await ctx.send("❌ Capacity must be at least 1.")
+        if multiplier < 1:
+            await ctx.send("❌ Multiplier must be at least 1.")
             return
-        if capacity > 99:
-            await ctx.send("❌ Capacity cannot exceed 99 (Discord's voice channel user limit).")
+        if multiplier > 99:
+            await ctx.send("❌ Multiplier cannot exceed 99.")
             return
 
         await self.config.guild(ctx.guild).voice_multiplier_keyword.set(keyword.lower())
-        await self.config.guild(ctx.guild).voice_multiplier_count.set(capacity)
+        await self.config.guild(ctx.guild).voice_multiplier_count.set(multiplier)
 
         await ctx.send(
             f"✅ Voice multiplier set for keyword **'{keyword}'**:\n"
-            f"• Capacity: **{capacity} users per channel**\n"
+            f"• Multiplier: **{multiplier}**\n"
+            f"• User limit per channel: **{multiplier + 1}**\n"
             f"• Channels will be created dynamically based on role member count\n"
-            f"• Formula: `channels = floor(members / {capacity}), minimum 1`"
+            f"• Formula: `channels = floor(members / {multiplier}), minimum 1`"
         )
 
     @commands.admin_or_permissions(manage_guild=True)
@@ -531,7 +532,7 @@ class EventChannels(commands.Cog):
         event_start_display = f"`{event_start_message}`" if event_start_message else "Disabled"
         deletion_warning_display = f"`{deletion_warning_message}`" if deletion_warning_message else "Disabled"
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
-        voice_multiplier_display = f"Keyword: `{voice_multiplier_keyword}`, Capacity: {voice_multiplier_count} users/channel" if voice_multiplier_keyword else "Disabled"
+        voice_multiplier_display = f"Keyword: `{voice_multiplier_keyword}`, Multiplier: {voice_multiplier_count} (limit: {voice_multiplier_count + 1} users/channel)" if voice_multiplier_keyword else "Disabled"
 
         # Display channel name limit setting
         if channel_name_limit_char:
@@ -999,10 +1000,11 @@ class EventChannels(commands.Cog):
             # Calculate number of voice channels based on role member count
             if use_multiplier and role:
                 role_member_count = len(role.members)
-                # Formula: max(1, floor(members / capacity))
+                # Formula: max(1, floor(members / multiplier))
                 voice_count = max(1, role_member_count // voice_multiplier_capacity)
-                user_limit = voice_multiplier_capacity
-                log.info(f"Voice multiplier active: {role_member_count} members / {voice_multiplier_capacity} capacity = {voice_count} channel(s)")
+                # User limit is multiplier + 1
+                user_limit = voice_multiplier_capacity + 1
+                log.info(f"Voice multiplier active: {role_member_count} members / {voice_multiplier_capacity} = {voice_count} channel(s) with limit {user_limit}")
             else:
                 voice_count = 1
                 user_limit = 0  # 0 = unlimited
