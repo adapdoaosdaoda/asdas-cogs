@@ -93,6 +93,7 @@ class Reminders(DashboardIntegration, Cog):
             snooze_view=True,
             seconds_allowed=True,
             replies=True,
+            auto_delete_minutes=0,  # 0 = disabled, otherwise delete reminder message after N minutes
         )
         self.config.register_user(
             timezone=None,
@@ -140,6 +141,11 @@ class Reminders(DashboardIntegration, Cog):
             "replies": {
                 "converter": bool,
                 "description": "Allow the bot to reply to commands that create reminders.",
+            },
+            "auto_delete_minutes": {
+                "converter": commands.Range[int, 0, None],
+                "description": "Auto-delete reminder messages after N minutes (0 to disable).",
+                "aliases": ["autodeleteminutes"],
             },
         }
         self.settings: Settings = Settings(
@@ -1114,6 +1120,48 @@ class Reminders(DashboardIntegration, Cog):
                 reminder_id=reminder.id
             )
         )
+
+    @reminder.command(aliases=["autodelete"])
+    async def auto_delete(
+        self, ctx: commands.Context, reminder: ExistingReminderConverter, minutes: int
+    ) -> None:
+        """Edit the auto-delete time of an existing Reminder from its ID.
+
+        - Use `last` to edit your last created reminder.
+        - Use `next` to edit your next triggered reminder.
+        - Set to 0 to disable auto-delete for this reminder.
+        - Set to -1 to use the global default setting.
+
+        **Examples:**
+        - `[p]reminder auto_delete next 5` - Auto-delete after 5 minutes
+        - `[p]reminder auto_delete last 0` - Disable auto-delete
+        - `[p]reminder auto_delete 3 -1` - Use global default
+        """
+        if minutes < -1:
+            raise commands.UserFeedbackCheckFailure(
+                _("Auto-delete minutes must be -1 (use global), 0 (disabled), or a positive number.")
+            )
+        reminder.auto_delete_minutes = None if minutes == -1 else minutes
+        await reminder.save()
+        if minutes == -1:
+            global_setting = await self.config.auto_delete_minutes()
+            await ctx.send(
+                _("Your reminder **#{reminder_id}** will now use the global auto-delete setting ({global_setting} minutes).").format(
+                    reminder_id=reminder.id, global_setting=global_setting
+                )
+            )
+        elif minutes == 0:
+            await ctx.send(
+                _("Auto-delete disabled for reminder **#{reminder_id}**.").format(
+                    reminder_id=reminder.id
+                )
+            )
+        else:
+            await ctx.send(
+                _("Your reminder **#{reminder_id}** will auto-delete after {minutes} minutes.").format(
+                    reminder_id=reminder.id, minutes=minutes
+                )
+            )
 
     @commands.bot_has_permissions(embed_links=True)
     @reminder.command()

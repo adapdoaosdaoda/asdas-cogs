@@ -285,6 +285,7 @@ class Reminder:
     last_expires_at: typing.Optional[datetime.datetime]
     next_expires_at: datetime.datetime
     repeat: typing.Optional[Repeat]
+    auto_delete_minutes: typing.Optional[int] = None  # None = use global config, 0 = disabled, >0 = delete after N minutes
 
     def __hash__(self) -> str:
         return hash(
@@ -340,6 +341,7 @@ class Reminder:
             "last_expires_at": int(self.next_expires_at.timestamp()),
             "next_expires_at": int(self.next_expires_at.timestamp()),
             "repeat": self.repeat.to_json() if self.repeat is not None else self.repeat,
+            "auto_delete_minutes": self.auto_delete_minutes,
         }
         if clean:
             for attr in (
@@ -350,6 +352,7 @@ class Reminder:
                 "targets",
                 "repeat",
                 "last_expires_at",
+                "auto_delete_minutes",
             ):
                 if not getattr(self, attr):
                     del data[attr]
@@ -390,6 +393,7 @@ class Reminder:
                 if (data.get("repeat") or data.get("intervals")) is not None
                 else None
             ),
+            auto_delete_minutes=data.get("auto_delete_minutes"),
         )
 
     def __str__(self, utc_now: datetime.datetime = None) -> str:
@@ -482,6 +486,7 @@ class Reminder:
             "• **Next Expires at**: {expires_at_timestamp} ({expires_in_timestamp})\n"
             "• **Created at**: {created_at_timestamp} ({created_in_timestamp})\n"
             "• **Repeat**: {repeat}\n"
+            "• **Auto-delete**: {auto_delete}\n"
             "• **Title**: {title}\n"
             "• **Content type**: `{content_type}`\n"
             "• **Content**: {content}\n"
@@ -506,6 +511,15 @@ class Reminder:
                     )
                     if len(self.repeat.rules) > 1
                     else self.repeat.rules[0].get_info()
+                )
+            ),
+            auto_delete=(
+                _("Use global setting")
+                if self.auto_delete_minutes is None
+                else (
+                    _("Disabled")
+                    if self.auto_delete_minutes == 0
+                    else _("After {minutes} minutes").format(minutes=self.auto_delete_minutes)
                 )
             ),
             title=self.content.get("title") or _("Not provided."),
@@ -678,6 +692,23 @@ class Reminder:
             )
         embed.set_footer(text=footer or None)
         return embed
+
+    async def _auto_delete_message(
+        self, message: discord.Message, minutes: int
+    ) -> None:
+        """Auto-delete a reminder message after the specified number of minutes."""
+        try:
+            await asyncio.sleep(minutes * 60)  # Convert minutes to seconds
+            await message.delete()
+        except discord.NotFound:
+            # Message was already deleted
+            pass
+        except discord.Forbidden:
+            # Bot doesn't have permission to delete the message
+            pass
+        except discord.HTTPException:
+            # Other HTTP exception occurred
+            pass
 
     async def process(
         self,
@@ -893,6 +924,14 @@ class Reminder:
                             replied_user=False,
                         ),
                     )
+
+                # Auto-delete the reminder message after configured time
+                # Use per-reminder setting if available, otherwise fall back to global config
+                auto_delete_minutes = self.auto_delete_minutes
+                if auto_delete_minutes is None:
+                    auto_delete_minutes = await self.cog.config.auto_delete_minutes()
+                if auto_delete_minutes > 0 and not testing:
+                    asyncio.create_task(self._auto_delete_message(message, auto_delete_minutes))
             except discord.HTTPException:
                 if not testing:
                     await self.delete()
