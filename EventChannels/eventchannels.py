@@ -958,31 +958,48 @@ class EventChannels(commands.Cog):
                         log.warning(f"Could not send deletion warning to {text_channel.name} - missing permissions")
 
             # Lock channels - remove send_messages permission for the role
-            try:
-                locked_overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    guild.me: discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=True,
-                    ),
-                    role: discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=False,  # Locked
-                        connect=True,
-                        speak=False,  # Locked in voice
-                    ),
-                }
-                await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                log.info(f"Locked channels for event '{event.name}'")
-            except discord.Forbidden:
-                log.warning(f"Could not lock channels for event '{event.name}' - missing permissions")
+            # Refetch channels and role to ensure we have current objects
+            stored_data = await self.config.guild(guild).event_channels()
+            event_data = stored_data.get(str(event.id))
+            if event_data:
+                text_channel = guild.get_channel(event_data.get("text"))
+                voice_channel = guild.get_channel(event_data.get("voice"))
+                role = guild.get_role(event_data.get("role"))
+
+                if text_channel and voice_channel and role:
+                    try:
+                        locked_overwrites = {
+                            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                            guild.me: discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=True,
+                            ),
+                            role: discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=False,  # Locked
+                                connect=True,
+                                speak=False,  # Locked in voice
+                            ),
+                        }
+                        await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
+                        await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
+                        log.info(f"Locked channels for event '{event.name}'")
+                    except discord.Forbidden:
+                        log.warning(f"Could not lock channels for event '{event.name}' - missing permissions")
+                    except Exception as e:
+                        log.error(f"Failed to lock channels for event '{event.name}': {e}")
+                else:
+                    log.warning(f"Could not lock channels for event '{event.name}' - channels not found")
+            else:
+                log.warning(f"Could not lock channels for event '{event.name}' - event data not found")
 
             # ---------- Cleanup ----------
 
             # Wait the remaining 15 minutes before deletion
             await asyncio.sleep(max(0, (delete_time - datetime.now(timezone.utc)).total_seconds()))
 
+            # Refetch stored data to ensure we have current state
+            stored = await self.config.guild(guild).event_channels()
             data = stored.get(str(event.id))
             if not data:
                 return
