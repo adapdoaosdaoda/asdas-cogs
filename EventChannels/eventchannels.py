@@ -393,17 +393,20 @@ class EventChannels(commands.Cog):
 
         try:
             if add and role.id not in divider_roles:
-                # Add role to divider permissions
-                await divider_channel.set_permissions(
-                    role,
+                # Add role to divider permissions - can see but not send messages
+                overwrite = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=False,
-                    add_reactions=False,
+                    add_reactions=False
+                )
+                await divider_channel.set_permissions(
+                    role,
+                    overwrite=overwrite,
                     reason=f"Adding event role '{role.name}' to divider channel"
                 )
                 divider_roles.append(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"Added role '{role.name}' to divider channel permissions")
+                log.info(f"Added role '{role.name}' to divider channel permissions - can view but not send messages")
             elif not add and role.id in divider_roles:
                 # Remove role from divider permissions
                 await divider_channel.set_permissions(
@@ -414,8 +417,8 @@ class EventChannels(commands.Cog):
                 divider_roles.remove(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
                 log.info(f"Removed role '{role.name}' from divider channel permissions")
-        except discord.Forbidden:
-            log.error(f"Permission error while updating divider permissions for role '{role.name}'")
+        except discord.Forbidden as e:
+            log.error(f"Permission error while updating divider permissions for role '{role.name}': {e}")
         except Exception as e:
             log.error(f"Failed to update divider permissions for role '{role.name}': {e}")
 
