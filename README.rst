@@ -45,6 +45,8 @@ Commands Overview
 +------------------------------+--------------------------------------------------------+
 | Command                      | Description                                            |
 +==============================+========================================================+
+| ``[p]eventchannels``         | Display all EventChannels commands with explanations   |
++------------------------------+--------------------------------------------------------+
 | ``[p]seteventcategory``      | Set the category for event channels                    |
 +------------------------------+--------------------------------------------------------+
 | ``[p]seteventtimezone``      | Configure server timezone                              |
@@ -59,11 +61,27 @@ Commands Overview
 +------------------------------+--------------------------------------------------------+
 | ``[p]seteventannouncement``  | Configure announcement message in event channels       |
 +------------------------------+--------------------------------------------------------+
+| ``[p]seteventdivider``       | Enable/disable divider channel                         |
++------------------------------+--------------------------------------------------------+
+| ``[p]deletedivider``         | Delete the divider channel                             |
++------------------------------+--------------------------------------------------------+
 | ``[p]vieweventsettings``     | Display current settings                               |
 +------------------------------+--------------------------------------------------------+
 
 Commands
 ==============
+
+eventchannels
+-------------
+
+**Category:** Information
+**Permission:** None (available to all users)
+
+Displays all EventChannels commands with explanations in an organized embed. This is a quick reference guide showing all available configuration commands, divider channel commands, and view settings commands. Use this command if you need a reminder of what commands are available and what they do.
+
+**Example:** ``[p]eventchannels``
+
+⠀
 
 seteventcategory
 ----------------
@@ -181,6 +199,42 @@ Sets the announcement message that will be posted in the event text channel when
 **To disable announcements:** ``[p]seteventannouncement none``
 
 **Example:** ``[p]seteventannouncement {role} {event} starts {time}! Get ready!``
+
+⠀
+
+seteventdivider
+---------------
+
+**Category:** Configuration
+**Permission:** Manage Server or Administrator
+
+Enables or disables the divider channel feature and optionally sets a custom name for the divider. The divider channel is a special text channel created before all event channels to provide visual separation in the channel list. It persists across multiple events and is only visible to users with active event roles.
+
+**Available options:**
+
+- Enable with default name: ``[p]seteventdivider True``
+- Enable with custom name: ``[p]seteventdivider True ━━━━━━ MY EVENTS ━━━━━━``
+- Disable: ``[p]seteventdivider False``
+
+The default divider name is: ``━━━━━━ EVENT CHANNELS ━━━━━━``
+
+**Examples:**
+
+- ``[p]seteventdivider True`` → Enable divider with default name
+- ``[p]seteventdivider True ════ RAID EVENTS ════`` → Enable with custom name
+- ``[p]seteventdivider False`` → Disable divider channel
+
+⠀
+
+deletedivider
+-------------
+
+**Category:** Management
+**Permission:** Manage Server or Administrator
+
+Manually deletes the divider channel. The divider will be automatically recreated when the next event channels are created (if divider is enabled). This command is useful if you want to reset the divider position or if it's in the wrong category.
+
+**Example:** ``[p]deletedivider``
 
 ⠀
 
