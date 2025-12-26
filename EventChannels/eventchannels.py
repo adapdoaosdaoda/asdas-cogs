@@ -32,6 +32,7 @@ class EventChannels(commands.Cog):
             divider_channel_id=None,  # Stores the divider channel ID
             divider_roles=[],  # Track role IDs that have access to the divider
             channel_name_limit=100,  # Character limit for channel names (Discord max is 100)
+            channel_name_limit_char="",  # Character to limit name at (empty = use numeric limit)
             voice_multiplier_keyword="",  # Keyword to trigger multiple voice channel creation (empty = disabled)
             voice_multiplier_count=1,  # Number of voice channels to create when keyword is detected
         )
@@ -286,25 +287,49 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
-    async def setchannelnamelimit(self, ctx, limit: int):
+    async def setchannelnamelimit(self, ctx, limit: str):
         """Set the maximum character limit for channel names.
 
-        Discord's maximum is 100 characters. This limit will truncate channel names
-        if they exceed the specified length.
+        You can either specify a number or a character to truncate at.
+
+        **Numeric Limit:**
+        - Truncates the event name to a specific number of characters
+        - Discord's maximum is 100 characters
+
+        **Character-Based Limit:**
+        - Truncates at the first occurrence of a specific character (inclusive)
+        - Useful for cutting at specific separators
 
         Examples:
-        - `[p]setchannelnamelimit 50` - Limit channel names to 50 characters
+        - `[p]setchannelnamelimit 50` - Limit to 50 characters
+        - `[p]setchannelnamelimit ﹕` - Truncate at first "﹕" (including it)
+        - `[p]setchannelnamelimit :` - Truncate at first ":" (including it)
         - `[p]setchannelnamelimit 100` - Use Discord's maximum (default)
         """
-        if limit < 1:
-            await ctx.send("❌ Character limit must be at least 1.")
-            return
-        if limit > 100:
-            await ctx.send("❌ Character limit cannot exceed 100 (Discord's maximum).")
-            return
+        # Try to parse as integer first
+        try:
+            numeric_limit = int(limit)
+            if numeric_limit < 1:
+                await ctx.send("❌ Character limit must be at least 1.")
+                return
+            if numeric_limit > 100:
+                await ctx.send("❌ Character limit cannot exceed 100 (Discord's maximum).")
+                return
 
-        await self.config.guild(ctx.guild).channel_name_limit.set(limit)
-        await ctx.send(f"✅ Channel name limit set to **{limit} characters**.")
+            # It's a valid number, use numeric limiting
+            await self.config.guild(ctx.guild).channel_name_limit.set(numeric_limit)
+            await self.config.guild(ctx.guild).channel_name_limit_char.set("")
+            await ctx.send(f"✅ Channel name limit set to **{numeric_limit} characters**.")
+        except ValueError:
+            # It's not a number, treat it as a character-based limit
+            if len(limit) > 5:
+                await ctx.send("❌ Character limit string too long. Use a single character or short separator (max 5 characters).")
+                return
+
+            # Set character-based limiting
+            await self.config.guild(ctx.guild).channel_name_limit_char.set(limit)
+            await self.config.guild(ctx.guild).channel_name_limit.set(100)  # Reset to max as fallback
+            await ctx.send(f"✅ Channel name limit set to truncate at first occurrence of **'{limit}'** (inclusive).")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -483,6 +508,7 @@ class EventChannels(commands.Cog):
         divider_enabled = await self.config.guild(ctx.guild).divider_enabled()
         divider_name = await self.config.guild(ctx.guild).divider_name()
         channel_name_limit = await self.config.guild(ctx.guild).channel_name_limit()
+        channel_name_limit_char = await self.config.guild(ctx.guild).channel_name_limit_char()
         voice_multiplier_keyword = await self.config.guild(ctx.guild).voice_multiplier_keyword()
         voice_multiplier_count = await self.config.guild(ctx.guild).voice_multiplier_count()
 
@@ -494,6 +520,12 @@ class EventChannels(commands.Cog):
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
         voice_multiplier_display = f"Keyword: `{voice_multiplier_keyword}`, Count: {voice_multiplier_count}" if voice_multiplier_keyword else "Disabled"
 
+        # Display channel name limit setting
+        if channel_name_limit_char:
+            name_limit_display = f"Truncate at `{channel_name_limit_char}` (character-based)"
+        else:
+            name_limit_display = f"{channel_name_limit} characters (numeric)"
+
         embed = discord.Embed(title="Event Channels Settings", color=discord.Color.blue())
         embed.add_field(name="Category", value=category_name, inline=False)
         embed.add_field(name="Timezone", value=timezone, inline=False)
@@ -502,7 +534,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
         embed.add_field(name="Space Replacer", value=f"`{space_replacer}`", inline=False)
-        embed.add_field(name="Channel Name Limit", value=f"{channel_name_limit} characters", inline=False)
+        embed.add_field(name="Channel Name Limit", value=name_limit_display, inline=False)
         embed.add_field(name="Voice Multiplier", value=voice_multiplier_display, inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
         embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
@@ -522,7 +554,7 @@ class EventChannels(commands.Cog):
                 f"**Role Format:** `{role_format}`\n"
                 f"**Channel Format:** `{channel_format}`\n"
                 f"**Space Replacer:** `{space_replacer}`\n"
-                f"**Channel Name Limit:** {channel_name_limit} characters\n"
+                f"**Channel Name Limit:** {name_limit_display}\n"
                 f"**Voice Multiplier:** {voice_multiplier_display}\n"
                 f"**Announcement:** {announcement_display}\n"
                 f"**Event Start Message:** {event_start_display}\n"
@@ -924,10 +956,21 @@ class EventChannels(commands.Cog):
             channel_format = await self.config.guild(guild).channel_format()
             space_replacer = await self.config.guild(guild).space_replacer()
             channel_name_limit = await self.config.guild(guild).channel_name_limit()
+            channel_name_limit_char = await self.config.guild(guild).channel_name_limit_char()
             base_name = event.name.lower().replace(" ", space_replacer)
 
             # Apply character limit to base name only (not the full channel name)
-            if len(base_name) > channel_name_limit:
+            if channel_name_limit_char:
+                # Character-based limiting: truncate at first occurrence (inclusive)
+                char_index = base_name.find(channel_name_limit_char)
+                if char_index != -1:
+                    # Found the character, truncate up to and including it
+                    base_name = base_name[:char_index + len(channel_name_limit_char)]
+                # If character not found, keep full name (or fall back to numeric limit)
+                elif len(base_name) > channel_name_limit:
+                    base_name = base_name[:channel_name_limit]
+            elif len(base_name) > channel_name_limit:
+                # Numeric limiting
                 base_name = base_name[:channel_name_limit]
 
             # Now format with the limited base name
