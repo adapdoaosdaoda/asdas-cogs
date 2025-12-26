@@ -855,17 +855,22 @@ class EventChannels(commands.Cog):
                     discord_timestamp = f"<t:{unix_timestamp}:R>"
 
                     # Format the announcement message
-                    announcement = announcement_template.format(
-                        role=role.mention,
-                        event=event.name,
-                        time=discord_timestamp
-                    )
-
                     try:
-                        await text_channel.send(announcement, allowed_mentions=discord.AllowedMentions(roles=True))
-                        log.info(f"Sent announcement to {text_channel.name}")
-                    except discord.Forbidden:
-                        log.warning(f"Could not send announcement to {text_channel.name} - missing permissions")
+                        announcement = announcement_template.format(
+                            role=role.mention,
+                            event=event.name,
+                            time=discord_timestamp
+                        )
+                    except KeyError as e:
+                        log.error(f"Invalid placeholder {e} in announcement message template. Valid placeholders: {{role}}, {{event}}, {{time}}")
+                        announcement = None
+
+                    if announcement:
+                        try:
+                            await text_channel.send(announcement, allowed_mentions=discord.AllowedMentions(roles=True))
+                            log.info(f"Sent announcement to {text_channel.name}")
+                        except discord.Forbidden:
+                            log.warning(f"Could not send announcement to {text_channel.name} - missing permissions")
 
             except discord.Forbidden as e:
                 log.error(f"Permission error while creating/configuring channels for event '{event.name}': {e}")
@@ -911,15 +916,21 @@ class EventChannels(commands.Cog):
             # Send event start message if configured
             event_start_template = await self.config.guild(guild).event_start_message()
             if event_start_template:
-                event_start_msg = event_start_template.format(
-                    role=role.mention,
-                    event=event.name
-                )
                 try:
-                    await text_channel.send(event_start_msg, allowed_mentions=discord.AllowedMentions(roles=True))
-                    log.info(f"Sent event start message to {text_channel.name}")
-                except discord.Forbidden:
-                    log.warning(f"Could not send event start message to {text_channel.name} - missing permissions")
+                    event_start_msg = event_start_template.format(
+                        role=role.mention,
+                        event=event.name
+                    )
+                except KeyError as e:
+                    log.error(f"Invalid placeholder {e} in event start message template. Valid placeholders: {{role}}, {{event}}")
+                    event_start_msg = None
+
+                if event_start_msg:
+                    try:
+                        await text_channel.send(event_start_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+                        log.info(f"Sent event start message to {text_channel.name}")
+                    except discord.Forbidden:
+                        log.warning(f"Could not send event start message to {text_channel.name} - missing permissions")
 
             # ---------- Deletion Warning ----------
 
@@ -930,15 +941,21 @@ class EventChannels(commands.Cog):
             # Send deletion warning and lock channels
             deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
             if deletion_warning_template:
-                deletion_warning_msg = deletion_warning_template.format(
-                    role=role.mention,
-                    event=event.name
-                )
                 try:
-                    await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
-                    log.info(f"Sent deletion warning to {text_channel.name}")
-                except discord.Forbidden:
-                    log.warning(f"Could not send deletion warning to {text_channel.name} - missing permissions")
+                    deletion_warning_msg = deletion_warning_template.format(
+                        role=role.mention,
+                        event=event.name
+                    )
+                except KeyError as e:
+                    log.error(f"Invalid placeholder {e} in deletion warning message template. Valid placeholders: {{role}}, {{event}}")
+                    deletion_warning_msg = None
+
+                if deletion_warning_msg:
+                    try:
+                        await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+                        log.info(f"Sent deletion warning to {text_channel.name}")
+                    except discord.Forbidden:
+                        log.warning(f"Could not send deletion warning to {text_channel.name} - missing permissions")
 
             # Lock channels - remove send_messages permission for the role
             try:
