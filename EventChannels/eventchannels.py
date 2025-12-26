@@ -373,38 +373,84 @@ class EventChannels(commands.Cog):
         divider_roles = await self.config.guild(guild).divider_roles()
         log.info(f"Updating divider permissions: add={add}, role='{role.name}', current_roles={divider_roles}")
 
-        # Check if bot's role is high enough to manage this role
-        bot_top_role = guild.me.top_role
-        if role.position >= bot_top_role.position:
-            log.warning(f"Cannot update divider permissions for role '{role.name}' - role position ({role.position}) is >= bot's top role position ({bot_top_role.position})")
-            log.warning(f"Please move the bot's role '{bot_top_role.name}' above the event role '{role.name}' in the server settings")
-            return
-
         try:
             if add and role.id not in divider_roles:
-                # Add role to divider permissions - can see but not send messages
-                overwrite = discord.PermissionOverwrite(
+                # Build complete overwrites dictionary including the new role
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(
+                        view_channel=False,
+                        send_messages=False,
+                        add_reactions=False,
+                    ),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        manage_channels=True,
+                    ),
+                }
+
+                # Add all existing tracked roles
+                for existing_role_id in divider_roles:
+                    existing_role = guild.get_role(existing_role_id)
+                    if existing_role:
+                        overwrites[existing_role] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            add_reactions=False,
+                        )
+
+                # Add the new role
+                overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=False,
-                    add_reactions=False
+                    add_reactions=False,
                 )
+
                 log.info(f"Adding permission overwrite for role '{role.name}' (ID: {role.id}) to divider channel '{divider_channel.name}'")
-                await divider_channel.set_permissions(
-                    role,
-                    overwrite=overwrite,
+
+                # Apply all overwrites at once using edit() - bypasses role hierarchy check
+                await divider_channel.edit(
+                    overwrites=overwrites,
                     reason=f"Adding event role '{role.name}' to divider channel"
                 )
+
                 divider_roles.append(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
                 log.info(f"✅ Successfully added role '{role.name}' to divider channel permissions - can view but not send messages")
             elif not add and role.id in divider_roles:
-                # Remove role from divider permissions
+                # Build complete overwrites dictionary without the removed role
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(
+                        view_channel=False,
+                        send_messages=False,
+                        add_reactions=False,
+                    ),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        manage_channels=True,
+                    ),
+                }
+
+                # Add remaining tracked roles (excluding the one being removed)
+                for existing_role_id in divider_roles:
+                    if existing_role_id != role.id:
+                        existing_role = guild.get_role(existing_role_id)
+                        if existing_role:
+                            overwrites[existing_role] = discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=False,
+                                add_reactions=False,
+                            )
+
                 log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
-                await divider_channel.set_permissions(
-                    role,
-                    overwrite=None,  # Remove the overwrite
+
+                # Apply all overwrites at once using edit() - bypasses role hierarchy check
+                await divider_channel.edit(
+                    overwrites=overwrites,
                     reason=f"Removing event role '{role.name}' from divider channel"
                 )
+
                 divider_roles.remove(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
                 log.info(f"✅ Removed role '{role.name}' from divider channel permissions")
