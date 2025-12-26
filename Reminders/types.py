@@ -582,6 +582,24 @@ class Reminder:
             pass
         await self.cog.config.user_from_id(self.user_id).clear_raw("reminders", self.id)
 
+    def substitute_variables(self, text: str) -> str:
+        """Substitute variables in reminder text with their values.
+
+        Available variables:
+        - {time}: Discord timestamp in relative format for when the reminder expires
+        """
+        if not text:
+            return text
+
+        # Get the expiration timestamp (use last_expires_at if available, otherwise next_expires_at)
+        expires_at = self.last_expires_at or self.next_expires_at
+        if expires_at:
+            timestamp = int(expires_at.timestamp())
+            # Replace {time} with Discord relative timestamp format
+            text = text.replace("{time}", f"<t:{timestamp}:R>")
+
+        return text
+
     def to_embed(
         self,
         utc_now: datetime.datetime = None,
@@ -645,7 +663,8 @@ class Reminder:
         if self.content.get("title") is not None:
             embed.description += f"# **{self.content['title']}**\n\n"
         if self.content["text"]:
-            embed.description += f">>> {self.content['text']}"
+            processed_text = self.substitute_variables(self.content["text"])
+            embed.description += f">>> {processed_text}"
         if self.content.get("image_url") is not None:
             embed.set_image(url=self.content["image_url"])
         footer = ""
@@ -860,8 +879,9 @@ class Reminder:
                         view._message = message
                         self.cog.views[message] = view
                 else:  # type `say`
+                    processed_text = self.substitute_variables(self.content["text"])
                     message = await destination.send(
-                        content=self.content["text"],
+                        content=processed_text,
                         embeds=embeds,
                         files=files,
                         allowed_mentions=discord.AllowedMentions(
