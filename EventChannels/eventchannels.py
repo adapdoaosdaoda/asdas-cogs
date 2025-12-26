@@ -24,6 +24,10 @@ class EventChannels(commands.Cog):
             creation_minutes=15,  # Default creation time in minutes before event
             deletion_hours=4,  # Default deletion time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
+            divider_enabled=True,  # Enable divider channel by default
+            divider_name="━━━━━━ EVENT CHANNELS ━━━━━━",  # Default divider name
+            divider_channel_id=None,  # Stores the divider channel ID
+            divider_roles=[],  # Track role IDs that have access to the divider
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -162,6 +166,94 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
+    async def seteventdivider(self, ctx, enabled: bool, *, divider_name: str = None):
+        """Enable/disable divider channel and optionally set its name.
+
+        Examples:
+        - `[p]seteventdivider True` - Enable divider with default name
+        - `[p]seteventdivider True ━━━━━━ EVENT CHANNELS ━━━━━━` - Enable with custom name
+        - `[p]seteventdivider False` - Disable divider channel
+
+        The divider channel is created before the first event channels and persists
+        across multiple events to provide visual separation in the channel list.
+        """
+        await self.config.guild(ctx.guild).divider_enabled.set(enabled)
+
+        if divider_name:
+            await self.config.guild(ctx.guild).divider_name.set(divider_name)
+            await ctx.send(f"✅ Divider channel {'enabled' if enabled else 'disabled'} with name: `{divider_name}`")
+        else:
+            await ctx.send(f"✅ Divider channel {'enabled' if enabled else 'disabled'}.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def renamedivider(self, ctx, *, new_name: str):
+        """Rename the existing divider channel.
+
+        Example:
+        - `[p]renamedivider ━━━━━━ MY EVENTS ━━━━━━`
+
+        This will immediately rename the existing divider channel if it exists.
+        """
+        divider_channel_id = await self.config.guild(ctx.guild).divider_channel_id()
+
+        if not divider_channel_id:
+            await ctx.send("❌ No divider channel exists yet. It will be created when the first event channels are made.")
+            return
+
+        divider_channel = ctx.guild.get_channel(divider_channel_id)
+
+        if not divider_channel:
+            await ctx.send("❌ The stored divider channel no longer exists. It will be recreated when needed.")
+            await self.config.guild(ctx.guild).divider_channel_id.set(None)
+            return
+
+        try:
+            await divider_channel.edit(name=new_name, reason=f"Divider renamed by {ctx.author}")
+            await self.config.guild(ctx.guild).divider_name.set(new_name)
+            await ctx.send(f"✅ Divider channel renamed to: `{new_name}`")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to rename the divider channel.")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to rename divider channel: {e}")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def deletedivider(self, ctx):
+        """Delete the divider channel.
+
+        The divider will be recreated automatically when the next event channels are created.
+        This is useful if you want to reset the divider or if it's in the wrong category.
+        """
+        divider_channel_id = await self.config.guild(ctx.guild).divider_channel_id()
+
+        if not divider_channel_id:
+            await ctx.send("❌ No divider channel exists.")
+            return
+
+        divider_channel = ctx.guild.get_channel(divider_channel_id)
+
+        if not divider_channel:
+            await ctx.send("❌ The stored divider channel no longer exists.")
+            await self.config.guild(ctx.guild).divider_channel_id.set(None)
+            await self.config.guild(ctx.guild).divider_roles.set([])
+            return
+
+        try:
+            await divider_channel.delete(reason=f"Divider deleted by {ctx.author}")
+            await self.config.guild(ctx.guild).divider_channel_id.set(None)
+            await self.config.guild(ctx.guild).divider_roles.set([])
+            await ctx.send("✅ Divider channel deleted. It will be recreated when the next event channels are created.")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to delete the divider channel.")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to delete divider channel: {e}")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
     async def vieweventsettings(self, ctx):
         """View current event channel settings."""
         category_id = await self.config.guild(ctx.guild).category_id()
@@ -171,10 +263,13 @@ class EventChannels(commands.Cog):
         role_format = await self.config.guild(ctx.guild).role_format()
         channel_format = await self.config.guild(ctx.guild).channel_format()
         announcement_message = await self.config.guild(ctx.guild).announcement_message()
+        divider_enabled = await self.config.guild(ctx.guild).divider_enabled()
+        divider_name = await self.config.guild(ctx.guild).divider_name()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
         announcement_display = f"`{announcement_message}`" if announcement_message else "Disabled"
+        divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
 
         embed = discord.Embed(title="Event Channels Settings", color=discord.Color.blue())
         embed.add_field(name="Category", value=category_name, inline=False)
@@ -184,6 +279,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
+        embed.add_field(name="Divider Channel", value=divider_display, inline=False)
 
         try:
             await ctx.send(embed=embed)
@@ -197,7 +293,8 @@ class EventChannels(commands.Cog):
                 f"**Deletion Time:** {deletion_hours} hours after start\n"
                 f"**Role Format:** `{role_format}`\n"
                 f"**Channel Format:** `{channel_format}`\n"
-                f"**Announcement:** {announcement_display}"
+                f"**Announcement:** {announcement_display}\n"
+                f"**Divider Channel:** {divider_display}"
             )
             await ctx.send(message)
 
@@ -220,6 +317,134 @@ class EventChannels(commands.Cog):
                 self.active_tasks[event.id] = task
 
     # ---------- Core Logic ----------
+
+    async def _update_divider_permissions(self, guild: discord.Guild, role: discord.Role, add: bool = True):
+        """Update divider channel permissions to add or remove a role.
+
+        Args:
+            guild: The Discord guild
+            role: The role to add or remove
+            add: True to add the role, False to remove it
+        """
+        divider_enabled = await self.config.guild(guild).divider_enabled()
+        if not divider_enabled:
+            return
+
+        divider_channel_id = await self.config.guild(guild).divider_channel_id()
+        if not divider_channel_id:
+            return
+
+        divider_channel = guild.get_channel(divider_channel_id)
+        if not divider_channel:
+            return
+
+        divider_roles = await self.config.guild(guild).divider_roles()
+
+        try:
+            if add and role.id not in divider_roles:
+                # Add role to divider permissions
+                await divider_channel.set_permissions(
+                    role,
+                    view_channel=True,
+                    send_messages=False,
+                    add_reactions=False,
+                    reason=f"Adding event role '{role.name}' to divider channel"
+                )
+                divider_roles.append(role.id)
+                await self.config.guild(guild).divider_roles.set(divider_roles)
+                log.info(f"Added role '{role.name}' to divider channel permissions")
+            elif not add and role.id in divider_roles:
+                # Remove role from divider permissions
+                await divider_channel.set_permissions(
+                    role,
+                    overwrite=None,  # Remove the overwrite
+                    reason=f"Removing event role '{role.name}' from divider channel"
+                )
+                divider_roles.remove(role.id)
+                await self.config.guild(guild).divider_roles.set(divider_roles)
+                log.info(f"Removed role '{role.name}' from divider channel permissions")
+        except discord.Forbidden:
+            log.error(f"Permission error while updating divider permissions for role '{role.name}'")
+        except Exception as e:
+            log.error(f"Failed to update divider permissions for role '{role.name}': {e}")
+
+    async def _ensure_divider_channel(self, guild: discord.Guild, category: discord.CategoryChannel = None):
+        """Ensure the divider channel exists in the specified category.
+
+        Returns the divider channel if it exists or was created, otherwise None.
+        """
+        divider_enabled = await self.config.guild(guild).divider_enabled()
+        if not divider_enabled:
+            return None
+
+        divider_name = await self.config.guild(guild).divider_name()
+        divider_channel_id = await self.config.guild(guild).divider_channel_id()
+
+        # Check if we have a stored divider channel ID
+        if divider_channel_id:
+            divider_channel = guild.get_channel(divider_channel_id)
+            if divider_channel and divider_channel.category == category:
+                # Divider exists and is in the right category
+                log.info(f"Found existing divider channel: {divider_channel.name}")
+                return divider_channel
+            else:
+                # Stored divider doesn't exist or is in wrong category, clear the stored ID
+                await self.config.guild(guild).divider_channel_id.set(None)
+
+        # Check if a divider channel with the correct name already exists in the category
+        if category:
+            for channel in category.channels:
+                if channel.name == divider_name and isinstance(channel, discord.TextChannel):
+                    # Found an existing divider channel, store its ID
+                    log.info(f"Found existing divider channel by name: {channel.name}")
+                    await self.config.guild(guild).divider_channel_id.set(channel.id)
+                    return channel
+
+        # No divider exists, create one
+        try:
+            # Create divider channel hidden by default (only visible to those with event access)
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(
+                    view_channel=False,  # Hidden by default
+                    send_messages=False,
+                    add_reactions=False,
+                ),
+                guild.me: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=False,
+                    manage_channels=True,
+                ),
+            }
+
+            # Add permissions for tracked roles
+            divider_roles = await self.config.guild(guild).divider_roles()
+            for role_id in divider_roles:
+                role = guild.get_role(role_id)
+                if role:
+                    overwrites[role] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        add_reactions=False,
+                    )
+
+            divider_channel = await guild.create_text_channel(
+                name=divider_name,
+                category=category,
+                overwrites=overwrites,
+                reason="Creating divider channel for event channels",
+            )
+
+            # Store the divider channel ID
+            await self.config.guild(guild).divider_channel_id.set(divider_channel.id)
+            log.info(f"Created new divider channel: {divider_channel.name}")
+            return divider_channel
+
+        except discord.Forbidden:
+            log.error(f"Permission error while creating divider channel in guild '{guild.name}'")
+            return None
+        except Exception as e:
+            log.error(f"Failed to create divider channel in guild '{guild.name}': {e}")
+            return None
 
     async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent):
         try:
@@ -348,6 +573,9 @@ class EventChannels(commands.Cog):
             text_channel = None
             voice_channel = None
 
+            # Ensure divider channel exists before creating event channels
+            await self._ensure_divider_channel(guild, category)
+
             try:
                 # Create channels without overwrites first
                 text_channel = await guild.create_text_channel(
@@ -368,6 +596,9 @@ class EventChannels(commands.Cog):
                 await text_channel.edit(overwrites=overwrites)
                 await voice_channel.edit(overwrites=overwrites)
                 log.info(f"Successfully applied permissions to both channels for event '{event.name}'")
+
+                # Add role to divider permissions
+                await self._update_divider_permissions(guild, role, add=True)
 
                 # Send announcement message if configured
                 announcement_template = await self.config.guild(guild).announcement_message()
@@ -443,6 +674,8 @@ class EventChannels(commands.Cog):
 
             role = guild.get_role(data["role"])
             if role:
+                # Remove role from divider permissions before deleting it
+                await self._update_divider_permissions(guild, role, add=False)
                 try:
                     await role.delete(reason="Scheduled event ended")
                 except discord.Forbidden:
@@ -462,6 +695,10 @@ class EventChannels(commands.Cog):
                             await channel.delete(reason="Scheduled event cancelled")
                         except (discord.NotFound, discord.Forbidden):
                             pass
+                # Remove role from divider permissions
+                role = guild.get_role(data["role"])
+                if role:
+                    await self._update_divider_permissions(guild, role, add=False)
                 stored.pop(str(event.id), None)
                 await self.config.guild(guild).event_channels.set(stored)
             raise 
