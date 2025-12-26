@@ -347,6 +347,33 @@ class EventChannels(commands.Cog):
 
     # ---------- Core Logic ----------
 
+    async def _cleanup_divider_if_empty(self, guild: discord.Guild):
+        """Delete the divider channel if no event roles remain."""
+        divider_roles = await self.config.guild(guild).divider_roles()
+
+        # Check if there are any active roles
+        active_roles = []
+        for role_id in divider_roles:
+            role = guild.get_role(role_id)
+            if role:
+                active_roles.append(role_id)
+
+        # If no active roles remain, delete the divider channel
+        if not active_roles:
+            divider_channel_id = await self.config.guild(guild).divider_channel_id()
+            if divider_channel_id:
+                divider_channel = guild.get_channel(divider_channel_id)
+                if divider_channel:
+                    try:
+                        await divider_channel.delete(reason="No event roles remain - cleaning up divider channel")
+                        log.info(f"Deleted divider channel in '{guild.name}' - no event roles remain")
+                    except (discord.Forbidden, discord.NotFound):
+                        pass
+
+                # Clear the stored divider data
+                await self.config.guild(guild).divider_channel_id.set(None)
+                await self.config.guild(guild).divider_roles.set([])
+
     async def _update_divider_permissions(self, guild: discord.Guild, role: discord.Role, add: bool = True):
         """Update divider channel permissions to add or remove a role.
 
@@ -375,29 +402,82 @@ class EventChannels(commands.Cog):
 
         try:
             if add and role.id not in divider_roles:
-                # Add role to divider permissions - can see but not send messages
-                overwrite = discord.PermissionOverwrite(
+                # Build complete overwrites dictionary including the new role
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(
+                        view_channel=False,
+                        send_messages=False,
+                        add_reactions=False,
+                    ),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        manage_channels=True,
+                    ),
+                }
+
+                # Add all existing tracked roles
+                for existing_role_id in divider_roles:
+                    existing_role = guild.get_role(existing_role_id)
+                    if existing_role:
+                        overwrites[existing_role] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            add_reactions=False,
+                        )
+
+                # Add the new role
+                overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=False,
-                    add_reactions=False
+                    add_reactions=False,
                 )
+
                 log.info(f"Adding permission overwrite for role '{role.name}' (ID: {role.id}) to divider channel '{divider_channel.name}'")
-                await divider_channel.set_permissions(
-                    role,
-                    overwrite=overwrite,
+
+                # Apply all overwrites at once using edit() - bypasses role hierarchy check
+                await divider_channel.edit(
+                    overwrites=overwrites,
                     reason=f"Adding event role '{role.name}' to divider channel"
                 )
+
                 divider_roles.append(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
                 log.info(f"✅ Successfully added role '{role.name}' to divider channel permissions - can view but not send messages")
             elif not add and role.id in divider_roles:
-                # Remove role from divider permissions
+                # Build complete overwrites dictionary without the removed role
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(
+                        view_channel=False,
+                        send_messages=False,
+                        add_reactions=False,
+                    ),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        manage_channels=True,
+                    ),
+                }
+
+                # Add remaining tracked roles (excluding the one being removed)
+                for existing_role_id in divider_roles:
+                    if existing_role_id != role.id:
+                        existing_role = guild.get_role(existing_role_id)
+                        if existing_role:
+                            overwrites[existing_role] = discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=False,
+                                add_reactions=False,
+                            )
+
                 log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
-                await divider_channel.set_permissions(
-                    role,
-                    overwrite=None,  # Remove the overwrite
+
+                # Apply all overwrites at once using edit() - bypasses role hierarchy check
+                await divider_channel.edit(
+                    overwrites=overwrites,
                     reason=f"Removing event role '{role.name}' from divider channel"
                 )
+
                 divider_roles.remove(role.id)
                 await self.config.guild(guild).divider_roles.set(divider_roles)
                 log.info(f"✅ Removed role '{role.name}' from divider channel permissions")
@@ -741,6 +821,9 @@ class EventChannels(commands.Cog):
 
             stored.pop(str(event.id), None)
             await self.config.guild(guild).event_channels.set(stored)
+
+            # Check if divider should be deleted (no more event roles)
+            await self._cleanup_divider_if_empty(guild)
         except asyncio.CancelledError:
             # Task was cancelled - clean up if channels were created
             stored = await self.config.guild(guild).event_channels()
@@ -759,6 +842,9 @@ class EventChannels(commands.Cog):
                     await self._update_divider_permissions(guild, role, add=False)
                 stored.pop(str(event.id), None)
                 await self.config.guild(guild).event_channels.set(stored)
+
+                # Check if divider should be deleted (no more event roles)
+                await self._cleanup_divider_if_empty(guild)
             raise 
         finally:
             # Clean up task reference
@@ -795,7 +881,111 @@ class EventChannels(commands.Cog):
             await asyncio.sleep(0.1)
             new_task = self.bot.loop.create_task(self._handle_event(after.guild, after))
             self.active_tasks[after.id] = new_task
-    
+
+    @commands.Cog.listener()
+    async def on_guild_role_delete(self, role: discord.Role):
+        """Clean up event channels when an event role is deleted externally."""
+        guild = role.guild
+        stored = await self.config.guild(guild).event_channels()
+
+        # Find events associated with this role
+        events_to_remove = []
+        for event_id, data in stored.items():
+            if data.get("role") == role.id:
+                events_to_remove.append(event_id)
+                log.info(f"Event role '{role.name}' was deleted externally - cleaning up channels for event {event_id}")
+
+                # Delete the associated channels
+                for channel_id in (data.get("text"), data.get("voice")):
+                    if channel_id:
+                        channel = guild.get_channel(channel_id)
+                        if channel:
+                            try:
+                                await channel.delete(reason=f"Event role '{role.name}' was deleted")
+                                log.info(f"Deleted channel {channel.name} - associated role was deleted")
+                            except (discord.NotFound, discord.Forbidden) as e:
+                                log.warning(f"Could not delete channel {channel_id}: {e}")
+
+                # Cancel any active task for this event
+                task = self.active_tasks.get(int(event_id))
+                if task and not task.done():
+                    task.cancel()
+                    self.active_tasks.pop(int(event_id), None)
+
+        # Remove events from storage
+        for event_id in events_to_remove:
+            stored.pop(event_id, None)
+
+        if events_to_remove:
+            await self.config.guild(guild).event_channels.set(stored)
+
+            # Remove role from divider permissions tracking
+            divider_roles = await self.config.guild(guild).divider_roles()
+            if role.id in divider_roles:
+                divider_roles.remove(role.id)
+                await self.config.guild(guild).divider_roles.set(divider_roles)
+                log.info(f"Removed deleted role '{role.name}' from divider permissions tracking")
+
+            # Check if divider should be deleted (no more event roles)
+            await self._cleanup_divider_if_empty(guild)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
+        """Clean up stored data when event channels are deleted externally."""
+        guild = channel.guild
+        stored = await self.config.guild(guild).event_channels()
+
+        # Check if this is a divider channel
+        divider_channel_id = await self.config.guild(guild).divider_channel_id()
+        if divider_channel_id == channel.id:
+            log.info(f"Divider channel '{channel.name}' was deleted externally - clearing stored data")
+            await self.config.guild(guild).divider_channel_id.set(None)
+            return
+
+        # Check if this is an event channel
+        event_to_remove = None
+        for event_id, data in stored.items():
+            if channel.id in (data.get("text"), data.get("voice")):
+                log.info(f"Event channel '{channel.name}' was deleted externally - checking if cleanup is needed")
+
+                # Check if both channels are gone
+                text_channel = guild.get_channel(data.get("text")) if data.get("text") else None
+                voice_channel = guild.get_channel(data.get("voice")) if data.get("voice") else None
+
+                if not text_channel and not voice_channel:
+                    # Both channels are gone, clean up completely
+                    log.info(f"Both event channels are gone for event {event_id} - cleaning up completely")
+                    event_to_remove = event_id
+
+                    # Delete the role if it exists
+                    role_id = data.get("role")
+                    if role_id:
+                        role = guild.get_role(role_id)
+                        if role:
+                            # Remove from divider first
+                            await self._update_divider_permissions(guild, role, add=False)
+                            try:
+                                await role.delete(reason="Event channels were deleted")
+                                log.info(f"Deleted role for event {event_id} - channels were deleted externally")
+                            except discord.Forbidden:
+                                log.warning(f"Could not delete role for event {event_id}")
+
+                    # Cancel any active task
+                    task = self.active_tasks.get(int(event_id))
+                    if task and not task.done():
+                        task.cancel()
+                        self.active_tasks.pop(int(event_id), None)
+
+                break
+
+        # Remove event from storage
+        if event_to_remove:
+            stored.pop(event_to_remove, None)
+            await self.config.guild(guild).event_channels.set(stored)
+
+            # Check if divider should be deleted (no more event roles)
+            await self._cleanup_divider_if_empty(guild)
+
     def cog_unload(self):
         """Cancel all active tasks when cog is unloaded."""
         for task in self.active_tasks.values():
