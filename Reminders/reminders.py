@@ -145,7 +145,7 @@ class Reminders(DashboardIntegration, Cog):
             "auto_delete_minutes": {
                 "converter": commands.Range[int, 0, None],
                 "description": "Auto-delete reminder messages after N minutes (0 to disable).",
-                "aliases": ["autodeleteminutes"],
+                "aliases": ["autodeleteminutesreminders"],
             },
         }
         self.settings: Settings = Settings(
