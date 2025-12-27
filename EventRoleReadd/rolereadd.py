@@ -15,13 +15,13 @@ log = logging.getLogger("red.eventrolereadd")
 class EventRoleReadd(commands.Cog):
     """Automatically re-adds event roles by monitoring log channel embeds.
 
-    Monitors a log channel for bot-posted embeds containing:
-    - Embed title with format: "Event Name (DD Month YYYY HH:MM)"
-      Example: "Weekly Raid (27 December 2015 21:00)"
-    - Embed description with a user ID and keyword/emoji
+    Monitors a log channel for bot-posted embeds with descriptions containing:
+    - Event name and Discord timestamp: [**Event Name** (<t:1766853900:f>)](URL)
+    - User ID and keyword/emoji: Username (123456789) signed up as <emoji>
 
-    The embed title is parsed and matched to the corresponding event role name
-    (e.g., "Weekly Raid Wed 27. Dec 21:00") based on EventChannels role_format.
+    The event name and timestamp are parsed from the description and converted to
+    the corresponding event role name (e.g., "Event Name Fri 27. Dec 21:00") based
+    on EventChannels role_format.
 
     When a matching keyword is found, the bot will re-add the event role to the user
     if they don't already have it.
@@ -238,19 +238,18 @@ class EventRoleReadd(commands.Cog):
             for i, embed in enumerate(message.embeds, 1):
                 debug_info.append(f"\n**Embed #{i}:**")
                 debug_info.append(f"• Title: `{embed.title if embed.title else 'None'}`")
-                debug_info.append(f"• Has Description: {'✅ Yes' if embed.description else '❌ No'}")
+                debug_info.append(f"• Has Description: {'✅ Yes' if embed.description else '❌ No (REQUIRED)'}")
 
-                if embed.title:
-                    # Try to parse the title
-                    expected_role = await self._parse_embed_title_to_role_name(ctx.guild, embed.title)
+                if embed.description:
+                    # Try to parse the description for event name and role
+                    expected_role = await self._parse_embed_description_to_role_name(ctx.guild, embed.description)
                     if expected_role:
-                        debug_info.append(f"• Parsed Role Name: `{expected_role}`")
+                        debug_info.append(f"• ✅ Parsed Role Name: `{expected_role}`")
                         role = discord.utils.get(ctx.guild.roles, name=expected_role)
                         debug_info.append(f"• Role Exists: {'✅ Yes' if role else '❌ No (ROLE NOT FOUND)'}")
                     else:
-                        debug_info.append(f"• ❌ Failed to parse title (wrong format)")
+                        debug_info.append(f"• ❌ Failed to parse event from description (wrong format)")
 
-                if embed.description:
                     # Check for keywords
                     keywords = await self.config.guild(ctx.guild).role_readd_keywords()
                     debug_info.append(f"• Description (first 200 chars): ```{embed.description[:200]}```")
@@ -278,41 +277,45 @@ class EventRoleReadd(commands.Cog):
 
         await ctx.send("\n".join(debug_info))
 
-    async def _parse_embed_title_to_role_name(self, guild: discord.Guild, embed_title: str) -> Optional[str]:
-        """Parse embed title and convert to expected role name format.
+    async def _parse_embed_description_to_role_name(self, guild: discord.Guild, embed_description: str) -> Optional[str]:
+        """Parse embed description and convert to expected role name format.
 
-        Embed title format: "Event Name (27 December 2015 21:00)"
+        Embed description format:
+        [**Event Name** (<t:1766853900:f>)](URL)
+        Username (123456789) signed up as <emoji>
+
         Role format: "{name} {day_abbrev} {day}. {month_abbrev} {time}"
-        Example: "Event Name Wed 27. Dec 21:00"
+        Example: "Event Name Fri 27. Dec 21:00"
         """
-        # Extract event name and date string from embed title
-        # Format: "Event Name (DD Month YYYY HH:MM)"
-        match = re.match(r'^(.+?)\s*\((\d{1,2})\s+(\w+)\s+(\d{4})\s+(\d{2}:\d{2})\)$', embed_title.strip())
+        # Extract event name and Unix timestamp from the first line
+        # Format: [**Event Name** (<t:UNIX_TIMESTAMP:f>)](URL)
+        match = re.search(r'\*\*(.+?)\*\*\s*\(<t:(\d+):[fFdDtTR]>\)', embed_description)
         if not match:
-            log.debug(f"Embed title does not match expected format: '{embed_title}'")
+            log.debug(f"Embed description does not match expected format: '{embed_description[:200]}'")
             return None
 
         event_name = match.group(1).strip()
-        day = match.group(2)
-        month_name = match.group(3)
-        year = match.group(4)
-        time_str = match.group(5)
+        unix_timestamp = int(match.group(2))
 
         try:
-            # Parse the date to get day of week abbreviation and month abbreviation
-            # Example: "27 December 2015 21:00"
-            date_string = f"{day} {month_name} {year} {time_str}"
-            parsed_date = datetime.strptime(date_string, "%d %B %Y %H:%M")
+            # Convert Unix timestamp to datetime
+            from datetime import datetime, timezone
+            parsed_date = datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
 
-            # Get the role_format from EventChannels config
+            # Get the timezone and role_format from EventChannels config
             event_channels_config = Config.get_conf(None, identifier=817263540, cog_name="EventChannels")
+            tz_name = await event_channels_config.guild(guild).timezone()
             role_format = await event_channels_config.guild(guild).role_format()
 
+            # Convert to the guild's timezone
+            guild_tz = ZoneInfo(tz_name)
+            local_date = parsed_date.astimezone(guild_tz)
+
             # Format according to role_format
-            day_abbrev = parsed_date.strftime("%a")  # Sun, Mon, etc.
-            day_num = parsed_date.strftime("%d").lstrip("0")  # 27 (no leading zero)
-            month_abbrev = parsed_date.strftime("%b")  # Dec, Jan, etc.
-            time_formatted = parsed_date.strftime("%H:%M")  # 21:00
+            day_abbrev = local_date.strftime("%a")  # Sun, Mon, etc.
+            day_num = local_date.strftime("%d").lstrip("0")  # 27 (no leading zero)
+            month_abbrev = local_date.strftime("%b")  # Dec, Jan, etc.
+            time_formatted = local_date.strftime("%H:%M")  # 21:00
 
             expected_role_name = role_format.format(
                 name=event_name,
@@ -322,14 +325,11 @@ class EventRoleReadd(commands.Cog):
                 time=time_formatted
             )
 
-            log.debug(f"Converted embed title '{embed_title}' to expected role name '{expected_role_name}'")
+            log.debug(f"Converted embed description to expected role name '{expected_role_name}' (event: '{event_name}', timestamp: {unix_timestamp})")
             return expected_role_name
 
-        except ValueError as e:
-            log.warning(f"Failed to parse date from embed title '{embed_title}': {e}")
-            return None
         except Exception as e:
-            log.error(f"Error converting embed title to role name: {e}")
+            log.error(f"Error converting embed description to role name: {e}")
             return None
 
     async def _send_error_report(
@@ -395,8 +395,8 @@ class EventRoleReadd(commands.Cog):
 
         # Process each embed in the message
         for embed in message.embeds:
-            # Skip embeds without title or description
-            if not embed.title or not embed.description:
+            # Skip embeds without description
+            if not embed.description:
                 continue
 
             # Check if embed description contains any configured keywords (including custom emojis)
@@ -438,17 +438,17 @@ class EventRoleReadd(commands.Cog):
                 )
                 continue
 
-            # Parse the embed title and convert to expected role name format
-            # Embed title: "Event Name (27 December 2015 21:00)"
+            # Parse the embed description and convert to expected role name format
+            # Description format: [**Event Name** (<t:UNIX_TIMESTAMP:f>)](URL)
             # Role name: "Event Name Wed 27. Dec 21:00"
-            expected_role_name = await self._parse_embed_title_to_role_name(message.guild, embed.title)
+            expected_role_name = await self._parse_embed_description_to_role_name(message.guild, embed.description)
 
             if not expected_role_name:
-                log.debug(f"Failed to parse embed title: '{embed.title}'")
+                log.debug(f"Failed to parse embed description: '{embed.description[:200]}'")
                 await self._send_error_report(
                     message.guild,
                     matched_keyword,
-                    f"Failed to parse embed title format. Expected: `Event Name (DD Month YYYY HH:MM)`, got: `{embed.title}`",
+                    f"Failed to parse embed description format. Expected: `[**Event Name** (<t:TIMESTAMP:f>)](URL)`",
                     message,
                     user_id=member.id,
                     user_name=member.name
