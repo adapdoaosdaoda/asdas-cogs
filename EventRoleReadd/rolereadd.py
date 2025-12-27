@@ -144,6 +144,46 @@ class EventRoleReadd(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    async def _send_error_report(
+        self,
+        guild: discord.Guild,
+        matched_keyword: str,
+        error_reason: str,
+        source_message: discord.Message,
+        user_id: Optional[int] = None,
+        user_name: Optional[str] = None
+    ):
+        """Send an error report to the configured report channel."""
+        report_channel_id = await self.config.guild(guild).report_channel_id()
+        if not report_channel_id:
+            return
+
+        report_channel = guild.get_channel(report_channel_id)
+        if not report_channel:
+            return
+
+        embed = discord.Embed(
+            title="⚠️ Role Re-add Failed",
+            color=discord.Color.red(),
+            timestamp=source_message.created_at
+        )
+
+        if user_id and user_name:
+            embed.add_field(name="User", value=f"{user_name} (ID: {user_id})", inline=False)
+        elif user_id:
+            embed.add_field(name="User ID", value=str(user_id), inline=False)
+
+        embed.add_field(name="Trigger Keyword", value=f"`{matched_keyword}`", inline=False)
+        embed.add_field(name="Reason", value=error_reason, inline=False)
+        embed.add_field(name="Source Message", value=f"[Jump to message]({source_message.jump_url})", inline=False)
+
+        try:
+            await report_channel.send(embed=embed)
+        except discord.Forbidden:
+            log.warning(f"Failed to send error report to channel {report_channel.name} - insufficient permissions")
+        except discord.HTTPException as e:
+            log.error(f"Failed to send error report to channel {report_channel.name}: {e}")
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Monitor log channel for messages and re-add roles based on keywords."""
@@ -203,6 +243,12 @@ class EventRoleReadd(commands.Cog):
         user_id_match = re.search(r'\((\d{17,19})\)', text_to_search)
         if not user_id_match:
             log.debug(f"No user ID found in log message: {text_to_search[:100]}")
+            await self._send_error_report(
+                message.guild,
+                matched_keyword,
+                "No Discord user ID found in the log message. Expected format: `Username (123456789012345678)`",
+                message
+            )
             return
 
         user_id = int(user_id_match.group(1))
@@ -210,6 +256,13 @@ class EventRoleReadd(commands.Cog):
 
         if not member:
             log.debug(f"Member {user_id} not found in guild {message.guild.name}")
+            await self._send_error_report(
+                message.guild,
+                matched_keyword,
+                f"User is not a member of this server. They may have left or been removed.",
+                message,
+                user_id=user_id
+            )
             return
 
         # Find event roles to re-add
@@ -278,3 +331,11 @@ class EventRoleReadd(commands.Cog):
                         log.error(f"Failed to send report to channel {report_channel.name}: {e}")
         else:
             log.debug(f"No event roles to re-add for {member.name} (ID: {member.id})")
+            await self._send_error_report(
+                message.guild,
+                matched_keyword,
+                "User already has all event roles, or there are no event roles configured.",
+                message,
+                user_id=member.id,
+                user_name=member.name
+            )
