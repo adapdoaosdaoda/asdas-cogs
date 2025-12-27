@@ -202,6 +202,82 @@ class EventRoleReadd(commands.Cog):
         except discord.HTTPException as e:
             await ctx.send(f"❌ Failed to send test report: {e}")
 
+    @rolereadd.command(name="debug")
+    async def debug_message(self, ctx, message_id: str):
+        """Debug a specific message to see why rolereadd isn't triggering.
+
+        Provide a message ID from the log channel to analyze.
+        Example: `[p]rolereadd debug 1234567890123456789`
+        """
+        log_channel_id = await self.config.guild(ctx.guild).log_channel_id()
+        if not log_channel_id:
+            await ctx.send("❌ No log channel configured. Use `!rolereadd setchannel #channel` first.")
+            return
+
+        log_channel = ctx.guild.get_channel(log_channel_id)
+        if not log_channel:
+            await ctx.send("❌ Log channel not found.")
+            return
+
+        try:
+            message = await log_channel.fetch_message(int(message_id))
+        except (discord.NotFound, ValueError):
+            await ctx.send("❌ Message not found in the log channel.")
+            return
+        except discord.Forbidden:
+            await ctx.send("❌ Bot lacks permission to read messages in the log channel.")
+            return
+
+        # Analyze the message
+        debug_info = []
+        debug_info.append(f"**Message Author:** {message.author.name} (Bot: {message.author.bot})")
+        debug_info.append(f"**Is Bot Message:** {'✅ Yes' if message.author.bot else '❌ No (WILL BE IGNORED)'}")
+        debug_info.append(f"**Has Embeds:** {'✅ Yes' if message.embeds else '❌ No (WILL BE IGNORED)'}")
+
+        if message.embeds:
+            for i, embed in enumerate(message.embeds, 1):
+                debug_info.append(f"\n**Embed #{i}:**")
+                debug_info.append(f"• Title: `{embed.title if embed.title else 'None'}`")
+                debug_info.append(f"• Has Description: {'✅ Yes' if embed.description else '❌ No'}")
+
+                if embed.title:
+                    # Try to parse the title
+                    expected_role = await self._parse_embed_title_to_role_name(ctx.guild, embed.title)
+                    if expected_role:
+                        debug_info.append(f"• Parsed Role Name: `{expected_role}`")
+                        role = discord.utils.get(ctx.guild.roles, name=expected_role)
+                        debug_info.append(f"• Role Exists: {'✅ Yes' if role else '❌ No (ROLE NOT FOUND)'}")
+                    else:
+                        debug_info.append(f"• ❌ Failed to parse title (wrong format)")
+
+                if embed.description:
+                    # Check for keywords
+                    keywords = await self.config.guild(ctx.guild).role_readd_keywords()
+                    debug_info.append(f"• Description (first 200 chars): ```{embed.description[:200]}```")
+
+                    matched = []
+                    for keyword in keywords:
+                        if keyword.lower() in embed.description.lower():
+                            matched.append(keyword)
+
+                    if matched:
+                        debug_info.append(f"• ✅ Matched Keywords: {', '.join(f'`{k}`' for k in matched)}")
+                    else:
+                        debug_info.append(f"• ❌ No keywords matched")
+                        debug_info.append(f"• Configured keywords: {', '.join(f'`{k}`' for k in keywords) if keywords else 'None'}")
+
+                    # Check for user ID
+                    user_id_match = re.search(r'\((\d{17,19})\)', embed.description)
+                    if user_id_match:
+                        user_id = int(user_id_match.group(1))
+                        member = ctx.guild.get_member(user_id)
+                        debug_info.append(f"• ✅ User ID Found: `{user_id}`")
+                        debug_info.append(f"• User in Server: {'✅ Yes' if member else '❌ No'}")
+                    else:
+                        debug_info.append(f"• ❌ No user ID found in format (123456789012345678)")
+
+        await ctx.send("\n".join(debug_info))
+
     async def _parse_embed_title_to_role_name(self, guild: discord.Guild, embed_title: str) -> Optional[str]:
         """Parse embed title and convert to expected role name format.
 
