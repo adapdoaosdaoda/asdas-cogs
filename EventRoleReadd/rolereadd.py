@@ -27,7 +27,8 @@ class EventRoleReadd(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     async def rolereadd(self, ctx):
         """Manage automatic event role re-adding based on log messages."""
-        pass
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
     @rolereadd.command(name="setchannel")
     async def set_log_channel(self, ctx, channel: discord.TextChannel):
