@@ -27,7 +27,8 @@ class EventRoleReadd(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     async def rolereadd(self, ctx):
         """Manage automatic event role re-adding based on log messages."""
-        pass
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
     @rolereadd.command(name="setchannel")
     async def set_log_channel(self, ctx, channel: discord.TextChannel):
@@ -142,7 +143,48 @@ class EventRoleReadd(commands.Cog):
             inline=False
         )
 
+        if not report_channel_id:
+            embed.add_field(
+                name="⚠️ Warning",
+                value="No report channel configured. Reports will not be sent. Use `!rolereadd setreport #channel` to configure.",
+                inline=False
+            )
+
         await ctx.send(embed=embed)
+
+    @rolereadd.command(name="test")
+    async def test_report(self, ctx):
+        """Send a test report to verify the report channel is working."""
+        report_channel_id = await self.config.guild(ctx.guild).report_channel_id()
+
+        if not report_channel_id:
+            await ctx.send("❌ No report channel configured. Use `!rolereadd setreport #channel` first.")
+            return
+
+        report_channel = ctx.guild.get_channel(report_channel_id)
+        if not report_channel:
+            await ctx.send("❌ Report channel not found. It may have been deleted.")
+            return
+
+        # Send test success report
+        embed = discord.Embed(
+            title="Role Re-add Report (TEST)",
+            color=discord.Color.green(),
+            timestamp=ctx.message.created_at
+        )
+        embed.add_field(name="User", value=f"{ctx.author.mention} ({ctx.author.name})", inline=False)
+        embed.add_field(name="Trigger Keyword", value="`TEST`", inline=False)
+        embed.add_field(name="Roles Re-added", value="• @TestRole1\n• @TestRole2", inline=False)
+        embed.add_field(name="Source Message", value=f"[Jump to message]({ctx.message.jump_url})", inline=False)
+        embed.set_footer(text="This is a test report")
+
+        try:
+            await report_channel.send(embed=embed)
+            await ctx.send(f"✅ Test report sent to {report_channel.mention}")
+        except discord.Forbidden:
+            await ctx.send(f"❌ Failed to send test report - bot lacks permission to send messages in {report_channel.mention}")
+        except discord.HTTPException as e:
+            await ctx.send(f"❌ Failed to send test report: {e}")
 
     async def _send_error_report(
         self,
@@ -238,11 +280,13 @@ class EventRoleReadd(commands.Cog):
         if not matched_keyword:
             return
 
+        log.info(f"Keyword '{matched_keyword}' detected in {message.guild.name} log channel")
+
         # Extract Discord user ID from the combined text
         # Format: "Username (123456789012345678) signed up as..."
         user_id_match = re.search(r'\((\d{17,19})\)', text_to_search)
         if not user_id_match:
-            log.debug(f"No user ID found in log message: {text_to_search[:100]}")
+            log.warning(f"Keyword detected but no user ID found in log message: {text_to_search[:100]}")
             await self._send_error_report(
                 message.guild,
                 matched_keyword,
@@ -325,10 +369,15 @@ class EventRoleReadd(commands.Cog):
 
                     try:
                         await report_channel.send(embed=embed)
+                        log.info(f"Sent role re-add report to {report_channel.name} for {member.name}")
                     except discord.Forbidden:
                         log.warning(f"Failed to send report to channel {report_channel.name} - insufficient permissions")
                     except discord.HTTPException as e:
                         log.error(f"Failed to send report to channel {report_channel.name}: {e}")
+                else:
+                    log.warning(f"Report channel ID {report_channel_id} configured but channel not found")
+            else:
+                log.debug(f"No report channel configured, skipping report for {member.name}")
         else:
             log.debug(f"No event roles to re-add for {member.name} (ID: {member.id})")
             await self._send_error_report(
