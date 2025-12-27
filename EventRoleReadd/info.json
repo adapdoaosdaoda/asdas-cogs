@@ -1,0 +1,15 @@
+{
+    "name": "EventRoleReadd",
+    "short": "Automatically re-adds event roles based on log messages",
+    "description": "Monitors a designated log channel for event signup messages and automatically re-adds event roles to users based on configurable keywords.",
+    "end_user_data_statement": "This cog does not persistently store any end user data.",
+    "install_msg": "Thank you for installing EventRoleReadd! Use `[p]rolereadd settings` to configure the cog.",
+    "author": ["Claude"],
+    "required_cogs": {},
+    "requirements": [],
+    "tags": ["events", "roles", "automation"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
