@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import re
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import discord
 from redbot.core import commands, Config
@@ -14,8 +16,12 @@ class EventRoleReadd(commands.Cog):
     """Automatically re-adds event roles by monitoring log channel embeds.
 
     Monitors a log channel for bot-posted embeds containing:
-    - Embed title matching an event role name (e.g., "Weekly Raid Wed 27. Dec 21:00")
+    - Embed title with format: "Event Name (DD Month YYYY HH:MM)"
+      Example: "Weekly Raid (27 December 2015 21:00)"
     - Embed description with a user ID and keyword/emoji
+
+    The embed title is parsed and matched to the corresponding event role name
+    (e.g., "Weekly Raid Wed 27. Dec 21:00") based on EventChannels role_format.
 
     When a matching keyword is found, the bot will re-add the event role to the user
     if they don't already have it.
@@ -196,6 +202,60 @@ class EventRoleReadd(commands.Cog):
         except discord.HTTPException as e:
             await ctx.send(f"❌ Failed to send test report: {e}")
 
+    async def _parse_embed_title_to_role_name(self, guild: discord.Guild, embed_title: str) -> Optional[str]:
+        """Parse embed title and convert to expected role name format.
+
+        Embed title format: "Event Name (27 December 2015 21:00)"
+        Role format: "{name} {day_abbrev} {day}. {month_abbrev} {time}"
+        Example: "Event Name Wed 27. Dec 21:00"
+        """
+        # Extract event name and date string from embed title
+        # Format: "Event Name (DD Month YYYY HH:MM)"
+        match = re.match(r'^(.+?)\s*\((\d{1,2})\s+(\w+)\s+(\d{4})\s+(\d{2}:\d{2})\)$', embed_title.strip())
+        if not match:
+            log.debug(f"Embed title does not match expected format: '{embed_title}'")
+            return None
+
+        event_name = match.group(1).strip()
+        day = match.group(2)
+        month_name = match.group(3)
+        year = match.group(4)
+        time_str = match.group(5)
+
+        try:
+            # Parse the date to get day of week abbreviation and month abbreviation
+            # Example: "27 December 2015 21:00"
+            date_string = f"{day} {month_name} {year} {time_str}"
+            parsed_date = datetime.strptime(date_string, "%d %B %Y %H:%M")
+
+            # Get the role_format from EventChannels config
+            event_channels_config = Config.get_conf(None, identifier=817263540, cog_name="EventChannels")
+            role_format = await event_channels_config.guild(guild).role_format()
+
+            # Format according to role_format
+            day_abbrev = parsed_date.strftime("%a")  # Sun, Mon, etc.
+            day_num = parsed_date.strftime("%d").lstrip("0")  # 27 (no leading zero)
+            month_abbrev = parsed_date.strftime("%b")  # Dec, Jan, etc.
+            time_formatted = parsed_date.strftime("%H:%M")  # 21:00
+
+            expected_role_name = role_format.format(
+                name=event_name,
+                day_abbrev=day_abbrev,
+                day=day_num,
+                month_abbrev=month_abbrev,
+                time=time_formatted
+            )
+
+            log.debug(f"Converted embed title '{embed_title}' to expected role name '{expected_role_name}'")
+            return expected_role_name
+
+        except ValueError as e:
+            log.warning(f"Failed to parse date from embed title '{embed_title}': {e}")
+            return None
+        except Exception as e:
+            log.error(f"Error converting embed title to role name: {e}")
+            return None
+
     async def _send_error_report(
         self,
         guild: discord.Guild,
@@ -302,16 +362,32 @@ class EventRoleReadd(commands.Cog):
                 )
                 continue
 
-            # Try to match the embed title to an existing event role
-            # The embed title should match the role name exactly
-            matching_role = discord.utils.get(message.guild.roles, name=embed.title)
+            # Parse the embed title and convert to expected role name format
+            # Embed title: "Event Name (27 December 2015 21:00)"
+            # Role name: "Event Name Wed 27. Dec 21:00"
+            expected_role_name = await self._parse_embed_title_to_role_name(message.guild, embed.title)
 
-            if not matching_role:
-                log.debug(f"No role found matching embed title: '{embed.title}'")
+            if not expected_role_name:
+                log.debug(f"Failed to parse embed title: '{embed.title}'")
                 await self._send_error_report(
                     message.guild,
                     matched_keyword,
-                    f"No role found matching the event title: `{embed.title}`",
+                    f"Failed to parse embed title format. Expected: `Event Name (DD Month YYYY HH:MM)`, got: `{embed.title}`",
+                    message,
+                    user_id=member.id,
+                    user_name=member.name
+                )
+                continue
+
+            # Try to find the role with the converted name
+            matching_role = discord.utils.get(message.guild.roles, name=expected_role_name)
+
+            if not matching_role:
+                log.debug(f"No role found matching expected name: '{expected_role_name}' (from embed title: '{embed.title}')")
+                await self._send_error_report(
+                    message.guild,
+                    matched_keyword,
+                    f"No role found matching the event. Expected role: `{expected_role_name}`",
                     message,
                     user_id=member.id,
                     user_name=member.name
