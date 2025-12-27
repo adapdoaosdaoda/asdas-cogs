@@ -36,7 +36,7 @@ class EventRoleReadd(commands.Cog):
             report_channel_id=None,  # Channel ID to send role re-add reports
         )
 
-    @commands.group()
+    @commands.group(invoke_without_command=True)
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
     async def rolereadd(self, ctx):
