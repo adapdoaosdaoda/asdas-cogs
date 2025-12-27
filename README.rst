@@ -26,13 +26,15 @@ Add this repository to your Red-Discord bot::
 
 Install the cogs you want::
 
-    [p]cog install asdas-cogs EventChannels
-    [p]cog install asdas-cogs Reminders
+    [p]cog install asdas-cogs eventchannels
+    [p]cog install asdas-cogs eventrolereadd
+    [p]cog install asdas-cogs reminders
 
 Load the cogs::
 
-    [p]load EventChannels
-    [p]load Reminders
+    [p]load eventchannels
+    [p]load eventrolereadd
+    [p]load reminders
 
 =============
 EventChannels
@@ -80,47 +82,49 @@ Category Permissions (if using a specific category)
 Commands Overview
 =================
 
-+------------------------------+--------------------------------------------------------+
-| Command                      | Description                                            |
-+==============================+========================================================+
-| ``[p]eventchannels``         | Display all EventChannels commands with explanations   |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventcategory``      | Set the category for event channels                    |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventtimezone``      | Configure server timezone                              |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventcreationtime``  | Set when channels are created before event start       |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventdeletion``      | Set channel deletion time after event start            |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventroleformat``    | Customize role name pattern                            |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventchannelformat`` | Customize channel name pattern and rename existing     |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventannouncement``  | Configure announcement message in event channels       |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventstartmessage``  | Configure message sent when event starts               |
-+------------------------------+--------------------------------------------------------+
-| ``[p]setdeletionwarning``    | Configure warning message before channel deletion      |
-+------------------------------+--------------------------------------------------------+
-| ``[p]setchannelnamelimit``   | Set maximum character limit for channel names          |
-+------------------------------+--------------------------------------------------------+
-| ``[p]setvoicemultiplier``    | Add/update voice multiplier for dynamic scaling        |
-+------------------------------+--------------------------------------------------------+
-| ``[p]listvoicemultipliers``  | List all configured voice multipliers                  |
-+------------------------------+--------------------------------------------------------+
-| ``[p]removevoicemultiplier`` | Remove a specific voice multiplier                     |
-+------------------------------+--------------------------------------------------------+
-| ``[p]disablevoicemultiplier``| Disable all voice multipliers                          |
-+------------------------------+--------------------------------------------------------+
-| ``[p]seteventdivider``       | Enable/disable divider channel and rename existing     |
-+------------------------------+--------------------------------------------------------+
-| ``[p]vieweventsettings``     | Display current settings                               |
-+------------------------------+--------------------------------------------------------+
-| ``[p]testchannellock``       | Test channel locking permissions                       |
-+------------------------------+--------------------------------------------------------+
-| ``[p]stresstest``            | Comprehensive stress test of all features              |
-+------------------------------+--------------------------------------------------------+
+All EventChannels commands are subcommands of ``[p]eventchannels``. Run ``[p]eventchannels`` or ``[p]help eventchannels`` to see all available commands.
+
++---------------------------------------+--------------------------------------------------------+
+| Command                               | Description                                            |
++=======================================+========================================================+
+| ``[p]eventchannels``                  | Display all EventChannels commands with explanations   |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setcategory``      | Set the category for event channels                    |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels settimezone``      | Configure server timezone                              |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setcreationtime``  | Set when channels are created before event start       |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setdeletion``      | Set channel deletion time after event start            |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setroleformat``    | Customize role name pattern                            |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setchannelformat`` | Customize channel name pattern and rename existing     |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setannouncement``  | Configure announcement message in event channels       |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setstartmessage``  | Configure message sent when event starts               |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setdeletionwarning`` | Configure warning message before channel deletion   |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setchannelnamelimit`` | Set maximum character limit for channel names       |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setvoicemultiplier``  | Add/update voice multiplier for dynamic scaling     |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels listvoicemultipliers`` | List all configured voice multipliers              |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels removevoicemultiplier`` | Remove a specific voice multiplier               |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels disablevoicemultiplier`` | Disable all voice multipliers                   |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels setdivider``       | Enable/disable divider channel and rename existing     |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels viewsettings``     | Display current settings                               |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels testchannellock``  | Test channel locking permissions                       |
++---------------------------------------+--------------------------------------------------------+
+| ``[p]eventchannels stresstest``       | Comprehensive stress test of all features              |
++---------------------------------------+--------------------------------------------------------+
 
 Detailed Commands
 =================
@@ -137,8 +141,8 @@ Displays all EventChannels commands with explanations in an organized embed. Thi
 
 ⠀
 
-seteventcategory
-----------------
+eventchannels setcategory
+-------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -146,48 +150,48 @@ seteventcategory
 Sets the Discord category where event text and voice channels will be automatically created. The bot will place all event-related channels in this category for better organization.
 Also works with a category ID.
 
-**Example:** ``[p]seteventcategory Events``
+**Example:** ``[p]eventchannels setcategory Events``
 
 ⠀
 
-seteventtimezone
-----------------
+eventchannels settimezone
+-------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
 
 Configures the timezone used for matching event roles. This ensures the bot generates role names with the correct local time for your server. Uses standard timezone identifiers like ``Europe/Amsterdam``, ``America/New_York``, or ``Asia/Tokyo``.
 
-**Example:** ``[p]seteventtimezone Europe/Amsterdam``
+**Example:** ``[p]eventchannels settimezone Europe/Amsterdam``
 
 ⠀
 
-seteventcreationtime
---------------------
+eventchannels setcreationtime
+-----------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
 
 Sets how many minutes before an event starts that the bot will create the event channels. Default is 15 minutes. This cannot exceed 1440 minutes (24 hours).
 
-**Example:** ``[p]seteventcreationtime 30``
+**Example:** ``[p]eventchannels setcreationtime 30``
 
 ⠀
 
-seteventdeletion
-----------------
+eventchannels setdeletion
+-------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
 
 Sets how many hours after an event starts before the bot automatically deletes the event channels and role. Default is 4 hours. This gives participants time to wrap up after the event ends.
 
-**Example:** ``[p]seteventdeletion 6``
+**Example:** ``[p]eventchannels setdeletion 6``
 
 ⠀
 
-seteventroleformat
-------------------
+eventchannels setroleformat
+---------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -202,13 +206,13 @@ Customizes the pattern used to match event roles. The bot looks for roles matchi
 - ``{month_abbrev}`` - Month abbreviation (Jan, Feb, etc.)
 - ``{time}`` - Time in HH:MM format
 
-**Example:** ``[p]seteventroleformat {name} {day_abbrev} {day}. {month_abbrev} {time}``
+**Example:** ``[p]eventchannels setroleformat {name} {day_abbrev} {day}. {month_abbrev} {time}``
 **Result:** ``Raid Night Wed 25. Dec 21:00``
 
 ⠀
 
-seteventchannelformat
----------------------
+eventchannels setchannelformat
+------------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -226,12 +230,12 @@ Customizes the pattern used for channel names. This allows you to control how th
 - ``{name}-{type}`` → "raid-night-text"
 - ``event-{name}-{type}`` → "event-raid-night-text"
 
-**Example:** ``[p]seteventchannelformat {name}-{type}``
+**Example:** ``[p]eventchannels setchannelformat {name}-{type}``
 
 ⠀
 
-seteventannouncement
---------------------
+eventchannels setannouncement
+-----------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -250,14 +254,14 @@ Sets the announcement message that will be posted in the event text channel when
 - ``{role} {event} begins {time}!`` → "@Role Raid Night begins in 15 minutes!"
 - ``{role} Get ready, event starts {time}!``
 
-**To disable announcements:** ``[p]seteventannouncement none``
+**To disable announcements:** ``[p]eventchannels setannouncement none``
 
-**Example:** ``[p]seteventannouncement {role} {event} starts {time}! Get ready!``
+**Example:** ``[p]eventchannels setannouncement {role} {event} starts {time}! Get ready!``
 
 ⠀
 
-seteventstartmessage
---------------------
+eventchannels setstartmessage
+-----------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -275,14 +279,14 @@ Sets the message that will be posted in the event text channel when the event st
 - ``{role} {event} has begun!``
 - ``{role} Time to join!``
 
-**To disable event start messages:** ``[p]seteventstartmessage none``
+**To disable event start messages:** ``[p]eventchannels setstartmessage none``
 
-**Example:** ``[p]seteventstartmessage {role} {event} is now live!``
+**Example:** ``[p]eventchannels setstartmessage {role} {event} is now live!``
 
 ⠀
 
-setdeletionwarning
-------------------
+eventchannels setdeletionwarning
+--------------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -300,14 +304,14 @@ Sets the warning message that will be posted 15 minutes before the channels are 
 - ``{role} Event channels closing in 15 minutes!``
 - ``⚠️ {event} channels will be removed shortly.``
 
-**To disable deletion warnings:** ``[p]setdeletionwarning none``
+**To disable deletion warnings:** ``[p]eventchannels setdeletionwarning none``
 
-**Example:** ``[p]setdeletionwarning {role} Heads up! These channels close in 15 minutes.``
+**Example:** ``[p]eventchannels setdeletionwarning {role} Heads up! These channels close in 15 minutes.``
 
 ⠀
 
-setchannelnamelimit
--------------------
+eventchannels setchannelnamelimit
+---------------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -316,13 +320,13 @@ Set the maximum character limit for channel names. Accepts either a number (1-10
 
 **Numeric Limit:**
 
-``[p]setchannelnamelimit 50``
+``[p]eventchannels setchannelnamelimit 50``
 
 This limits the event name to 50 characters before adding type identifiers.
 
 **Character-Based Limit:**
 
-``[p]setchannelnamelimit ﹕``
+``[p]eventchannels setchannelnamelimit ﹕``
 
 This truncates the event name at the first occurrence of "﹕" (inclusive), keeping everything up to and including that character.
 
@@ -341,8 +345,8 @@ Event: ``Sunday﹒Hero's Realm﹒POST RESET﹕10 man``
 
 ⠀
 
-setvoicemultiplier
-------------------
+eventchannels setvoicemultiplier
+--------------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -361,7 +365,7 @@ Enable dynamic voice channel creation based on role member count. When an event 
 
 **Example:**
 
-``[p]setvoicemultiplier hero 9``
+``[p]eventchannels setvoicemultiplier hero 9``
 
 **How It Works:**
 
@@ -378,44 +382,44 @@ Enable dynamic voice channel creation based on role member count. When an event 
 
 ⠀
 
-listvoicemultipliers
---------------------
+eventchannels listvoicemultipliers
+----------------------------------
 
 **Category:** Information
 **Permission:** Manage Server or Administrator
 
 List all configured voice multipliers showing keywords and their associated multiplier values.
 
-**Example:** ``[p]listvoicemultipliers``
+**Example:** ``[p]eventchannels listvoicemultipliers``
 
 ⠀
 
-removevoicemultiplier
----------------------
+eventchannels removevoicemultiplier
+-----------------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
 
 Remove a specific voice multiplier by keyword.
 
-**Example:** ``[p]removevoicemultiplier hero``
+**Example:** ``[p]eventchannels removevoicemultiplier hero``
 
 ⠀
 
-disablevoicemultiplier
-----------------------
+eventchannels disablevoicemultiplier
+------------------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
 
 Disable the voice channel multiplier feature entirely, removing all configured keywords.
 
-**Example:** ``[p]disablevoicemultiplier``
+**Example:** ``[p]eventchannels disablevoicemultiplier``
 
 ⠀
 
-seteventdivider
----------------
+eventchannels setdivider
+------------------------
 
 **Category:** Configuration
 **Permission:** Manage Server or Administrator
@@ -424,53 +428,53 @@ Enables or disables the divider channel feature and optionally sets a custom nam
 
 **Available options:**
 
-- Enable with default name: ``[p]seteventdivider True``
-- Enable with custom name: ``[p]seteventdivider True ━━━━━━ MY EVENTS ━━━━━━``
-- Disable: ``[p]seteventdivider False``
+- Enable with default name: ``[p]eventchannels setdivider True``
+- Enable with custom name: ``[p]eventchannels setdivider True ━━━━━━ MY EVENTS ━━━━━━``
+- Disable: ``[p]eventchannels setdivider False``
 
 The default divider name is: ``━━━━━━ EVENT CHANNELS ━━━━━━``
 
 **Examples:**
 
-- ``[p]seteventdivider True`` → Enable divider with default name
-- ``[p]seteventdivider True ════ RAID EVENTS ════`` → Enable with custom name (renames existing divider)
-- ``[p]seteventdivider False`` → Disable divider channel
+- ``[p]eventchannels setdivider True`` → Enable divider with default name
+- ``[p]eventchannels setdivider True ════ RAID EVENTS ════`` → Enable with custom name (renames existing divider)
+- ``[p]eventchannels setdivider False`` → Disable divider channel
 
 ⠀
 
-vieweventsettings
------------------
+eventchannels viewsettings
+--------------------------
 
 **Category:** Information
 **Permission:** Manage Server or Administrator
 
 Displays all current configuration settings in an organized embed, including the category, timezone, creation time, deletion time, role format, channel format, announcement messages, voice multipliers, and all other settings. Use this to verify your setup is correct.
 
-**Example:** ``[p]vieweventsettings``
+**Example:** ``[p]eventchannels viewsettings``
 
 ⠀
 
-testchannellock
----------------
+eventchannels testchannellock
+-----------------------------
 
 **Category:** Testing
 **Permission:** Manage Server or Administrator
 
 Test channel locking permissions to ensure the bot can properly lock channels before deletion. This helps verify that the bot has the correct permissions.
 
-**Example:** ``[p]testchannellock``
+**Example:** ``[p]eventchannels testchannellock``
 
 ⠀
 
-stresstest
-----------
+eventchannels stresstest
+------------------------
 
 **Category:** Testing
 **Permission:** Manage Server or Administrator
 
 Comprehensive stress test of all features including channel creation, role assignment, voice multipliers, divider channels, and cleanup. This is useful for testing your configuration before live events.
 
-**Example:** ``[p]stresstest``
+**Example:** ``[p]eventchannels stresstest``
 
 ⠀
 
@@ -482,10 +486,10 @@ Example 1: Basic Setup
 
 ::
 
-    [p]seteventcategory Events
-    [p]seteventtimezone Europe/Amsterdam
-    [p]seteventchannelformat {name}᲼{type}
-    [p]setchannelnamelimit 50
+    [p]eventchannels setcategory Events
+    [p]eventchannels settimezone Europe/Amsterdam
+    [p]eventchannels setchannelformat {name}᲼{type}
+    [p]eventchannels setchannelnamelimit 50
 
 **Event:** ``Weekly Raid Night``
 
@@ -499,7 +503,7 @@ Example 2: Character-Based Limiting
 
 ::
 
-    [p]setchannelnamelimit ﹕
+    [p]eventchannels setchannelnamelimit ﹕
 
 **Event:** ``Sunday﹒Hero's Realm﹒POST RESET﹕10 man``
 
@@ -513,7 +517,7 @@ Example 3: Voice Multiplier (Small Group)
 
 ::
 
-    [p]setvoicemultiplier raid 9
+    [p]eventchannels setvoicemultiplier raid 9
 
 **Event:** ``Weekly Raid Night`` (role has 8 members)
 
@@ -529,7 +533,7 @@ Example 4: Voice Multiplier (Medium Group)
 
 ::
 
-    [p]setvoicemultiplier raid 9
+    [p]eventchannels setvoicemultiplier raid 9
 
 **Event:** ``Weekly Raid Night`` (role has 25 members)
 
@@ -546,7 +550,7 @@ Example 5: Voice Multiplier (Large Group)
 
 ::
 
-    [p]setvoicemultiplier pvp 4
+    [p]eventchannels setvoicemultiplier pvp 4
 
 **Event:** ``PvP Tournament`` (role has 23 members)
 
@@ -566,8 +570,8 @@ Example 6: Combined Features
 
 ::
 
-    [p]setchannelnamelimit ﹕
-    [p]setvoicemultiplier hero 9
+    [p]eventchannels setchannelnamelimit ﹕
+    [p]eventchannels setvoicemultiplier hero 9
 
 **Event:** ``Sunday﹒Hero's Realm﹒POST RESET﹕10 man`` (role has 40 members)
 
@@ -624,7 +628,7 @@ Channels Not Being Created
 ---------------------------
 
 - Verify bot has permissions to create channels and roles
-- Check that event category is set: ``[p]vieweventsettings``
+- Check that event category is set: ``[p]eventchannels viewsettings``
 - Ensure event is scheduled (not in the past)
 - Check bot has permission to view scheduled events
 - Verify the role format matches the roles created by Raid-Helper
@@ -633,7 +637,7 @@ Voice Multiplier Not Working
 -----------------------------
 
 - Event name must contain the configured keyword (case-insensitive)
-- Check configuration: ``[p]listvoicemultipliers``
+- Check configuration: ``[p]eventchannels listvoicemultipliers``
 - Verify event role has members assigned
 - Multiplier must be between 1-99
 
@@ -641,7 +645,7 @@ Channel Name Too Long
 ----------------------
 
 - Discord limits channel names to 100 characters
-- Use ``[p]setchannelnamelimit`` to reduce length
+- Use ``[p]eventchannels setchannelnamelimit`` to reduce length
 - Consider using shorter channel format
 - Use character-based limiting for consistent truncation
 
