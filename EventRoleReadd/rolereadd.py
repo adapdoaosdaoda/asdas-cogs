@@ -19,6 +19,7 @@ class EventRoleReadd(commands.Cog):
         self.config.register_guild(
             log_channel_id=None,  # Channel ID to monitor for log messages
             role_readd_keywords=[],  # Keywords to match in log messages for role re-adding
+            report_channel_id=None,  # Channel ID to send role re-add reports
         )
 
     @commands.group()
@@ -26,8 +27,7 @@ class EventRoleReadd(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     async def rolereadd(self, ctx):
         """Manage automatic event role re-adding based on log messages."""
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
+        pass
 
     @rolereadd.command(name="setchannel")
     async def set_log_channel(self, ctx, channel: discord.TextChannel):
@@ -38,6 +38,16 @@ class EventRoleReadd(commands.Cog):
         """
         await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
         await ctx.send(f"✅ Now monitoring {channel.mention} for event log messages.")
+
+    @rolereadd.command(name="setreport")
+    async def set_report_channel(self, ctx, channel: discord.TextChannel):
+        """Set the channel to send role re-add reports.
+
+        Examples:
+        - `[p]rolereadd setreport #bot-logs` - Send reports to #bot-logs channel
+        """
+        await self.config.guild(ctx.guild).report_channel_id.set(channel.id)
+        await ctx.send(f"✅ Role re-add reports will be sent to {channel.mention}.")
 
     @rolereadd.command(name="addkeyword")
     async def add_keyword(self, ctx, *, keyword: str):
@@ -113,14 +123,18 @@ class EventRoleReadd(commands.Cog):
     async def view_settings(self, ctx):
         """View current role re-add settings."""
         log_channel_id = await self.config.guild(ctx.guild).log_channel_id()
+        report_channel_id = await self.config.guild(ctx.guild).report_channel_id()
         keywords = await self.config.guild(ctx.guild).role_readd_keywords()
 
         log_channel = ctx.guild.get_channel(log_channel_id) if log_channel_id else None
-        channel_display = log_channel.mention if log_channel else "Not set"
+        report_channel = ctx.guild.get_channel(report_channel_id) if report_channel_id else None
+        log_channel_display = log_channel.mention if log_channel else "Not set"
+        report_channel_display = report_channel.mention if report_channel else "Not set"
         keywords_display = ", ".join(f"`{k}`" for k in keywords) if keywords else "None"
 
         embed = discord.Embed(title="Event Role Re-add Settings", color=discord.Color.blue())
-        embed.add_field(name="Log Channel", value=channel_display, inline=False)
+        embed.add_field(name="Log Channel", value=log_channel_display, inline=False)
+        embed.add_field(name="Report Channel", value=report_channel_display, inline=False)
         embed.add_field(name="Keywords", value=keywords_display, inline=False)
         embed.add_field(
             name="Status",
@@ -215,6 +229,9 @@ class EventRoleReadd(commands.Cog):
 
         # Re-add all identified event roles
         if roles_to_readd:
+            success_roles = []
+            failed_roles = []
+
             for role in roles_to_readd:
                 try:
                     await member.add_roles(role, reason=f"EventRoleReadd: Auto re-add (keyword: {matched_keyword})")
@@ -222,9 +239,42 @@ class EventRoleReadd(commands.Cog):
                         f"Re-added event role '{role.name}' to {member.name} (ID: {member.id}) "
                         f"due to keyword '{matched_keyword}' in log message"
                     )
+                    success_roles.append(role)
                 except discord.Forbidden:
                     log.warning(f"Failed to re-add event role '{role.name}' to {member.name} - insufficient permissions")
+                    failed_roles.append((role, "insufficient permissions"))
                 except discord.HTTPException as e:
                     log.error(f"Failed to re-add event role '{role.name}' to {member.name}: {e}")
+                    failed_roles.append((role, str(e)))
+
+            # Send report to report channel if configured
+            report_channel_id = await self.config.guild(message.guild).report_channel_id()
+            if report_channel_id:
+                report_channel = message.guild.get_channel(report_channel_id)
+                if report_channel:
+                    embed = discord.Embed(
+                        title="Role Re-add Report",
+                        color=discord.Color.green() if not failed_roles else discord.Color.orange(),
+                        timestamp=message.created_at
+                    )
+                    embed.add_field(name="User", value=f"{member.mention} ({member.name})", inline=False)
+                    embed.add_field(name="Trigger Keyword", value=f"`{matched_keyword}`", inline=False)
+
+                    if success_roles:
+                        roles_text = "\n".join(f"• {role.mention}" for role in success_roles)
+                        embed.add_field(name="Roles Re-added", value=roles_text, inline=False)
+
+                    if failed_roles:
+                        failures_text = "\n".join(f"• {role.mention}: {reason}" for role, reason in failed_roles)
+                        embed.add_field(name="Failed", value=failures_text, inline=False)
+
+                    embed.add_field(name="Source Message", value=f"[Jump to message]({message.jump_url})", inline=False)
+
+                    try:
+                        await report_channel.send(embed=embed)
+                    except discord.Forbidden:
+                        log.warning(f"Failed to send report to channel {report_channel.name} - insufficient permissions")
+                    except discord.HTTPException as e:
+                        log.error(f"Failed to send report to channel {report_channel.name}: {e}")
         else:
             log.debug(f"No event roles to re-add for {member.name} (ID: {member.id})")
