@@ -147,22 +147,48 @@ class EventRoleReadd(commands.Cog):
         if not keywords:
             return
 
+        # Extract text from message content and embeds
+        text_to_search = message.content
+
+        # If message has embeds, extract text from them
+        if message.embeds:
+            for embed in message.embeds:
+                # Add embed title
+                if embed.title:
+                    text_to_search += "\n" + embed.title
+                # Add embed description
+                if embed.description:
+                    text_to_search += "\n" + embed.description
+                # Add embed fields
+                if embed.fields:
+                    for field in embed.fields:
+                        if field.name:
+                            text_to_search += "\n" + field.name
+                        if field.value:
+                            text_to_search += "\n" + field.value
+                # Add footer text
+                if embed.footer and embed.footer.text:
+                    text_to_search += "\n" + embed.footer.text
+                # Add author name
+                if embed.author and embed.author.name:
+                    text_to_search += "\n" + embed.author.name
+
         # Check if message contains any configured keywords
-        message_content_lower = message.content.lower()
+        text_to_search_lower = text_to_search.lower()
         matched_keyword = None
         for keyword in keywords:
-            if keyword.lower() in message_content_lower:
+            if keyword.lower() in text_to_search_lower:
                 matched_keyword = keyword
                 break
 
         if not matched_keyword:
             return
 
-        # Extract Discord user ID from the message
+        # Extract Discord user ID from the combined text
         # Format: "Username (123456789012345678) signed up as..."
-        user_id_match = re.search(r'\((\d{17,19})\)', message.content)
+        user_id_match = re.search(r'\((\d{17,19})\)', text_to_search)
         if not user_id_match:
-            log.debug(f"No user ID found in log message: {message.content[:100]}")
+            log.debug(f"No user ID found in log message: {text_to_search[:100]}")
             return
 
         user_id = int(user_id_match.group(1))
