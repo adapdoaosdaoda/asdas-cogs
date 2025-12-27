@@ -11,7 +11,15 @@ log = logging.getLogger("red.eventrolereadd")
 
 
 class EventRoleReadd(commands.Cog):
-    """Automatically re-adds event roles based on keywords in log channel messages."""
+    """Automatically re-adds event roles by monitoring log channel embeds.
+
+    Monitors a log channel for bot-posted embeds containing:
+    - Embed title matching an event role name (e.g., "Weekly Raid Wed 27. Dec 21:00")
+    - Embed description with a user ID and keyword/emoji
+
+    When a matching keyword is found, the bot will re-add the event role to the user
+    if they don't already have it.
+    """
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -52,15 +60,17 @@ class EventRoleReadd(commands.Cog):
 
     @rolereadd.command(name="addkeyword")
     async def add_keyword(self, ctx, *, keyword: str):
-        """Add a keyword to trigger automatic role re-adding.
+        """Add a keyword or emoji to trigger automatic role re-adding.
 
-        When a log message contains a configured keyword and includes a Discord user ID,
-        the bot will automatically re-add event roles to that user.
+        When a log embed contains a configured keyword/emoji in the description and includes
+        a Discord user ID, the bot will automatically re-add the event role to that user.
+
+        The embed title must match an existing event role name.
 
         Examples:
         - `[p]rolereadd addkeyword signed up` - Re-add roles when users sign up
         - `[p]rolereadd addkeyword Tank` - Re-add roles for Tank signups
-        - `[p]rolereadd addkeyword Absence` - Re-add roles for Absence notifications
+        - `[p]rolereadd addkeyword <:emoji:123>` - Re-add roles when custom emoji is found
         """
         keywords = await self.config.guild(ctx.guild).role_readd_keywords()
         if keyword.lower() in [k.lower() for k in keywords]:
@@ -92,9 +102,9 @@ class EventRoleReadd(commands.Cog):
 
     @rolereadd.command(name="listkeywords")
     async def list_keywords(self, ctx):
-        """List all configured role re-add keywords.
+        """List all configured role re-add keywords/emojis.
 
-        These keywords are matched against log messages to determine
+        These keywords/emojis are matched against log embed descriptions to determine
         if event roles should be automatically re-added.
         """
         keywords = await self.config.guild(ctx.guild).role_readd_keywords()
@@ -103,10 +113,10 @@ class EventRoleReadd(commands.Cog):
             await ctx.send("No role re-add keywords configured. Role re-adding is currently disabled.")
             return
 
-        keyword_list = "\n".join(f"• `{k}`" for k in keywords)
+        keyword_list = "\n".join(f"• {k}" for k in keywords)
         embed = discord.Embed(
-            title="Role Re-add Keywords",
-            description=f"Roles will be re-added if log messages contain any of these keywords:\n\n{keyword_list}",
+            title="Role Re-add Keywords/Emojis",
+            description=f"Roles will be re-added if log embeds contain any of these keywords:\n\n{keyword_list}",
             color=discord.Color.blue()
         )
         await ctx.send(embed=embed)
@@ -228,9 +238,9 @@ class EventRoleReadd(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Monitor log channel for messages and re-add roles based on keywords."""
-        # Ignore DMs and bot messages
-        if not message.guild or message.author.bot:
+        """Monitor log channel for bot-posted embeds and re-add event roles based on keywords."""
+        # Ignore DMs and non-bot messages
+        if not message.guild or not message.author.bot:
             return
 
         # Check if this is the configured log channel
@@ -243,148 +253,137 @@ class EventRoleReadd(commands.Cog):
         if not keywords:
             return
 
-        # Extract text from message content and embeds
-        text_to_search = message.content
-
-        # If message has embeds, extract text from them
-        if message.embeds:
-            for embed in message.embeds:
-                # Add embed title
-                if embed.title:
-                    text_to_search += "\n" + embed.title
-                # Add embed description
-                if embed.description:
-                    text_to_search += "\n" + embed.description
-                # Add embed fields
-                if embed.fields:
-                    for field in embed.fields:
-                        if field.name:
-                            text_to_search += "\n" + field.name
-                        if field.value:
-                            text_to_search += "\n" + field.value
-                # Add footer text
-                if embed.footer and embed.footer.text:
-                    text_to_search += "\n" + embed.footer.text
-                # Add author name
-                if embed.author and embed.author.name:
-                    text_to_search += "\n" + embed.author.name
-
-        # Check if message contains any configured keywords
-        text_to_search_lower = text_to_search.lower()
-        matched_keyword = None
-        for keyword in keywords:
-            if keyword.lower() in text_to_search_lower:
-                matched_keyword = keyword
-                break
-
-        if not matched_keyword:
+        # Process only messages with embeds
+        if not message.embeds:
             return
 
-        log.info(f"Keyword '{matched_keyword}' detected in {message.guild.name} log channel")
-
-        # Extract Discord user ID from the combined text
-        # Format: "Username (123456789012345678) signed up as..."
-        user_id_match = re.search(r'\((\d{17,19})\)', text_to_search)
-        if not user_id_match:
-            log.warning(f"Keyword detected but no user ID found in log message: {text_to_search[:100]}")
-            await self._send_error_report(
-                message.guild,
-                matched_keyword,
-                "No Discord user ID found in the log message. Expected format: `Username (123456789012345678)`",
-                message
-            )
-            return
-
-        user_id = int(user_id_match.group(1))
-        member = message.guild.get_member(user_id)
-
-        if not member:
-            log.debug(f"Member {user_id} not found in guild {message.guild.name}")
-            await self._send_error_report(
-                message.guild,
-                matched_keyword,
-                f"User is not a member of this server. They may have left or been removed.",
-                message,
-                user_id=user_id
-            )
-            return
-
-        # Find event roles to re-add
-        # We'll use the EventChannels cog's configuration to identify event roles
-        event_channels_config = Config.get_conf(None, identifier=817263540, cog_name="EventChannels")
-        stored = await event_channels_config.guild(message.guild).event_channels()
-
-        roles_to_readd = []
-        for event_id, data in stored.items():
-            role_id = data.get("role")
-            if not role_id:
+        # Process each embed in the message
+        for embed in message.embeds:
+            # Skip embeds without title or description
+            if not embed.title or not embed.description:
                 continue
 
-            role = message.guild.get_role(role_id)
-            if role and role not in member.roles:
-                roles_to_readd.append(role)
+            # Check if embed description contains any configured keywords (including custom emojis)
+            matched_keyword = None
+            for keyword in keywords:
+                if keyword.lower() in embed.description.lower():
+                    matched_keyword = keyword
+                    break
 
-        # Re-add all identified event roles
-        if roles_to_readd:
-            success_roles = []
-            failed_roles = []
+            if not matched_keyword:
+                continue
 
-            for role in roles_to_readd:
-                try:
-                    await member.add_roles(role, reason=f"EventRoleReadd: Auto re-add (keyword: {matched_keyword})")
-                    log.info(
-                        f"Re-added event role '{role.name}' to {member.name} (ID: {member.id}) "
-                        f"due to keyword '{matched_keyword}' in log message"
-                    )
-                    success_roles.append(role)
-                except discord.Forbidden:
-                    log.warning(f"Failed to re-add event role '{role.name}' to {member.name} - insufficient permissions")
-                    failed_roles.append((role, "insufficient permissions"))
-                except discord.HTTPException as e:
-                    log.error(f"Failed to re-add event role '{role.name}' to {member.name}: {e}")
-                    failed_roles.append((role, str(e)))
+            log.info(f"Keyword '{matched_keyword}' detected in {message.guild.name} log channel embed")
 
-            # Send report to report channel if configured
-            report_channel_id = await self.config.guild(message.guild).report_channel_id()
-            if report_channel_id:
-                report_channel = message.guild.get_channel(report_channel_id)
-                if report_channel:
-                    embed = discord.Embed(
-                        title="Role Re-add Report",
-                        color=discord.Color.green() if not failed_roles else discord.Color.orange(),
-                        timestamp=message.created_at
-                    )
-                    embed.add_field(name="User", value=f"{member.mention} ({member.name})", inline=False)
-                    embed.add_field(name="Trigger Keyword", value=f"`{matched_keyword}`", inline=False)
+            # Extract Discord user ID from embed description
+            # Format: "Username (123456789012345678) signed up as..."
+            user_id_match = re.search(r'\((\d{17,19})\)', embed.description)
+            if not user_id_match:
+                log.warning(f"Keyword detected but no user ID found in embed description: {embed.description[:100]}")
+                await self._send_error_report(
+                    message.guild,
+                    matched_keyword,
+                    "No Discord user ID found in the embed description. Expected format: `Username (123456789012345678)`",
+                    message
+                )
+                continue
 
-                    if success_roles:
-                        roles_text = "\n".join(f"• {role.mention}" for role in success_roles)
-                        embed.add_field(name="Roles Re-added", value=roles_text, inline=False)
+            user_id = int(user_id_match.group(1))
+            member = message.guild.get_member(user_id)
 
-                    if failed_roles:
-                        failures_text = "\n".join(f"• {role.mention}: {reason}" for role, reason in failed_roles)
-                        embed.add_field(name="Failed", value=failures_text, inline=False)
+            if not member:
+                log.debug(f"Member {user_id} not found in guild {message.guild.name}")
+                await self._send_error_report(
+                    message.guild,
+                    matched_keyword,
+                    f"User is not a member of this server. They may have left or been removed.",
+                    message,
+                    user_id=user_id
+                )
+                continue
 
-                    embed.add_field(name="Source Message", value=f"[Jump to message]({message.jump_url})", inline=False)
+            # Try to match the embed title to an existing event role
+            # The embed title should match the role name exactly
+            matching_role = discord.utils.get(message.guild.roles, name=embed.title)
 
-                    try:
-                        await report_channel.send(embed=embed)
-                        log.info(f"Sent role re-add report to {report_channel.name} for {member.name}")
-                    except discord.Forbidden:
-                        log.warning(f"Failed to send report to channel {report_channel.name} - insufficient permissions")
-                    except discord.HTTPException as e:
-                        log.error(f"Failed to send report to channel {report_channel.name}: {e}")
+            if not matching_role:
+                log.debug(f"No role found matching embed title: '{embed.title}'")
+                await self._send_error_report(
+                    message.guild,
+                    matched_keyword,
+                    f"No role found matching the event title: `{embed.title}`",
+                    message,
+                    user_id=member.id,
+                    user_name=member.name
+                )
+                continue
+
+            # Check if member already has the role
+            if matching_role in member.roles:
+                log.debug(f"Member {member.name} already has role '{matching_role.name}'")
+                await self._send_error_report(
+                    message.guild,
+                    matched_keyword,
+                    f"User already has the role {matching_role.mention}",
+                    message,
+                    user_id=member.id,
+                    user_name=member.name
+                )
+                continue
+
+            # Re-add the role
+            try:
+                await member.add_roles(matching_role, reason=f"EventRoleReadd: Auto re-add (keyword: {matched_keyword})")
+                log.info(
+                    f"Re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
+                    f"due to keyword '{matched_keyword}' in log embed"
+                )
+
+                # Send success report to report channel if configured
+                report_channel_id = await self.config.guild(message.guild).report_channel_id()
+                if report_channel_id:
+                    report_channel = message.guild.get_channel(report_channel_id)
+                    if report_channel:
+                        report_embed = discord.Embed(
+                            title="✅ Role Re-add Report",
+                            color=discord.Color.green(),
+                            timestamp=message.created_at
+                        )
+                        report_embed.add_field(name="User", value=f"{member.mention} ({member.name})", inline=False)
+                        report_embed.add_field(name="Role Re-added", value=matching_role.mention, inline=False)
+                        report_embed.add_field(name="Event", value=f"`{embed.title}`", inline=False)
+                        report_embed.add_field(name="Trigger Keyword", value=f"`{matched_keyword}`", inline=False)
+                        report_embed.add_field(name="Source Message", value=f"[Jump to message]({message.jump_url})", inline=False)
+
+                        try:
+                            await report_channel.send(embed=report_embed)
+                            log.info(f"Sent role re-add report to {report_channel.name} for {member.name}")
+                        except discord.Forbidden:
+                            log.warning(f"Failed to send report to channel {report_channel.name} - insufficient permissions")
+                        except discord.HTTPException as e:
+                            log.error(f"Failed to send report to channel {report_channel.name}: {e}")
+                    else:
+                        log.warning(f"Report channel ID {report_channel_id} configured but channel not found")
                 else:
-                    log.warning(f"Report channel ID {report_channel_id} configured but channel not found")
-            else:
-                log.debug(f"No report channel configured, skipping report for {member.name}")
-        else:
-            log.debug(f"No event roles to re-add for {member.name} (ID: {member.id})")
-            await self._send_error_report(
-                message.guild,
-                matched_keyword,
-                "User already has all event roles, or there are no event roles configured.",
-                message,
-                user_id=member.id,
-                user_name=member.name
-            )
+                    log.debug(f"No report channel configured, skipping report for {member.name}")
+
+            except discord.Forbidden:
+                log.warning(f"Failed to re-add event role '{matching_role.name}' to {member.name} - insufficient permissions")
+                await self._send_error_report(
+                    message.guild,
+                    matched_keyword,
+                    f"Failed to re-add role {matching_role.mention} - Bot lacks permissions",
+                    message,
+                    user_id=member.id,
+                    user_name=member.name
+                )
+            except discord.HTTPException as e:
+                log.error(f"Failed to re-add event role '{matching_role.name}' to {member.name}: {e}")
+                await self._send_error_report(
+                    message.guild,
+                    matched_keyword,
+                    f"Failed to re-add role {matching_role.mention} - Discord error: {str(e)}",
+                    message,
+                    user_id=member.id,
+                    user_name=member.name
+                )
