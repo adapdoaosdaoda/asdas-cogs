@@ -15,75 +15,57 @@ A Red-Discord bot cog that automatically creates temporary text and voice channe
 ## Installation
 
 1. Add this cog to your Red-bot cogs folder
-2. Load the cog: `[p]load EventChannels`
+2. Load the cog: `[p]load eventchannels`
 3. Configure the cog using the commands below
 
 ## Commands
 
+All commands are subcommands of `[p]eventchannels`. You can view all available commands by running `[p]eventchannels` or `[p]help eventchannels`.
+
 ### Basic Setup
 
-#### `[p]seteventcategory <category>`
+#### `[p]eventchannels setcategory <category>`
 Set the category where event channels will be created.
 
 **Example:**
 ```
-!seteventcategory Events
+!eventchannels setcategory Events
 ```
 
-#### `[p]setchannelformat <format>`
+#### `[p]eventchannels setchannelformat <format>`
 Set the format for channel names. Use `{name}` for the event name and `{type}` for the channel type (text/voice).
 
 **Default:** `{name}᲼{type}`
 
 **Example:**
 ```
-!setchannelformat {name}᲼{type}
-!setchannelformat {type}᲼{name}
+!eventchannels setchannelformat {name}᲼{type}
+!eventchannels setchannelformat {type}᲼{name}
 ```
 
-#### `[p]setdividerchannel <channel>`
-Set a divider channel to organize event channels visually.
+#### `[p]eventchannels setdivider <enabled> [name]`
+Enable/disable divider channel and optionally set its name.
 
 **Example:**
 ```
-!setdividerchannel ━━━━━━━━━━━━
-```
-
-#### `[p]setdividercreationmode <mode>`
-Set when divider channels should be created.
-
-**Modes:**
-- `0`: Never create divider channels
-- `1`: Create divider only for events with 2+ active channels
-- `2`: Always create divider channels
-
-**Example:**
-```
-!setdividercreationmode 1
-```
-
-#### `[p]setdividerrole <role>`
-Set a role for the divider channel (helps track multiple events).
-
-**Example:**
-```
-!setdividerrole Event Tracker
+!eventchannels setdivider true ━━━━━━━━━━━━
+!eventchannels setdivider false
 ```
 
 ### Channel Name Limiting
 
-#### `[p]setchannelnamelimit <limit>`
+#### `[p]eventchannels setchannelnamelimit <limit>`
 Set the maximum character limit for channel names. Accepts either a number (1-100) or a character/string to truncate at.
 
 **Numeric Limit:**
 ```
-!setchannelnamelimit 50
+!eventchannels setchannelnamelimit 50
 ```
 This limits the event name to 50 characters before adding type identifiers.
 
 **Character-Based Limit:**
 ```
-!setchannelnamelimit ﹕
+!eventchannels setchannelnamelimit ﹕
 ```
 This truncates the event name at the first occurrence of "﹕" (inclusive), keeping everything up to and including that character.
 
@@ -100,7 +82,7 @@ Event: `Sunday﹒Hero's Realm﹒POST RESET﹕10 man`
 
 ### Voice Channel Multiplier
 
-#### `[p]setvoicemultiplier <keyword> <multiplier>`
+#### `[p]eventchannels setvoicemultiplier <keyword> <multiplier>`
 Enable dynamic voice channel creation based on role member count.
 
 **Parameters:**
@@ -113,7 +95,7 @@ Enable dynamic voice channel creation based on role member count.
 
 **Example:**
 ```
-!setvoicemultiplier hero 9
+!eventchannels setvoicemultiplier hero 9
 ```
 
 **How It Works:**
@@ -127,39 +109,63 @@ Enable dynamic voice channel creation based on role member count.
 - 1 channel: `voice` (no number)
 - 2+ channels: `voice 1`, `voice 2`, etc.
 
-#### `[p]disablevoicemultiplier`
+#### `[p]eventchannels disablevoicemultiplier`
 Disable the voice channel multiplier feature.
 
 **Example:**
 ```
-!disablevoicemultiplier
+!eventchannels disablevoicemultiplier
+```
+
+#### `[p]eventchannels listvoicemultipliers`
+List all configured voice multipliers.
+
+**Example:**
+```
+!eventchannels listvoicemultipliers
+```
+
+#### `[p]eventchannels removevoicemultiplier <keyword>`
+Remove a specific voice multiplier keyword.
+
+**Example:**
+```
+!eventchannels removevoicemultiplier hero
 ```
 
 ### Event Management
 
-#### `[p]createeventchannels <event_id>`
-Manually create channels for a specific event.
-
-**Example:**
-```
-!createeventchannels 1234567890
-```
-
-#### `[p]vieweventsettings`
+#### `[p]eventchannels viewsettings`
 View all current event channel settings.
 
 **Example:**
 ```
-!vieweventsettings
+!eventchannels viewsettings
+```
+
+#### `[p]eventchannels testchannellock`
+Test the channel locking mechanism to verify bot permissions.
+
+**Example:**
+```
+!eventchannels testchannellock
+```
+
+#### `[p]eventchannels stresstest`
+Comprehensive stress test of all EventChannels features.
+
+**Example:**
+```
+!eventchannels stresstest
 ```
 
 ## Configuration Examples
 
 ### Example 1: Basic Setup
 ```
-!seteventcategory Events
-!setchannelformat {name}᲼{type}
-!setchannelnamelimit 50
+!eventchannels setcategory Events
+!eventchannels setchannelformat {name}᲼{type}
+!eventchannels setchannelnamelimit 50
 ```
 
 **Event:** `Weekly Raid Night`
@@ -169,7 +175,7 @@ View all current event channel settings.
 
 ### Example 2: Character-Based Limiting
 ```
-!setchannelnamelimit ﹕
+!eventchannels setchannelnamelimit ﹕
 ```
 
 **Event:** `Sunday﹒Hero's Realm﹒POST RESET﹕10 man`
@@ -179,7 +185,7 @@ View all current event channel settings.
 
 ### Example 3: Voice Multiplier (Small Group)
 ```
-!setvoicemultiplier raid 9
+!eventchannels setvoicemultiplier raid 9
 ```
 
 **Event:** `Weekly Raid Night` (role has 8 members)
@@ -190,7 +196,7 @@ View all current event channel settings.
 
 ### Example 4: Voice Multiplier (Medium Group)
 ```
-!setvoicemultiplier raid 9
+!eventchannels setvoicemultiplier raid 9
 ```
 
 **Event:** `Weekly Raid Night` (role has 25 members)
@@ -202,7 +208,7 @@ View all current event channel settings.
 
 ### Example 5: Voice Multiplier (Large Group)
 ```
-!setvoicemultiplier pvp 4
+!eventchannels setvoicemultiplier pvp 4
 ```
 
 **Event:** `PvP Tournament` (role has 23 members)
@@ -217,8 +223,8 @@ View all current event channel settings.
 
 ### Example 6: Combined Features
 ```
-!setchannelnamelimit ﹕
-!setvoicemultiplier hero 9
+!eventchannels setchannelnamelimit ﹕
+!eventchannels setvoicemultiplier hero 9
 ```
 
 **Event:** `Sunday﹒Hero's Realm﹒POST RESET﹕10 man` (role has 40 members)
@@ -264,21 +270,21 @@ When processing event names:
 ### Channels Not Being Created
 
 - Verify bot has permissions to create channels and roles
-- Check that event category is set: `[p]vieweventsettings`
+- Check that event category is set: `[p]eventchannels viewsettings`
 - Ensure event is scheduled (not in the past)
 - Check bot has permission to view scheduled events
 
 ### Voice Multiplier Not Working
 
 - Event name must contain the configured keyword (case-insensitive)
-- Check configuration: `[p]vieweventsettings`
+- Check configuration: `[p]eventchannels viewsettings`
 - Verify event role has members assigned
 - Multiplier must be between 1-99
 
 ### Channel Name Too Long
 
 - Discord limits channel names to 100 characters
-- Use `[p]setchannelnamelimit` to reduce length
+- Use `[p]eventchannels setchannelnamelimit` to reduce length
 - Consider using shorter channel format
 - Use character-based limiting for consistent truncation
 

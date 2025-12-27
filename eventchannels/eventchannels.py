@@ -41,7 +41,7 @@ class EventChannels(commands.Cog):
     # ---------- Setup Commands ----------
 
     @commands.guild_only()
-    @commands.command()
+    @commands.group(invoke_without_command=True)
     async def eventchannels(self, ctx):
         """Display all EventChannels commands with explanations."""
         prefix = ctx.clean_prefix
@@ -54,42 +54,42 @@ class EventChannels(commands.Cog):
 
         # Configuration Commands
         config_commands = (
-            f"`{prefix}seteventcategory <category>` - Set where event channels will be created\n"
-            f"`{prefix}seteventtimezone <timezone>` - Set timezone for event role matching (e.g., Europe/Amsterdam)\n"
-            f"`{prefix}seteventcreationtime <minutes>` - Set when channels are created before event start (default: 15)\n"
-            f"`{prefix}seteventdeletion <hours>` - Set when channels are deleted after event start (default: 4)\n"
-            f"`{prefix}seteventroleformat <format>` - Customize role name format pattern\n"
-            f"`{prefix}seteventchannelformat <format>` - Customize channel name format pattern\n"
-            f"`{prefix}seteventannouncement <message>` - Set announcement message in event channels\n"
-            f"`{prefix}seteventstartmessage <message>` - Set message posted when event starts\n"
-            f"`{prefix}setdeletionwarning <message>` - Set warning message before channel deletion\n"
-            f"`{prefix}setchannelnamelimit <limit>` - Set maximum character limit for channel names (default: 100)\n"
+            f"`{prefix}eventchannels setcategory <category>` - Set where event channels will be created\n"
+            f"`{prefix}eventchannels settimezone <timezone>` - Set timezone for event role matching (e.g., Europe/Amsterdam)\n"
+            f"`{prefix}eventchannels setcreationtime <minutes>` - Set when channels are created before event start (default: 15)\n"
+            f"`{prefix}eventchannels setdeletion <hours>` - Set when channels are deleted after event start (default: 4)\n"
+            f"`{prefix}eventchannels setroleformat <format>` - Customize role name format pattern\n"
+            f"`{prefix}eventchannels setchannelformat <format>` - Customize channel name format pattern\n"
+            f"`{prefix}eventchannels setannouncement <message>` - Set announcement message in event channels\n"
+            f"`{prefix}eventchannels setstartmessage <message>` - Set message posted when event starts\n"
+            f"`{prefix}eventchannels setdeletionwarning <message>` - Set warning message before channel deletion\n"
+            f"`{prefix}eventchannels setchannelnamelimit <limit>` - Set maximum character limit for channel names (default: 100)\n"
         )
         embed.add_field(name="Configuration", value=config_commands, inline=False)
 
         # Voice Multiplier Commands
         voice_commands = (
-            f"`{prefix}setvoicemultiplier <keyword> <count>` - Add/update voice multiplier for a keyword\n"
-            f"`{prefix}listvoicemultipliers` - List all configured voice multipliers\n"
-            f"`{prefix}removevoicemultiplier <keyword>` - Remove a specific voice multiplier\n"
-            f"`{prefix}disablevoicemultiplier` - Disable all voice multipliers\n"
+            f"`{prefix}eventchannels setvoicemultiplier <keyword> <count>` - Add/update voice multiplier for a keyword\n"
+            f"`{prefix}eventchannels listvoicemultipliers` - List all configured voice multipliers\n"
+            f"`{prefix}eventchannels removevoicemultiplier <keyword>` - Remove a specific voice multiplier\n"
+            f"`{prefix}eventchannels disablevoicemultiplier` - Disable all voice multipliers\n"
         )
         embed.add_field(name="Voice Channel Multiplier", value=voice_commands, inline=False)
 
         # Divider Commands
         divider_commands = (
-            f"`{prefix}seteventdivider <true/false> [name]` - Enable/disable divider channel\n"
+            f"`{prefix}eventchannels setdivider <true/false> [name]` - Enable/disable divider channel\n"
         )
         embed.add_field(name="Divider Channel", value=divider_commands, inline=False)
 
         # View Settings
-        view_commands = f"`{prefix}vieweventsettings` - View current configuration settings"
+        view_commands = f"`{prefix}eventchannels viewsettings` - View current configuration settings"
         embed.add_field(name="View Settings", value=view_commands, inline=False)
 
         # Testing
         test_commands = (
-            f"`{prefix}testchannellock` - Test channel locking permissions\n"
-            f"`{prefix}stresstest` - Comprehensive stress test of all features\n"
+            f"`{prefix}eventchannels testchannellock` - Test channel locking permissions\n"
+            f"`{prefix}eventchannels stresstest` - Comprehensive stress test of all features\n"
         )
         embed.add_field(name="Testing", value=test_commands, inline=False)
 
@@ -104,7 +104,6 @@ class EventChannels(commands.Cog):
                 f"**Configuration:**\n{config_commands}\n\n"
                 f"**Voice Channel Multiplier:**\n{voice_commands}\n\n"
                 f"**Divider Channel:**\n{divider_commands}\n\n"
-                f"**Role Management:**\n{role_commands}\n\n"
                 f"**View Settings:**\n{view_commands}\n\n"
                 f"**Testing:**\n{test_commands}\n\n"
                 f"Most commands require Manage Guild permission"
@@ -113,7 +112,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setcategory")
     async def seteventcategory(self, ctx, category: discord.CategoryChannel):
         """Set the category where event channels will be created."""
         await self.config.guild(ctx.guild).category_id.set(category.id)
@@ -121,7 +120,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="settimezone")
     async def seteventtimezone(self, ctx, tz: str):
         """Set the timezone for event role matching (e.g., Europe/Amsterdam, America/New_York)."""
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -136,7 +135,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setdeletion")
     async def seteventdeletion(self, ctx, hours: int):
         """Set how many hours after event start channels are deleted (default: 4)."""
         if hours < 0:
@@ -147,7 +146,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setcreationtime")
     async def seteventcreationtime(self, ctx, minutes: int):
         """Set how many minutes before event start channels are created (default: 15)."""
         if minutes < 0:
@@ -161,7 +160,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setroleformat")
     async def seteventroleformat(self, ctx, *, format_string: str):
         """Set the role name format pattern.
         
@@ -188,7 +187,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setchannelformat")
     async def seteventchannelformat(self, ctx, format_string: str, space_replacer: str = None):
         """Set the channel name format pattern and optionally the space replacer.
 
@@ -296,7 +295,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setchannelnamelimit")
     async def setchannelnamelimit(self, ctx, limit: str):
         """Set the maximum character limit for channel names.
 
@@ -311,10 +310,10 @@ class EventChannels(commands.Cog):
         - Useful for cutting at specific separators
 
         Examples:
-        - `[p]setchannelnamelimit 50` - Limit to 50 characters
-        - `[p]setchannelnamelimit ﹕` - Truncate at first "﹕" (including it)
-        - `[p]setchannelnamelimit :` - Truncate at first ":" (including it)
-        - `[p]setchannelnamelimit 100` - Use Discord's maximum (default)
+        - `[p]eventchannels setchannelnamelimit 50` - Limit to 50 characters
+        - `[p]eventchannels setchannelnamelimit ﹕` - Truncate at first "﹕" (including it)
+        - `[p]eventchannels setchannelnamelimit :` - Truncate at first ":" (including it)
+        - `[p]eventchannels setchannelnamelimit 100` - Use Discord's maximum (default)
         """
         # Try to parse as integer first
         try:
@@ -343,7 +342,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setvoicemultiplier")
     async def setvoicemultiplier(self, ctx, keyword: str, multiplier: int):
         """Set up dynamic voice channel creation based on role member count.
 
@@ -363,19 +362,19 @@ class EventChannels(commands.Cog):
         - multiplier: Divisor for calculating channels (1-99)
 
         **Examples:**
-        - `[p]setvoicemultiplier hero 9`
+        - `[p]eventchannels setvoicemultiplier hero 9`
           - 10 role members → 1 channel (limit: 10 users)
           - 18 role members → 2 channels (limit: 10 users each)
           - 27 role members → 3 channels (limit: 10 users each)
 
-        - `[p]setvoicemultiplier sword 4`
+        - `[p]eventchannels setvoicemultiplier sword 4`
           - 5 role members → 1 channel (limit: 5 users)
           - 12 role members → 3 channels (limit: 5 users each)
           - 20 role members → 5 channels (limit: 5 users each)
 
-        To remove a keyword, use `[p]removevoicemultiplier <keyword>`
-        To see all configured multipliers, use `[p]listvoicemultipliers`
-        To disable all multipliers, use `[p]disablevoicemultiplier`
+        To remove a keyword, use `[p]eventchannels removevoicemultiplier <keyword>`
+        To see all configured multipliers, use `[p]eventchannels listvoicemultipliers`
+        To disable all multipliers, use `[p]eventchannels disablevoicemultiplier`
         """
         if multiplier < 1:
             await ctx.send("❌ Multiplier must be at least 1.")
@@ -405,7 +404,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="disablevoicemultiplier")
     async def disablevoicemultiplier(self, ctx):
         """Disable all voice multipliers.
 
@@ -417,7 +416,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="listvoicemultipliers")
     async def listvoicemultipliers(self, ctx):
         """List all configured voice multipliers.
 
@@ -426,7 +425,7 @@ class EventChannels(commands.Cog):
         voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
 
         if not voice_multipliers:
-            await ctx.send(f"❌ No voice multipliers configured. Use `{ctx.clean_prefix}setvoicemultiplier <keyword> <multiplier>` to add one.")
+            await ctx.send(f"❌ No voice multipliers configured. Use `{ctx.clean_prefix}eventchannels setvoicemultiplier <keyword> <multiplier>` to add one.")
             return
 
         # Build the list
@@ -438,12 +437,12 @@ class EventChannels(commands.Cog):
 
         await ctx.send(
             f"**Configured Voice Multipliers:**\n" + "\n".join(multiplier_list) + "\n\n"
-            f"Use `{ctx.clean_prefix}removevoicemultiplier <keyword>` to remove a multiplier."
+            f"Use `{ctx.clean_prefix}eventchannels removevoicemultiplier <keyword>` to remove a multiplier."
         )
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="removevoicemultiplier")
     async def removevoicemultiplier(self, ctx, keyword: str):
         """Remove a specific voice multiplier keyword.
 
@@ -451,7 +450,7 @@ class EventChannels(commands.Cog):
         - keyword: The keyword to remove (case-insensitive)
 
         **Example:**
-        - `[p]removevoicemultiplier hero`
+        - `[p]eventchannels removevoicemultiplier hero`
         """
         voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
         keyword_lower = keyword.lower()
@@ -470,7 +469,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setannouncement")
     async def seteventannouncement(self, ctx, *, message: str):
         """Set the announcement message posted in event text channels.
 
@@ -495,7 +494,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setstartmessage")
     async def seteventstartmessage(self, ctx, *, message: str):
         """Set the message posted when the event starts.
 
@@ -519,7 +518,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setdeletionwarning")
     async def setdeletionwarning(self, ctx, *, message: str):
         """Set the warning message posted 15 minutes before channel deletion.
 
@@ -543,14 +542,14 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="setdivider")
     async def seteventdivider(self, ctx, enabled: bool, *, divider_name: str = None):
         """Enable/disable divider channel and optionally set its name.
 
         Examples:
-        - `[p]seteventdivider True` - Enable divider with default name
-        - `[p]seteventdivider True ━━━━━━ EVENT CHANNELS ━━━━━━` - Enable with custom name
-        - `[p]seteventdivider False` - Disable divider channel
+        - `[p]eventchannels setdivider True` - Enable divider with default name
+        - `[p]eventchannels setdivider True ━━━━━━ EVENT CHANNELS ━━━━━━` - Enable with custom name
+        - `[p]eventchannels setdivider False` - Disable divider channel
 
         The divider channel is created before the first event channels and persists
         across multiple events to provide visual separation in the channel list.
@@ -582,7 +581,7 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    @commands.command()
+    @eventchannels.command(name="viewsettings")
     async def vieweventsettings(self, ctx):
         """View current event channel settings."""
         category_id = await self.config.guild(ctx.guild).category_id()
@@ -663,7 +662,7 @@ class EventChannels(commands.Cog):
 
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
-    @commands.command()
+    @eventchannels.command(name="testchannellock")
     async def testchannellock(self, ctx):
         """Test the channel locking mechanism to verify bot permissions."""
         guild = ctx.guild
@@ -671,7 +670,7 @@ class EventChannels(commands.Cog):
         category = guild.get_channel(category_id) if category_id else None
 
         if not category:
-            await ctx.send("❌ No event category configured. Use `seteventcategory` first.")
+            await ctx.send(f"❌ No event category configured. Use `{ctx.clean_prefix}eventchannels setcategory` first.")
             return
 
         await ctx.send("🔄 Starting channel lock test...")
@@ -773,7 +772,7 @@ class EventChannels(commands.Cog):
 
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
-    @commands.command()
+    @eventchannels.command(name="stresstest")
     async def stresstest(self, ctx):
         """Comprehensive stress test of all EventChannels features including end-to-end event automation."""
         guild = ctx.guild
@@ -781,7 +780,7 @@ class EventChannels(commands.Cog):
         category = guild.get_channel(category_id) if category_id else None
 
         if not category:
-            await ctx.send("❌ No event category configured. Use `seteventcategory` first.")
+            await ctx.send(f"❌ No event category configured. Use `{ctx.clean_prefix}eventchannels setcategory` first.")
             return
 
         await ctx.send("🚀 **Starting comprehensive EventChannels stress test...**")
