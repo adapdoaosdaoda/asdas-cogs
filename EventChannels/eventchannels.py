@@ -34,7 +34,7 @@ class EventChannels(commands.Cog):
             channel_name_limit=100,  # Character limit for channel names (Discord max is 100)
             channel_name_limit_char="",  # Character to limit name at (empty = use numeric limit)
             voice_multipliers={},  # Dictionary of keyword:multiplier pairs for dynamic voice channel creation
-            role_readd_enabled=False,  # Automatically re-add event roles when removed by raid-helper
+            role_readd_keywords=[],  # Keywords to match in audit log messages for role re-adding (empty = disabled)
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -85,7 +85,10 @@ class EventChannels(commands.Cog):
 
         # Role Management Commands
         role_commands = (
-            f"`{prefix}setrolereadd <true/false>` - Enable/disable automatic role re-adding\n"
+            f"`{prefix}addrolereadkeyword <keyword>` - Add a keyword to trigger role re-adding\n"
+            f"`{prefix}removerolereadkeyword <keyword>` - Remove a role re-add keyword\n"
+            f"`{prefix}listrolereadkeywords` - List all configured role re-add keywords\n"
+            f"`{prefix}clearrolereadkeywords` - Clear all role re-add keywords\n"
         )
         embed.add_field(name="Role Management", value=role_commands, inline=False)
 
@@ -590,18 +593,79 @@ class EventChannels(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command()
-    async def setrolereadd(self, ctx, enabled: bool):
-        """Enable/disable automatic re-adding of event roles when removed.
+    async def addrolereadkeyword(self, ctx, *, keyword: str):
+        """Add a keyword to trigger automatic role re-adding.
 
-        When enabled, if a user has an event role removed (e.g., by raid-helper),
-        the bot will automatically re-add the role to maintain access to event channels.
+        When a user has an event role removed, the bot checks the audit log.
+        If the audit log reason contains any configured keyword, the role is re-added.
 
         Examples:
-        - `[p]setrolereadd True` - Enable automatic role re-adding
-        - `[p]setrolereadd False` - Disable automatic role re-adding
+        - `[p]addrolereadkeyword raid-helper` - Re-add roles when removed by raid-helper
+        - `[p]addrolereadkeyword auto-remove` - Re-add roles for auto-removal reasons
         """
-        await self.config.guild(ctx.guild).role_readd_enabled.set(enabled)
-        await ctx.send(f"✅ Automatic event role re-adding {'enabled' if enabled else 'disabled'}.")
+        keywords = await self.config.guild(ctx.guild).role_readd_keywords()
+        if keyword.lower() in [k.lower() for k in keywords]:
+            await ctx.send(f"❌ Keyword `{keyword}` is already configured.")
+            return
+
+        keywords.append(keyword)
+        await self.config.guild(ctx.guild).role_readd_keywords.set(keywords)
+        await ctx.send(f"✅ Added role re-add keyword: `{keyword}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def removerolereadkeyword(self, ctx, *, keyword: str):
+        """Remove a role re-add keyword.
+
+        Examples:
+        - `[p]removerolereadkeyword raid-helper` - Remove the raid-helper keyword
+        """
+        keywords = await self.config.guild(ctx.guild).role_readd_keywords()
+        # Case-insensitive removal
+        original_keyword = next((k for k in keywords if k.lower() == keyword.lower()), None)
+
+        if not original_keyword:
+            await ctx.send(f"❌ Keyword `{keyword}` not found in configuration.")
+            return
+
+        keywords.remove(original_keyword)
+        await self.config.guild(ctx.guild).role_readd_keywords.set(keywords)
+        await ctx.send(f"✅ Removed role re-add keyword: `{original_keyword}`")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def listrolereadkeywords(self, ctx):
+        """List all configured role re-add keywords.
+
+        These keywords are matched against audit log messages to determine
+        if event roles should be automatically re-added when removed.
+        """
+        keywords = await self.config.guild(ctx.guild).role_readd_keywords()
+
+        if not keywords:
+            await ctx.send("No role re-add keywords configured. Role re-adding is currently disabled.")
+            return
+
+        keyword_list = "\n".join(f"• `{k}`" for k in keywords)
+        embed = discord.Embed(
+            title="Role Re-add Keywords",
+            description=f"Roles will be re-added if the audit log reason contains any of these keywords:\n\n{keyword_list}",
+            color=discord.Color.blue()
+        )
+        await ctx.send(embed=embed)
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @commands.command()
+    async def clearrolereadkeywords(self, ctx):
+        """Clear all role re-add keywords.
+
+        This will disable automatic role re-adding.
+        """
+        await self.config.guild(ctx.guild).role_readd_keywords.set([])
+        await ctx.send("✅ Cleared all role re-add keywords. Role re-adding is now disabled.")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -623,7 +687,7 @@ class EventChannels(commands.Cog):
         channel_name_limit = await self.config.guild(ctx.guild).channel_name_limit()
         channel_name_limit_char = await self.config.guild(ctx.guild).channel_name_limit_char()
         voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
-        role_readd_enabled = await self.config.guild(ctx.guild).role_readd_enabled()
+        role_readd_keywords = await self.config.guild(ctx.guild).role_readd_keywords()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
@@ -631,7 +695,7 @@ class EventChannels(commands.Cog):
         event_start_display = f"`{event_start_message}`" if event_start_message else "Disabled"
         deletion_warning_display = f"`{deletion_warning_message}`" if deletion_warning_message else "Disabled"
         divider_display = f"Enabled (`{divider_name}`)" if divider_enabled else "Disabled"
-        role_readd_display = "Enabled" if role_readd_enabled else "Disabled"
+        role_readd_display = ", ".join(f"`{k}`" for k in role_readd_keywords) if role_readd_keywords else "Disabled"
 
         # Format voice multipliers display
         if voice_multipliers:
@@ -662,7 +726,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
         embed.add_field(name="Deletion Warning", value=deletion_warning_display, inline=False)
         embed.add_field(name="Divider Channel", value=divider_display, inline=False)
-        embed.add_field(name="Role Re-add", value=role_readd_display, inline=False)
+        embed.add_field(name="Role Re-add Keywords", value=role_readd_display, inline=False)
 
         try:
             await ctx.send(embed=embed)
@@ -2152,10 +2216,10 @@ class EventChannels(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        """Re-add event roles when they are removed from members (e.g., by raid-helper)."""
-        # Check if feature is enabled
-        role_readd_enabled = await self.config.guild(after.guild).role_readd_enabled()
-        if not role_readd_enabled:
+        """Re-add event roles when they are removed from members based on audit log keywords."""
+        # Check if feature is enabled (non-empty keywords list)
+        role_readd_keywords = await self.config.guild(after.guild).role_readd_keywords()
+        if not role_readd_keywords:
             return
 
         # Check if any roles were removed
@@ -2164,6 +2228,56 @@ class EventChannels(commands.Cog):
             return
 
         guild = after.guild
+
+        # Check audit logs to see if removal matches configured keywords
+        matched_keyword = None
+        try:
+            # Fetch recent audit log entries for member role updates
+            async for entry in guild.audit_logs(limit=10, action=discord.AuditLogAction.member_role_update):
+                # Check if this entry is for the current member and is recent (within last 5 seconds)
+                if entry.target.id != after.id:
+                    continue
+
+                time_diff = (datetime.now(timezone.utc) - entry.created_at).total_seconds()
+                if time_diff > 5:
+                    break  # Too old, stop searching
+
+                # Check if the audit log reason or user mention contains any configured keywords
+                # The reason might be None, and we also check the executor name
+                search_text = ""
+
+                if entry.reason:
+                    search_text += entry.reason.lower()
+
+                # Also check the executor's name (e.g., "raid-helper" bot)
+                if entry.user:
+                    search_text += f" {entry.user.name.lower()}"
+                    if entry.user.display_name:
+                        search_text += f" {entry.user.display_name.lower()}"
+
+                # Check if any keyword matches
+                for keyword in role_readd_keywords:
+                    if keyword.lower() in search_text:
+                        matched_keyword = keyword
+                        log.info(f"Keyword '{keyword}' matched in audit log for {after.name} (ID: {after.id})")
+                        break
+
+                if matched_keyword:
+                    break  # Found a matching entry, proceed with role re-add
+            else:
+                # No matching audit log entry found, don't re-add roles
+                return
+
+            if not matched_keyword:
+                # No keyword match, don't re-add roles
+                return
+
+        except discord.Forbidden:
+            log.warning(f"Cannot access audit logs in {guild.name} - insufficient permissions")
+            return
+        except Exception as e:
+            log.error(f"Error checking audit logs in {guild.name}: {e}")
+            return
 
         # Strategy 1: Check stored event channels to find active event roles (fast path)
         stored = await self.config.guild(guild).event_channels()
@@ -2219,8 +2333,8 @@ class EventChannels(commands.Cog):
         # Re-add all identified event roles
         for role in roles_to_readd:
             try:
-                await after.add_roles(role, reason="EventChannels: Auto re-add event role")
-                log.info(f"Re-added event role '{role.name}' to {after.name} (ID: {after.id})")
+                await after.add_roles(role, reason=f"EventChannels: Auto re-add event role (keyword: {matched_keyword})")
+                log.info(f"Re-added event role '{role.name}' to {after.name} (ID: {after.id}) due to keyword '{matched_keyword}'")
             except discord.Forbidden:
                 log.warning(f"Failed to re-add event role '{role.name}' to {after.name} - insufficient permissions")
             except discord.HTTPException as e:
