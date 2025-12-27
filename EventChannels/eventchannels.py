@@ -2163,22 +2163,68 @@ class EventChannels(commands.Cog):
         if not removed_roles:
             return
 
-        # Get stored event channels to find active event roles
-        stored = await self.config.guild(after.guild).event_channels()
+        guild = after.guild
 
-        # Check each removed role to see if it matches an active event
+        # Strategy 1: Check stored event channels to find active event roles (fast path)
+        stored = await self.config.guild(guild).event_channels()
+        roles_to_readd = []
+
         for removed_role in removed_roles:
             for event_id, data in stored.items():
                 if data.get("role") == removed_role.id:
-                    # This is an event role that was removed - re-add it
+                    roles_to_readd.append(removed_role)
+                    break  # Found this role, move to next
+
+        # Strategy 2: Check scheduled events and match against role name format (covers pre-channel creation)
+        # Only do this if we haven't found all removed roles yet
+        if len(roles_to_readd) < len(removed_roles):
+            from zoneinfo import ZoneInfo
+
+            # Get configuration
+            tz_name = await self.config.guild(guild).timezone()
+            role_format = await self.config.guild(guild).role_format()
+            server_tz = ZoneInfo(tz_name)
+
+            # Get all scheduled events in the guild
+            scheduled_events = guild.scheduled_events
+
+            # Build expected role names for all scheduled events
+            expected_role_names = {}
+            for event in scheduled_events:
+                if event.status == discord.EventStatus.scheduled:
                     try:
-                        await after.add_roles(removed_role, reason="EventChannels: Auto re-add event role")
-                        log.info(f"Re-added event role '{removed_role.name}' to {after.name} (ID: {after.id})")
-                    except discord.Forbidden:
-                        log.warning(f"Failed to re-add event role '{removed_role.name}' to {after.name} - insufficient permissions")
-                    except discord.HTTPException as e:
-                        log.error(f"Failed to re-add event role '{removed_role.name}' to {after.name}: {e}")
-                    break  # Only need to re-add once per role
+                        event_local_time = event.start_time.astimezone(server_tz)
+                        day_abbrev = event_local_time.strftime("%a")
+                        day = event_local_time.strftime("%d").lstrip("0")
+                        month_abbrev = event_local_time.strftime("%b")
+                        time_str = event_local_time.strftime("%H:%M")
+
+                        expected_role_name = role_format.format(
+                            name=event.name,
+                            day_abbrev=day_abbrev,
+                            day=day,
+                            month_abbrev=month_abbrev,
+                            time=time_str
+                        )
+                        expected_role_names[expected_role_name] = event.id
+                    except Exception as e:
+                        log.warning(f"Failed to calculate expected role name for event {event.name}: {e}")
+                        continue
+
+            # Check if any removed roles match expected event role names
+            for removed_role in removed_roles:
+                if removed_role not in roles_to_readd and removed_role.name in expected_role_names:
+                    roles_to_readd.append(removed_role)
+
+        # Re-add all identified event roles
+        for role in roles_to_readd:
+            try:
+                await after.add_roles(role, reason="EventChannels: Auto re-add event role")
+                log.info(f"Re-added event role '{role.name}' to {after.name} (ID: {after.id})")
+            except discord.Forbidden:
+                log.warning(f"Failed to re-add event role '{role.name}' to {after.name} - insufficient permissions")
+            except discord.HTTPException as e:
+                log.error(f"Failed to re-add event role '{role.name}' to {after.name}: {e}")
 
     def cog_unload(self):
         """Cancel all active tasks when cog is unloaded."""
