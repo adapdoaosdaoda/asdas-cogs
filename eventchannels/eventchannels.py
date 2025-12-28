@@ -34,6 +34,7 @@ class EventChannels(commands.Cog):
             channel_name_limit=100,  # Character limit for channel names (Discord max is 100)
             channel_name_limit_char="",  # Character to limit name at (empty = use numeric limit)
             voice_multipliers={},  # Dictionary of keyword:multiplier pairs for dynamic voice channel creation
+            voice_minimum_roles={},  # Dictionary of keyword:minimum_count pairs for enforcing minimum role members
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -73,6 +74,9 @@ class EventChannels(commands.Cog):
             f"`{prefix}eventchannels listvoicemultipliers` - List all configured voice multipliers\n"
             f"`{prefix}eventchannels removevoicemultiplier <keyword>` - Remove a specific voice multiplier\n"
             f"`{prefix}eventchannels disablevoicemultiplier` - Disable all voice multipliers\n"
+            f"`{prefix}eventchannels setminimumroles <keyword> <count>` - Set minimum role members required for a keyword\n"
+            f"`{prefix}eventchannels listminimumroles` - List all configured minimum role requirements\n"
+            f"`{prefix}eventchannels removeminimumroles <keyword>` - Remove minimum role requirement for a keyword\n"
         )
         embed.add_field(name="Voice Channel Multiplier", value=voice_commands, inline=False)
 
@@ -469,6 +473,122 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
+    @eventchannels.command(name="setminimumroles")
+    async def setminimumroles(self, ctx, keyword: str, minimum: int):
+        """Set minimum role members required for a keyword to create channels.
+
+        When an event name contains the specified keyword, channels will ONLY be created
+        if the event role has at least this many members. If the minimum is not met,
+        NO channels will be created at all.
+
+        This works in conjunction with voice multipliers. If both are configured for
+        the same keyword, the minimum role check happens first.
+
+        **Parameters:**
+        - keyword: The keyword to enforce minimum on (case-insensitive, must match a configured multiplier)
+        - minimum: Minimum number of role members required (1-999)
+
+        **Examples:**
+        - `[p]eventchannels setminimumroles hero 10`
+          - If "Hero Raid" event has fewer than 10 role members, no channels are created
+          - If it has 10 or more members, channels are created according to the multiplier
+
+        - `[p]eventchannels setminimumroles sword 5`
+          - Events with "sword" in the name need at least 5 role members to create channels
+
+        To remove a minimum requirement, use `[p]eventchannels removeminimumroles <keyword>`
+        To see all configured minimums, use `[p]eventchannels listminimumroles`
+        """
+        if minimum < 1:
+            await ctx.send("❌ Minimum must be at least 1.")
+            return
+        if minimum > 999:
+            await ctx.send("❌ Minimum cannot exceed 999.")
+            return
+
+        # Check if the keyword has a multiplier configured
+        voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
+        keyword_lower = keyword.lower()
+
+        if keyword_lower not in voice_multipliers:
+            await ctx.send(
+                f"⚠️ Warning: Keyword **'{keyword}'** does not have a voice multiplier configured.\n"
+                f"The minimum role requirement will have no effect until you set a multiplier.\n"
+                f"Use `{ctx.clean_prefix}eventchannels setvoicemultiplier {keyword} <multiplier>` first."
+            )
+
+        # Get current minimums dictionary
+        voice_minimum_roles = await self.config.guild(ctx.guild).voice_minimum_roles()
+
+        # Add or update the keyword
+        voice_minimum_roles[keyword_lower] = minimum
+
+        # Save back to config
+        await self.config.guild(ctx.guild).voice_minimum_roles.set(voice_minimum_roles)
+
+        await ctx.send(
+            f"✅ Minimum role requirement set for keyword **'{keyword}'**:\n"
+            f"• Minimum members required: **{minimum}**\n"
+            f"• If the event role has fewer than {minimum} members, NO channels will be created\n"
+            f"• If the event role has {minimum} or more members, channels will be created normally\n\n"
+            f"Use `{ctx.clean_prefix}listminimumroles` to see all configured minimums."
+        )
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @eventchannels.command(name="listminimumroles")
+    async def listminimumroles(self, ctx):
+        """List all configured minimum role requirements.
+
+        Shows all keywords and their associated minimum member counts.
+        """
+        voice_minimum_roles = await self.config.guild(ctx.guild).voice_minimum_roles()
+
+        if not voice_minimum_roles:
+            await ctx.send(f"❌ No minimum role requirements configured. Use `{ctx.clean_prefix}eventchannels setminimumroles <keyword> <minimum>` to add one.")
+            return
+
+        # Build the list
+        minimum_list = []
+        for keyword, minimum in sorted(voice_minimum_roles.items()):
+            minimum_list.append(
+                f"• **{keyword}**: minimum {minimum} role members required"
+            )
+
+        await ctx.send(
+            f"**Configured Minimum Role Requirements:**\n" + "\n".join(minimum_list) + "\n\n"
+            f"Use `{ctx.clean_prefix}eventchannels removeminimumroles <keyword>` to remove a requirement."
+        )
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @eventchannels.command(name="removeminimumroles")
+    async def removeminimumroles(self, ctx, keyword: str):
+        """Remove a specific minimum role requirement.
+
+        **Parameters:**
+        - keyword: The keyword to remove the minimum requirement from (case-insensitive)
+
+        **Example:**
+        - `[p]eventchannels removeminimumroles hero`
+        """
+        voice_minimum_roles = await self.config.guild(ctx.guild).voice_minimum_roles()
+        keyword_lower = keyword.lower()
+
+        if keyword_lower not in voice_minimum_roles:
+            await ctx.send(f"❌ Keyword **'{keyword}'** does not have a minimum role requirement configured.")
+            return
+
+        # Remove the keyword
+        del voice_minimum_roles[keyword_lower]
+
+        # Save back to config
+        await self.config.guild(ctx.guild).voice_minimum_roles.set(voice_minimum_roles)
+
+        await ctx.send(f"✅ Removed minimum role requirement for keyword **'{keyword}'**.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
     @eventchannels.command(name="setannouncement")
     async def seteventannouncement(self, ctx, *, message: str):
         """Set the announcement message posted in event text channels.
@@ -599,6 +719,7 @@ class EventChannels(commands.Cog):
         channel_name_limit = await self.config.guild(ctx.guild).channel_name_limit()
         channel_name_limit_char = await self.config.guild(ctx.guild).channel_name_limit_char()
         voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
+        voice_minimum_roles = await self.config.guild(ctx.guild).voice_minimum_roles()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
@@ -616,6 +737,15 @@ class EventChannels(commands.Cog):
         else:
             voice_multiplier_display = "Disabled"
 
+        # Format voice minimum roles display
+        if voice_minimum_roles:
+            minimum_list = []
+            for keyword, minimum in sorted(voice_minimum_roles.items()):
+                minimum_list.append(f"`{keyword}`: {minimum} members")
+            voice_minimum_display = ", ".join(minimum_list)
+        else:
+            voice_minimum_display = "None"
+
         # Display channel name limit setting
         if channel_name_limit_char:
             name_limit_display = f"Truncate at `{channel_name_limit_char}` (character-based)"
@@ -632,6 +762,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Space Replacer", value=f"`{space_replacer}`", inline=False)
         embed.add_field(name="Channel Name Limit", value=name_limit_display, inline=False)
         embed.add_field(name="Voice Multiplier", value=voice_multiplier_display, inline=False)
+        embed.add_field(name="Minimum Roles Required", value=voice_minimum_display, inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
         embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
         embed.add_field(name="Deletion Warning", value=deletion_warning_display, inline=False)
@@ -652,6 +783,7 @@ class EventChannels(commands.Cog):
                 f"**Space Replacer:** `{space_replacer}`\n"
                 f"**Channel Name Limit:** {name_limit_display}\n"
                 f"**Voice Multiplier:** {voice_multiplier_display}\n"
+                f"**Minimum Roles Required:** {voice_minimum_display}\n"
                 f"**Announcement:** {announcement_display}\n"
                 f"**Event Start Message:** {event_start_display}\n"
                 f"**Deletion Warning:** {deletion_warning_display}\n"
@@ -1667,6 +1799,18 @@ class EventChannels(commands.Cog):
                     matched_keyword = keyword
                     voice_multiplier_capacity = multiplier
                     break
+
+            # Check if matched keyword has a minimum role requirement
+            if matched_keyword and role:
+                voice_minimum_roles = await self.config.guild(guild).voice_minimum_roles()
+                minimum_required = voice_minimum_roles.get(matched_keyword)
+
+                if minimum_required:
+                    role_member_count = len(role.members)
+                    if role_member_count < minimum_required:
+                        log.info(f"Skipping channel creation for event '{event.name}': keyword '{matched_keyword}' requires minimum {minimum_required} role members, but only {role_member_count} found")
+                        # Do not create any channels if minimum is not met
+                        return
 
             # Calculate number of voice channels based on role member count
             if matched_keyword and voice_multiplier_capacity and role:
