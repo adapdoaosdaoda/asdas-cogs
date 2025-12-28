@@ -36,6 +36,7 @@ class EventChannels(commands.Cog):
             voice_multipliers={},  # Dictionary of keyword:multiplier pairs for dynamic voice channel creation
             voice_minimum_roles={},  # Dictionary of keyword:minimum_count pairs for enforcing minimum role members
             minimum_retry_intervals=[10, 5, 2],  # Minutes before event start to retry if minimum not met (default: 10min, 5min, 2min)
+            whitelisted_roles=[],  # List of role IDs that always have view, read, connect & speak permissions
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -86,6 +87,14 @@ class EventChannels(commands.Cog):
             f"`{prefix}eventchannels setdivider <true/false> [name]` - Enable/disable divider channel\n"
         )
         embed.add_field(name="Divider Channel", value=divider_commands, inline=False)
+
+        # Whitelisted Roles Commands
+        whitelist_commands = (
+            f"`{prefix}eventchannels addwhitelistedrole <role>` - Add a role to the whitelist for automatic permissions\n"
+            f"`{prefix}eventchannels removewhitelistedrole <role>` - Remove a role from the whitelist\n"
+            f"`{prefix}eventchannels listwhitelistedroles` - List all whitelisted roles\n"
+        )
+        embed.add_field(name="Whitelisted Roles", value=whitelist_commands, inline=False)
 
         # View Settings
         view_commands = f"`{prefix}eventchannels viewsettings` - View current configuration settings"
@@ -590,6 +599,98 @@ class EventChannels(commands.Cog):
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
+    @eventchannels.command(name="addwhitelistedrole")
+    async def addwhitelistedrole(self, ctx, role: discord.Role):
+        """Add a role to the whitelist for automatic channel permissions.
+
+        Whitelisted roles will automatically receive view, read, connect, and speak
+        permissions in all created event channels.
+
+        **Parameters:**
+        - role: The role to whitelist (mention or role ID)
+
+        **Example:**
+        - `[p]eventchannels addwhitelistedrole @Staff`
+        - `[p]eventchannels addwhitelistedrole 123456789012345678`
+        """
+        whitelisted_roles = await self.config.guild(ctx.guild).whitelisted_roles()
+
+        if role.id in whitelisted_roles:
+            await ctx.send(f"❌ Role **{role.name}** is already whitelisted.")
+            return
+
+        # Add the role ID to the whitelist
+        whitelisted_roles.append(role.id)
+
+        # Save back to config
+        await self.config.guild(ctx.guild).whitelisted_roles.set(whitelisted_roles)
+
+        await ctx.send(
+            f"✅ Added **{role.name}** to the whitelist.\n"
+            f"This role will now automatically receive view, read, connect, and speak permissions in all event channels."
+        )
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @eventchannels.command(name="removewhitelistedrole")
+    async def removewhitelistedrole(self, ctx, role: discord.Role):
+        """Remove a role from the whitelist.
+
+        **Parameters:**
+        - role: The role to remove from whitelist (mention or role ID)
+
+        **Example:**
+        - `[p]eventchannels removewhitelistedrole @Staff`
+        - `[p]eventchannels removewhitelistedrole 123456789012345678`
+        """
+        whitelisted_roles = await self.config.guild(ctx.guild).whitelisted_roles()
+
+        if role.id not in whitelisted_roles:
+            await ctx.send(f"❌ Role **{role.name}** is not whitelisted.")
+            return
+
+        # Remove the role ID from the whitelist
+        whitelisted_roles.remove(role.id)
+
+        # Save back to config
+        await self.config.guild(ctx.guild).whitelisted_roles.set(whitelisted_roles)
+
+        await ctx.send(f"✅ Removed **{role.name}** from the whitelist.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
+    @eventchannels.command(name="listwhitelistedroles")
+    async def listwhitelistedroles(self, ctx):
+        """List all whitelisted roles.
+
+        Shows all roles that automatically receive permissions in event channels.
+        """
+        whitelisted_roles = await self.config.guild(ctx.guild).whitelisted_roles()
+
+        if not whitelisted_roles:
+            await ctx.send(
+                f"❌ No whitelisted roles configured.\n"
+                f"Use `{ctx.clean_prefix}eventchannels addwhitelistedrole <role>` to add one."
+            )
+            return
+
+        # Build the list
+        role_list = []
+        for role_id in whitelisted_roles:
+            role = ctx.guild.get_role(role_id)
+            if role:
+                role_list.append(f"• **{role.name}** (ID: {role_id})")
+            else:
+                role_list.append(f"• *Deleted Role* (ID: {role_id})")
+
+        await ctx.send(
+            f"**Whitelisted Roles:**\n" + "\n".join(role_list) + "\n\n"
+            f"These roles automatically receive view, read, connect, and speak permissions in all event channels.\n"
+            f"Use `{ctx.clean_prefix}eventchannels removewhitelistedrole <role>` to remove a role."
+        )
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
     @eventchannels.command(name="setannouncement")
     async def seteventannouncement(self, ctx, *, message: str):
         """Set the announcement message posted in event text channels.
@@ -721,6 +822,7 @@ class EventChannels(commands.Cog):
         channel_name_limit_char = await self.config.guild(ctx.guild).channel_name_limit_char()
         voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
         voice_minimum_roles = await self.config.guild(ctx.guild).voice_minimum_roles()
+        whitelisted_role_ids = await self.config.guild(ctx.guild).whitelisted_roles()
 
         category = ctx.guild.get_channel(category_id) if category_id else None
         category_name = category.name if category else "Not set"
@@ -747,6 +849,19 @@ class EventChannels(commands.Cog):
         else:
             voice_minimum_display = "None"
 
+        # Format whitelisted roles display
+        if whitelisted_role_ids:
+            whitelist_list = []
+            for role_id in whitelisted_role_ids:
+                role = ctx.guild.get_role(role_id)
+                if role:
+                    whitelist_list.append(f"`{role.name}`")
+                else:
+                    whitelist_list.append(f"`Deleted Role (ID: {role_id})`")
+            whitelisted_display = ", ".join(whitelist_list)
+        else:
+            whitelisted_display = "None"
+
         # Display channel name limit setting
         if channel_name_limit_char:
             name_limit_display = f"Truncate at `{channel_name_limit_char}` (character-based)"
@@ -764,6 +879,7 @@ class EventChannels(commands.Cog):
         embed.add_field(name="Channel Name Limit", value=name_limit_display, inline=False)
         embed.add_field(name="Voice Multiplier", value=voice_multiplier_display, inline=False)
         embed.add_field(name="Minimum Roles Required", value=voice_minimum_display, inline=False)
+        embed.add_field(name="Whitelisted Roles", value=whitelisted_display, inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
         embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
         embed.add_field(name="Deletion Warning", value=deletion_warning_display, inline=False)
@@ -785,11 +901,11 @@ class EventChannels(commands.Cog):
                 f"**Channel Name Limit:** {name_limit_display}\n"
                 f"**Voice Multiplier:** {voice_multiplier_display}\n"
                 f"**Minimum Roles Required:** {voice_minimum_display}\n"
+                f"**Whitelisted Roles:** {whitelisted_display}\n"
                 f"**Announcement:** {announcement_display}\n"
                 f"**Event Start Message:** {event_start_display}\n"
                 f"**Deletion Warning:** {deletion_warning_display}\n"
-                f"**Divider Channel:** {divider_display}\n"
-                f"**Role Re-add:** {role_readd_display}"
+                f"**Divider Channel:** {divider_display}"
             )
             await ctx.send(message)
 
@@ -1479,7 +1595,7 @@ class EventChannels(commands.Cog):
                     ),
                 }
 
-                # Add all existing tracked roles
+                # Add all existing tracked event roles
                 for existing_role_id in divider_roles:
                     existing_role = guild.get_role(existing_role_id)
                     if existing_role:
@@ -1489,7 +1605,18 @@ class EventChannels(commands.Cog):
                             add_reactions=False,
                         )
 
-                # Add the new role
+                # Add whitelisted roles with view-only permissions
+                whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                for whitelisted_role_id in whitelisted_role_ids:
+                    whitelisted_role = guild.get_role(whitelisted_role_id)
+                    if whitelisted_role:
+                        overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            add_reactions=False,
+                        )
+
+                # Add the new event role
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=False,
@@ -1522,7 +1649,7 @@ class EventChannels(commands.Cog):
                     ),
                 }
 
-                # Add remaining tracked roles (excluding the one being removed)
+                # Add remaining tracked event roles (excluding the one being removed)
                 for existing_role_id in divider_roles:
                     if existing_role_id != role.id:
                         existing_role = guild.get_role(existing_role_id)
@@ -1532,6 +1659,17 @@ class EventChannels(commands.Cog):
                                 send_messages=False,
                                 add_reactions=False,
                             )
+
+                # Add whitelisted roles with view-only permissions
+                whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                for whitelisted_role_id in whitelisted_role_ids:
+                    whitelisted_role = guild.get_role(whitelisted_role_id)
+                    if whitelisted_role:
+                        overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            add_reactions=False,
+                        )
 
                 log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
 
@@ -1607,12 +1745,23 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            # Add permissions for tracked roles
+            # Add permissions for tracked event roles
             divider_roles = await self.config.guild(guild).divider_roles()
             for role_id in divider_roles:
                 role = guild.get_role(role_id)
                 if role:
                     overwrites[role] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        add_reactions=False,
+                    )
+
+            # Add whitelisted roles with view-only permissions
+            whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+            for whitelisted_role_id in whitelisted_role_ids:
+                whitelisted_role = guild.get_role(whitelisted_role_id)
+                if whitelisted_role:
+                    overwrites[whitelisted_role] = discord.PermissionOverwrite(
                         view_channel=True,
                         send_messages=False,
                         add_reactions=False,
@@ -1771,6 +1920,18 @@ class EventChannels(commands.Cog):
                     speak=True,
                 ),
             }
+
+            # Add whitelisted roles to overwrites
+            whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+            for whitelisted_role_id in whitelisted_role_ids:
+                whitelisted_role = guild.get_role(whitelisted_role_id)
+                if whitelisted_role:
+                    overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        connect=True,
+                        speak=True,
+                    )
 
             # Get channel format and prepare channel names
             channel_format = await self.config.guild(guild).channel_format()
@@ -2060,6 +2221,19 @@ class EventChannels(commands.Cog):
                                 speak=False,  # Locked in voice
                             ),
                         }
+
+                        # Add whitelisted roles to locked overwrites (keep view but lock send/speak)
+                        whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                        for whitelisted_role_id in whitelisted_role_ids:
+                            whitelisted_role = guild.get_role(whitelisted_role_id)
+                            if whitelisted_role:
+                                locked_overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                                    view_channel=True,
+                                    send_messages=False,  # Locked
+                                    connect=True,
+                                    speak=False,  # Locked in voice
+                                )
+
                         await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
                         for voice_channel in voice_channels:
                             await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
