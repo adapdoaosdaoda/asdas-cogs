@@ -74,8 +74,14 @@ For help, questions, or feature requests:
 
 For Reminders-specific questions, see the [AAA3A-cogs repository](https://github.com/AAA3A-AAA3A/AAA3A-cogs).
 
-## 📝 Credits & License
+## 📝 Credits
 
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
-- **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs) ([MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)), enhanced with `{time}` variable support
+- **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
+
+## 📄 License
+
+- **EventChannels** - Custom development for Red-Discord Bot
+- **EventRoleReadd** - Custom development for Red-Discord Bot
+- **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs) which uses the [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE).
