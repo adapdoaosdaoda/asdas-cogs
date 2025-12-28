@@ -35,6 +35,7 @@ class EventChannels(commands.Cog):
             channel_name_limit_char="",  # Character to limit name at (empty = use numeric limit)
             voice_multipliers={},  # Dictionary of keyword:multiplier pairs for dynamic voice channel creation
             voice_minimum_roles={},  # Dictionary of keyword:minimum_count pairs for enforcing minimum role members
+            minimum_retry_intervals=[10, 5, 2],  # Minutes before event start to retry if minimum not met (default: 10min, 5min, 2min)
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self.bot.loop.create_task(self._startup_scan())
@@ -1645,7 +1646,7 @@ class EventChannels(commands.Cog):
                     pass
             return None
 
-    async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent):
+    async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent, retry_count: int = 0):
         try:
             start_time = event.start_time.astimezone(timezone.utc)
             creation_minutes = await self.config.guild(guild).creation_minutes()
@@ -1653,6 +1654,15 @@ class EventChannels(commands.Cog):
             deletion_hours = await self.config.guild(guild).deletion_hours()
             delete_time = start_time + timedelta(hours=deletion_hours)
             now = datetime.now(timezone.utc)
+
+            # If this is a retry, adjust the create_time based on retry intervals
+            if retry_count > 0:
+                retry_intervals = await self.config.guild(guild).minimum_retry_intervals()
+                if retry_count <= len(retry_intervals):
+                    # Use the retry interval for this attempt
+                    retry_minutes = retry_intervals[retry_count - 1]
+                    create_time = start_time - timedelta(minutes=retry_minutes)
+                    log.info(f"Retry attempt {retry_count} for event '{event.name}': checking at T-{retry_minutes} minutes")
 
             # If event starts in less than configured minutes, create channels immediately
             if now >= create_time:
@@ -1808,9 +1818,54 @@ class EventChannels(commands.Cog):
                 if minimum_required:
                     role_member_count = len(role.members)
                     if role_member_count < minimum_required:
-                        log.info(f"Skipping channel creation for event '{event.name}': keyword '{matched_keyword}' requires minimum {minimum_required} role members, but only {role_member_count} found")
-                        # Do not create any channels if minimum is not met
-                        return
+                        # Check if we should retry
+                        retry_intervals = await self.config.guild(guild).minimum_retry_intervals()
+
+                        if retry_count < len(retry_intervals):
+                            # Schedule a retry attempt
+                            next_retry = retry_count + 1
+                            retry_minutes = retry_intervals[retry_count]
+                            retry_time = start_time - timedelta(minutes=retry_minutes)
+                            time_until_retry = (retry_time - datetime.now(timezone.utc)).total_seconds()
+
+                            # Only schedule retry if we haven't passed the retry time yet
+                            if time_until_retry > 0:
+                                log.info(
+                                    f"Event '{event.name}': minimum not met ({role_member_count}/{minimum_required} members). "
+                                    f"Scheduling retry attempt {next_retry} at T-{retry_minutes} minutes "
+                                    f"(in {int(time_until_retry/60)} minutes)"
+                                )
+                                # Schedule the retry task
+                                retry_task = self.bot.loop.create_task(
+                                    self._handle_event(guild, event, retry_count=next_retry)
+                                )
+                                # Store with a unique key to avoid overwriting the main task
+                                self.active_tasks[f"{event.id}_retry_{next_retry}"] = retry_task
+                                return
+                            else:
+                                log.info(
+                                    f"Event '{event.name}': minimum not met ({role_member_count}/{minimum_required} members) "
+                                    f"and retry time T-{retry_minutes}min already passed. No more retries."
+                                )
+                                return
+                        else:
+                            log.info(
+                                f"Event '{event.name}': minimum not met ({role_member_count}/{minimum_required} members) "
+                                f"and all retry attempts exhausted. Skipping channel creation."
+                            )
+                            return
+                    else:
+                        # Minimum is met, log success
+                        if retry_count > 0:
+                            log.info(
+                                f"Event '{event.name}': minimum requirement met on retry attempt {retry_count} "
+                                f"({role_member_count}/{minimum_required} members). Proceeding with channel creation."
+                            )
+                        else:
+                            log.info(
+                                f"Event '{event.name}': minimum requirement met "
+                                f"({role_member_count}/{minimum_required} members). Proceeding with channel creation."
+                            )
 
             # Calculate number of voice channels based on role member count
             if matched_keyword and voice_multiplier_capacity and role:
@@ -2114,25 +2169,35 @@ class EventChannels(commands.Cog):
             task = self.bot.loop.create_task(self._handle_event(event.guild, event))
             self.active_tasks[event.id] = task
 
+    def _cancel_event_tasks(self, event_id: int):
+        """Cancel all tasks related to an event (main task + retry tasks)."""
+        # Cancel main task
+        task = self.active_tasks.get(event_id)
+        if task and not task.done():
+            task.cancel()
+            self.active_tasks.pop(event_id, None)
+
+        # Cancel all retry tasks
+        retry_keys = [key for key in self.active_tasks.keys() if isinstance(key, str) and key.startswith(f"{event_id}_retry_")]
+        for retry_key in retry_keys:
+            retry_task = self.active_tasks.get(retry_key)
+            if retry_task and not retry_task.done():
+                retry_task.cancel()
+            self.active_tasks.pop(retry_key, None)
+
     @commands.Cog.listener()
     async def on_scheduled_event_delete(self, event: discord.ScheduledEvent):
         """Cancel task and clean up channels when event is deleted."""
-        task = self.active_tasks.get(event.id)
-        if task and not task.done():
-            task.cancel()
+        self._cancel_event_tasks(event.id)
 
     @commands.Cog.listener()
     async def on_scheduled_event_update(self, before: discord.ScheduledEvent, after: discord.ScheduledEvent):
         """Cancel task and clean up if event is cancelled or start time changes significantly."""
         if after.status == discord.EventStatus.cancelled:
-            task = self.active_tasks.get(after.id)
-            if task and not task.done():
-                task.cancel()
+            self._cancel_event_tasks(after.id)
         elif before.start_time != after.start_time and after.status == discord.EventStatus.scheduled:
-            # Start time changed - cancel old task and create new one
-            task = self.active_tasks.get(after.id)
-            if task and not task.done():
-                task.cancel()
+            # Start time changed - cancel old task and all retry tasks, create new one
+            self._cancel_event_tasks(after.id)
             # Give a moment for cancellation to complete
             await asyncio.sleep(0.1)
             new_task = self.bot.loop.create_task(self._handle_event(after.guild, after))
@@ -2177,11 +2242,8 @@ class EventChannels(commands.Cog):
                         except (discord.NotFound, discord.Forbidden) as e:
                             log.warning(f"Could not delete channel {vc_id}: {e}")
 
-                # Cancel any active task for this event
-                task = self.active_tasks.get(int(event_id))
-                if task and not task.done():
-                    task.cancel()
-                    self.active_tasks.pop(int(event_id), None)
+                # Cancel any active task and retry tasks for this event
+                self._cancel_event_tasks(int(event_id))
 
         # Remove events from storage
         for event_id in events_to_remove:
@@ -2251,11 +2313,8 @@ class EventChannels(commands.Cog):
                             except discord.Forbidden:
                                 log.warning(f"Could not delete role for event {event_id}")
 
-                    # Cancel any active task
-                    task = self.active_tasks.get(int(event_id))
-                    if task and not task.done():
-                        task.cancel()
-                        self.active_tasks.pop(int(event_id), None)
+                    # Cancel any active task and retry tasks
+                    self._cancel_event_tasks(int(event_id))
 
                 break
 
