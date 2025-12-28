@@ -83,6 +83,6 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 
 ## 📄 License
 
-Unless otherwise stated, do whatever you want with this code.
+Unless otherwise stated, do whatever you want.
 
 - **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
