@@ -43,13 +43,10 @@ Automatically re-adds event roles based on log channel messages.
 - Instant role restoration
 
 ### [Reminders](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders-Overview)
-Enhanced reminders with time variables and FIFO scheduling.
+[AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
 
 **Key Features:**
 - Discord relative timestamp support (`{time}` variable)
-- FIFO command scheduling
-- Recurring reminders
-- Snooze and "Me Too" functionality
 
 
 ## 📚 Documentation
