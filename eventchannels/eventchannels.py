@@ -1595,7 +1595,7 @@ class EventChannels(commands.Cog):
                     ),
                 }
 
-                # Add all existing tracked roles
+                # Add all existing tracked event roles
                 for existing_role_id in divider_roles:
                     existing_role = guild.get_role(existing_role_id)
                     if existing_role:
@@ -1605,7 +1605,18 @@ class EventChannels(commands.Cog):
                             add_reactions=False,
                         )
 
-                # Add the new role
+                # Add whitelisted roles with view-only permissions
+                whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                for whitelisted_role_id in whitelisted_role_ids:
+                    whitelisted_role = guild.get_role(whitelisted_role_id)
+                    if whitelisted_role:
+                        overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            add_reactions=False,
+                        )
+
+                # Add the new event role
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=False,
@@ -1638,7 +1649,7 @@ class EventChannels(commands.Cog):
                     ),
                 }
 
-                # Add remaining tracked roles (excluding the one being removed)
+                # Add remaining tracked event roles (excluding the one being removed)
                 for existing_role_id in divider_roles:
                     if existing_role_id != role.id:
                         existing_role = guild.get_role(existing_role_id)
@@ -1648,6 +1659,17 @@ class EventChannels(commands.Cog):
                                 send_messages=False,
                                 add_reactions=False,
                             )
+
+                # Add whitelisted roles with view-only permissions
+                whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                for whitelisted_role_id in whitelisted_role_ids:
+                    whitelisted_role = guild.get_role(whitelisted_role_id)
+                    if whitelisted_role:
+                        overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            add_reactions=False,
+                        )
 
                 log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
 
@@ -1723,12 +1745,23 @@ class EventChannels(commands.Cog):
                 ),
             }
 
-            # Add permissions for tracked roles
+            # Add permissions for tracked event roles
             divider_roles = await self.config.guild(guild).divider_roles()
             for role_id in divider_roles:
                 role = guild.get_role(role_id)
                 if role:
                     overwrites[role] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        add_reactions=False,
+                    )
+
+            # Add whitelisted roles with view-only permissions
+            whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+            for whitelisted_role_id in whitelisted_role_ids:
+                whitelisted_role = guild.get_role(whitelisted_role_id)
+                if whitelisted_role:
+                    overwrites[whitelisted_role] = discord.PermissionOverwrite(
                         view_channel=True,
                         send_messages=False,
                         add_reactions=False,
