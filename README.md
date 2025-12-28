@@ -45,7 +45,7 @@ Automatically re-adds event roles based on log channel messages.
 ### [Reminders](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders-Overview)
 [AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
 
-**Key Features:**
+**Added Features:**
 - Discord relative timestamp support (`{time}` variable)
 
 
