@@ -82,6 +82,5 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 
 ## 📄 License
 
-- **EventChannels** - Custom development
-- **EventRoleReadd** - Custom development
+- **EventChannels, EventRoleReadd** - Custom development
 - **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs) which uses the [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE).
