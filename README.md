@@ -82,4 +82,5 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 
 ## 📄 License
 
-See individual cog directories for license information.
+- **EventChannels, EventRoleReadd** - Custom development for Red-Discord Bot
+- **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
