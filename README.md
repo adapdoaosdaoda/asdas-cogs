@@ -16,11 +16,11 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]load reminders
 ```
 
-**See the [Installation Guide](wiki/Installation.md) for detailed instructions.**
+**See the [Installation Guide](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Installation) for detailed instructions.**
 
 ## 📦 Available Cogs
 
-### [EventChannels](wiki/EventChannels/Overview.md)
+### [EventChannels](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels-Overview)
 Automatically creates and manages temporary channels for Discord scheduled events.
 
 **Key Features:**
@@ -30,7 +30,7 @@ Automatically creates and manages temporary channels for Discord scheduled event
 - Customizable channel names and formats
 - Automatic cleanup after events
 
-### [EventRoleReadd](wiki/EventRoleReadd/Overview.md)
+### [EventRoleReadd](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd-Overview)
 Automatically re-adds event roles based on log channel messages.
 
 **Key Features:**
@@ -38,7 +38,7 @@ Automatically re-adds event roles based on log channel messages.
 - Raid-helper integration
 - Instant role restoration
 
-### [Reminders](wiki/Reminders/Overview.md)
+### [Reminders](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders-Overview)
 Enhanced reminders with time variables and FIFO scheduling.
 
 **Key Features:**
@@ -50,12 +50,12 @@ Enhanced reminders with time variables and FIFO scheduling.
 
 ## 📚 Documentation
 
-**Complete documentation is available in the [Wiki](wiki/Home.md):**
+**Complete documentation is available in the [Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki):**
 
-- **[Installation Guide](wiki/Installation.md)** - Get started
-- **[EventChannels Wiki](wiki/EventChannels/Overview.md)** - Complete guide with examples
-- **[EventRoleReadd Wiki](wiki/EventRoleReadd/Overview.md)** - Setup and commands
-- **[Reminders Wiki](wiki/Reminders/Overview.md)** - Features and usage
+- **[Installation Guide](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Installation)** - Get started
+- **[EventChannels Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels-Overview)** - Complete guide with examples
+- **[EventRoleReadd Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd-Overview)** - Setup and commands
+- **[Reminders Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders-Overview)** - Features and usage
 
 
 ## 🔗 Links
@@ -68,8 +68,8 @@ Enhanced reminders with time variables and FIFO scheduling.
 ## 💬 Support
 
 For help, questions, or feature requests:
-- **Read the [Wiki](wiki/Home.md)**
-- **Check [Troubleshooting](wiki/EventChannels/Troubleshooting.md)**
+- **Read the [Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki)**
+- **Check [Troubleshooting](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels-Troubleshooting)**
 - **[Open an issue](https://github.com/adapdoaosdaoda/asdas-cogs/issues)**
 
 For Reminders-specific questions, see the [AAA3A-cogs repository](https://github.com/AAA3A-AAA3A/AAA3A-cogs).
@@ -79,7 +79,7 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
-- **Claude** - Coded everything 🎉🎊
+- **Claude** - Coding everything 🎉🎊
 
 ## 📄 License
 
