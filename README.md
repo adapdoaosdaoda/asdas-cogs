@@ -79,7 +79,7 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
-- **Claude** - AI assistance in development and documentation
+- **Claude** - Did literally everything while the "developer" watched
 
 ## 📄 License
 
