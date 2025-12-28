@@ -8,9 +8,13 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 
 ```
 [p]repo add asdas-cogs https://github.com/adapdoaosdaoda/asdas-cogs
+```
+```
 [p]cog install asdas-cogs eventchannels
 [p]cog install asdas-cogs eventrolereadd
 [p]cog install asdas-cogs reminders
+```
+```
 [p]load eventchannels
 [p]load eventrolereadd
 [p]load reminders
@@ -82,7 +86,6 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
 
 ## 📄 License
+- **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
 
 Unless otherwise stated, do whatever you want.
-
-- **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
