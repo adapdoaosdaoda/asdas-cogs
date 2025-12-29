@@ -22,8 +22,8 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 
 ## 📦 Available Cogs
 
-### [EventChannels](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels)
-Automatically creates and manages temporary channels for Discord scheduled events.
+### EventChannels
+Automatically creates and manages temporary channels for Discord scheduled events, created with [Raid-Helper](https://raid-helper.dev/) in mind.
 
 **Key Features:**
 - Automatic channel creation before events
@@ -32,15 +32,15 @@ Automatically creates and manages temporary channels for Discord scheduled event
 - Customizable channel names and formats
 - Automatic cleanup after events
 
-### [EventRoleReadd](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd)
-Automatically re-adds event roles based on log channel messages.
+### EventRoleReadd
+Extension to EventChannels that automatically re-adds event roles based on log channel messages.
 
 **Key Features:**
 - Keyword-based role management
-- Raid-helper integration
+- Intended to be used with [Raid-helper](https://raid-helper.dev/)
 - Instant role restoration
 
-### [Reminders](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders)
+### Reminders
 [AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
 
 **Added Features:**
