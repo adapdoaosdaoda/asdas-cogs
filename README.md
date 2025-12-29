@@ -20,11 +20,9 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]load reminders
 ```
 
-**See the [Installation Guide](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Installation) for detailed instructions.**
-
 ## 📦 Available Cogs
 
-### [EventChannels](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels-Overview)
+### [EventChannels](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels)
 Automatically creates and manages temporary channels for Discord scheduled events.
 
 **Key Features:**
@@ -34,7 +32,7 @@ Automatically creates and manages temporary channels for Discord scheduled event
 - Customizable channel names and formats
 - Automatic cleanup after events
 
-### [EventRoleReadd](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd-Overview)
+### [EventRoleReadd](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd)
 Automatically re-adds event roles based on log channel messages.
 
 **Key Features:**
@@ -42,7 +40,7 @@ Automatically re-adds event roles based on log channel messages.
 - Raid-helper integration
 - Instant role restoration
 
-### [Reminders](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders-Overview)
+### [Reminders](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders)
 [AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
 
 **Added Features:**
@@ -53,10 +51,10 @@ Automatically re-adds event roles based on log channel messages.
 
 **Complete documentation is available in the [Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki):**
 
-- **[Installation Guide](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Installation)** - Get started
-- **[EventChannels Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels-Overview)** - Complete guide with examples
-- **[EventRoleReadd Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd-Overview)** - Setup and commands
-- **[Reminders Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders-Overview)** - Features and usage
+- **[Installation Guide](https://github.com/adapdoaosdaoda/asdas-cogs/wiki#-installation)** - Get started
+- **[EventChannels Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels)** - Complete guide with examples
+- **[EventRoleReadd Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd)** - Setup and commands
+- **[Reminders Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders)** - Features and usage
 
 
 ## 🔗 Links
