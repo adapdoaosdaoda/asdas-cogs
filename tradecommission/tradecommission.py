@@ -48,12 +48,13 @@ def extract_final_emoji(text: str) -> Optional[str]:
 class AddInfoView(discord.ui.View):
     """View for adding Trade Commission information with dropdowns organized by category."""
 
-    def __init__(self, cog: "TradeCommission", guild: discord.Guild, trade_options: List[Dict], active_options: List[int], emoji_titles: Dict[str, str]):
+    def __init__(self, cog: "TradeCommission", guild: discord.Guild, trade_options: List[Dict], active_options: List[int], emoji_titles: Dict[str, str], allowed_user_id: int):
         super().__init__(timeout=None)  # Persistent view
         self.cog = cog
         self.guild = guild
         self.trade_options = trade_options
         self.active_options = active_options
+        self.allowed_user_id = allowed_user_id
 
         # Group options by their final emoji for organized display
         emoji_groups = {}  # {emoji: [(idx, option), ...]}
@@ -134,6 +135,11 @@ class AddInfoView(discord.ui.View):
 
     async def _cancel_callback(self, interaction: discord.Interaction):
         """Handle cancel button click."""
+        # Check if user is allowed to interact
+        if interaction.user.id != self.allowed_user_id:
+            await interaction.response.send_message("❌ Only the user who called this command can use these controls!", ephemeral=True)
+            return
+
         # Check permissions
         member = interaction.user
         if not isinstance(member, discord.Member):
@@ -154,6 +160,11 @@ class AddInfoView(discord.ui.View):
     def _create_select_callback(self, slot_num: int):
         """Create a callback function for a specific dropdown slot."""
         async def callback(interaction: discord.Interaction):
+            # Check if user is allowed to interact
+            if interaction.user.id != self.allowed_user_id:
+                await interaction.response.send_message("❌ Only the user who called this command can use these controls!", ephemeral=True)
+                return
+
             # Check permissions
             member = interaction.user
             if not isinstance(member, discord.Member):
@@ -246,7 +257,7 @@ class AddInfoView(discord.ui.View):
             else:
                 # Recreate the view with updated selections
                 emoji_titles = await self.cog.config.emoji_titles()
-                new_view = AddInfoView(self.cog, self.guild, self.trade_options, self.active_options, emoji_titles)
+                new_view = AddInfoView(self.cog, self.guild, self.trade_options, self.active_options, emoji_titles, self.allowed_user_id)
 
                 # Get updated embed
                 embed = await self.cog._create_addinfo_embed(self.guild, self.trade_options, self.active_options)
@@ -355,7 +366,8 @@ class TradeCommission(commands.Cog):
             description=(
                 "Use the **3 dropdowns** below to select options for this week's Trade Commission message.\n\n"
                 "Options are organized by category within each dropdown.\n\n"
-                "Select an option from each dropdown to fill all 3 slots."
+                "Select an option from each dropdown to fill all 3 slots.\n\n"
+                "**Note:** Only you can interact with these controls."
             ),
             color=discord.Color.green(),
         )
@@ -948,12 +960,10 @@ class TradeCommission(commands.Cog):
         """
         Add information to the current week's Trade Commission message via buttons.
 
-        This will create a message with buttons. Click the buttons to add
-        up to 3 options to the weekly Trade Commission message.
-
-        The addinfo panel will also be sent to you via DM for easy access.
+        This will create a message with dropdowns in the current channel.
+        Only you can interact with the dropdowns to select up to 3 options.
         """
-        # Check if user has permission (for DM sending)
+        # Check if user has permission
         if not await self._has_addinfo_permission(ctx.author):
             await ctx.send("❌ You don't have permission to use addinfo!")
             return
@@ -990,21 +1000,14 @@ class TradeCommission(commands.Cog):
         # Get emoji titles for the view
         emoji_titles = await self.config.emoji_titles()
 
-        # Create the view with buttons
-        view = AddInfoView(self, ctx.guild, trade_options, active_options, emoji_titles)
+        # Create the view with buttons (limited to the command caller)
+        view = AddInfoView(self, ctx.guild, trade_options, active_options, emoji_titles, ctx.author.id)
 
-        # Send the full addinfo panel to the user's DM
-        try:
-            control_msg = await ctx.author.send(embed=embed, view=view)
+        # Send the addinfo panel to the current channel
+        control_msg = await ctx.send(embed=embed, view=view)
 
-            # Store the control message ID
-            await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
-
-            # Send a confirmation message to the channel
-            await ctx.send(f"✅ Addinfo panel sent to your DM! Use the dropdowns there to select trade commission options.", delete_after=15)
-        except discord.Forbidden:
-            # User has DMs disabled
-            await ctx.send("❌ I couldn't send you a DM. Please enable DMs from server members to use this feature.")
+        # Store the control message ID
+        await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
 
     @tradecommission.command(name="setoption")
     async def tc_setoption(
@@ -1428,6 +1431,13 @@ class TradeCommission(commands.Cog):
 
         embed.add_field(name="Message Customization", value=message_custom_text, inline=False)
 
+        # Notification message info
+        notification_text = (
+            f"**Message:** {guild_config['notification_message'][:100]}{'...' if len(guild_config['notification_message']) > 100 else ''}\n"
+            f"**Auto-delete:** After 3 hours"
+        )
+        embed.add_field(name="🔔 Notification (when 3 options selected)", value=notification_text, inline=False)
+
         # Image info (from global config)
         if global_config["image_url"]:
             embed.add_field(
@@ -1435,6 +1445,14 @@ class TradeCommission(commands.Cog):
                 value=f"[View Image]({global_config['image_url']})",
                 inline=False
             )
+
+        # Global options count
+        total_options = len(global_config["trade_options"])
+        embed.add_field(
+            name="📦 Available Options",
+            value=f"**Total:** {total_options} options configured\nUse `[p]tc listoptions` to view all",
+            inline=False
+        )
 
         # Allowed roles info
         allowed_role_ids = guild_config["allowed_roles"]
