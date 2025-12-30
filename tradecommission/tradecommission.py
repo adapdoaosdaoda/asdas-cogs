@@ -59,6 +59,7 @@ class TradeCommission(commands.Cog):
         default_global = {
             "trade_options": [],  # List of options: [{"emoji": "🔥", "title": "...", "description": "..."}, ...]
             "image_url": None,  # Image to display when information is added
+            "emoji_titles": {},  # Custom titles for emoji groups: {"🔥": "Fire Routes", ...}
         }
 
         # Per-guild config - only for addinfo tracking
@@ -608,9 +609,10 @@ class TradeCommission(commands.Cog):
             await ctx.send("❌ Message not found!")
             return
 
-        # Get global trade options
+        # Get global trade options and emoji titles
         trade_options = await self.config.trade_options()
         active_options = await self.config.guild(ctx.guild).active_options()
+        emoji_titles = await self.config.emoji_titles()
 
         if not trade_options:
             await ctx.send("❌ No trade options configured! Use `[p]tc setoption` to add options first.")
@@ -644,6 +646,9 @@ class TradeCommission(commands.Cog):
         if emoji_groups or no_emoji_options:
             # Display emoji groups first
             for category_emoji, options_list in sorted(emoji_groups.items()):
+                # Get custom title or use default
+                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
+
                 group_lines = []
                 for idx, option in options_list:
                     status = "✅" if idx in active_options else "⬜"
@@ -660,7 +665,7 @@ class TradeCommission(commands.Cog):
                         # Add current chunk
                         field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                         embed.add_field(
-                            name=f"{category_emoji} Options{field_suffix}",
+                            name=f"{group_title}{field_suffix}",
                             value="\n".join(current_chunk),
                             inline=True
                         )
@@ -675,7 +680,7 @@ class TradeCommission(commands.Cog):
                 if current_chunk:
                     field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                     embed.add_field(
-                        name=f"{category_emoji} Options{field_suffix}",
+                        name=f"{group_title}{field_suffix}",
                         value="\n".join(current_chunk),
                         inline=False
                     )
@@ -861,6 +866,7 @@ class TradeCommission(commands.Cog):
         """Update the addinfo control message."""
         trade_options = await self.config.trade_options()
         active_options = await self.config.guild(guild).active_options()
+        emoji_titles = await self.config.emoji_titles()
 
         embed = discord.Embed(
             title="📝 Add Trade Commission Information",
@@ -890,6 +896,9 @@ class TradeCommission(commands.Cog):
         if emoji_groups or no_emoji_options:
             # Display emoji groups first
             for category_emoji, options_list in sorted(emoji_groups.items()):
+                # Get custom title or use default
+                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
+
                 group_lines = []
                 for idx, option in options_list:
                     status = "✅" if idx in active_options else "⬜"
@@ -906,7 +915,7 @@ class TradeCommission(commands.Cog):
                         # Add current chunk
                         field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                         embed.add_field(
-                            name=f"{category_emoji} Options{field_suffix}",
+                            name=f"{group_title}{field_suffix}",
                             value="\n".join(current_chunk),
                             inline=True
                         )
@@ -921,7 +930,7 @@ class TradeCommission(commands.Cog):
                 if current_chunk:
                     field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                     embed.add_field(
-                        name=f"{category_emoji} Options{field_suffix}",
+                        name=f"{group_title}{field_suffix}",
                         value="\n".join(current_chunk),
                         inline=False
                     )
@@ -1183,6 +1192,116 @@ class TradeCommission(commands.Cog):
             color=discord.Color.green()
         )
         embed.set_image(url=image_url)
+
+        await ctx.send(embed=embed)
+
+    @tradecommission.command(name="setgrouptitle")
+    async def tc_setgrouptitle(self, ctx: commands.Context, emoji: str, *, title: str):
+        """
+        Set a custom title for an emoji-grouped option category (Global Setting).
+
+        This is a global setting that affects all servers using this cog.
+        Can be used in DMs by the bot owner.
+
+        When options are grouped by their final emoji in the addinfo message,
+        this allows you to customize the group name instead of just showing the emoji.
+
+        **Arguments:**
+        - `emoji`: The emoji that groups options (e.g., 🔥)
+        - `title`: Custom title for this emoji group
+
+        **Examples:**
+        - `[p]tc setgrouptitle 🔥 Fire Routes`
+        - `[p]tc setgrouptitle 🌊 Water Routes`
+        - `[p]tc setgrouptitle ⚔️ Combat Missions`
+        """
+        # Check permissions - bot owner only for global config
+        if not await ctx.bot.is_owner(ctx.author):
+            # If in guild, check for admin permissions
+            if ctx.guild:
+                if not (ctx.author.guild_permissions.manage_guild or await ctx.bot.is_admin(ctx.author)):
+                    await ctx.send("❌ You need Manage Server permission or Admin role to use this command!")
+                    return
+            else:
+                await ctx.send("❌ Only the bot owner can use this command in DMs!")
+                return
+
+        # Validate emoji
+        try:
+            await ctx.message.add_reaction(emoji)
+            await ctx.message.clear_reaction(emoji)
+        except discord.HTTPException:
+            await ctx.send("❌ Invalid emoji! Make sure it's a valid unicode emoji or custom Discord emoji.")
+            return
+
+        async with self.config.emoji_titles() as emoji_titles:
+            emoji_titles[emoji] = title
+
+        await ctx.send(f"✅ Set emoji group title: {emoji} → **{title}**")
+
+    @tradecommission.command(name="removegrouptitle")
+    async def tc_removegrouptitle(self, ctx: commands.Context, emoji: str):
+        """
+        Remove a custom title for an emoji-grouped option category (Global Setting).
+
+        This is a global setting that affects all servers using this cog.
+        Can be used in DMs by the bot owner.
+
+        **Arguments:**
+        - `emoji`: The emoji to remove the custom title from
+
+        **Example:**
+        - `[p]tc removegrouptitle 🔥`
+        """
+        # Check permissions - bot owner only for global config
+        if not await ctx.bot.is_owner(ctx.author):
+            # If in guild, check for admin permissions
+            if ctx.guild:
+                if not (ctx.author.guild_permissions.manage_guild or await ctx.bot.is_admin(ctx.author)):
+                    await ctx.send("❌ You need Manage Server permission or Admin role to use this command!")
+                    return
+            else:
+                await ctx.send("❌ Only the bot owner can use this command in DMs!")
+                return
+
+        async with self.config.emoji_titles() as emoji_titles:
+            if emoji not in emoji_titles:
+                await ctx.send(f"❌ No custom title set for {emoji}")
+                return
+
+            removed_title = emoji_titles.pop(emoji)
+
+        await ctx.send(f"✅ Removed custom title for {emoji} (was: **{removed_title}**)")
+
+    @tradecommission.command(name="listgrouptitles")
+    async def tc_listgrouptitles(self, ctx: commands.Context):
+        """
+        List all custom emoji group titles (Global Setting).
+
+        Shows all configured custom titles for emoji-grouped option categories.
+        Can be used in DMs by the bot owner.
+        """
+        emoji_titles = await self.config.emoji_titles()
+
+        if not emoji_titles:
+            await ctx.send(
+                "❌ No custom emoji group titles configured.\n\n"
+                "Use `[p]tc setgrouptitle <emoji> <title>` to add custom titles."
+            )
+            return
+
+        embed = discord.Embed(
+            title="📋 Emoji Group Titles",
+            description=f"**Total:** {len(emoji_titles)}\n\nCustom titles for emoji-grouped options:",
+            color=discord.Color.blue()
+        )
+
+        for emoji, title in emoji_titles.items():
+            embed.add_field(
+                name=f"{emoji}",
+                value=f"**{title}**",
+                inline=True
+            )
 
         await ctx.send(embed=embed)
 
