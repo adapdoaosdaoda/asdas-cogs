@@ -461,10 +461,7 @@ class TradeCommission(commands.Cog):
             color=embed_color,
         )
 
-        # Add image if configured
-        image_url = await self.config.image_url()
-        if image_url:
-            embed.set_image(url=image_url)
+        # Note: Image is only added after options are selected (see update_commission_message)
 
         # Prepare content with ping if role is configured
         content = None
