@@ -7,6 +7,42 @@ from redbot.core import commands, Config
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import box, humanize_list
 import pytz
+import re
+
+
+def extract_final_emoji(text: str) -> Optional[str]:
+    """Extract the final emoji from a text string.
+
+    Args:
+        text: The text to extract emoji from
+
+    Returns:
+        The final emoji found in the text, or None if no emoji found
+    """
+    # Unicode emoji pattern - matches standard emoji characters
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F700-\U0001F77F"  # alchemical symbols
+        "\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
+        "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+        "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+        "\U0001FA00-\U0001FA6F"  # Chess Symbols
+        "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+        "\U00002702-\U000027B0"  # Dingbats
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE
+    )
+
+    # Find all emojis in the text
+    emojis = emoji_pattern.findall(text)
+
+    # Return the last emoji found, or None if no emojis
+    return emojis[-1] if emojis else None
 
 
 class TradeCommission(commands.Cog):
@@ -23,6 +59,7 @@ class TradeCommission(commands.Cog):
         default_global = {
             "trade_options": [],  # List of options: [{"emoji": "🔥", "title": "...", "description": "..."}, ...]
             "image_url": None,  # Image to display when information is added
+            "emoji_titles": {},  # Custom titles for emoji groups: {"🔥": "Fire Routes", ...}
         }
 
         # Per-guild config - only for addinfo tracking
@@ -38,10 +75,12 @@ class TradeCommission(commands.Cog):
             "active_options": [],  # List of option indices that are currently active (max 3)
             "addinfo_message_id": None,  # The addinfo control message
             "allowed_roles": [],  # Role IDs that can use addinfo reactions
+            "allowed_users": [],  # User IDs that can use addinfo reactions
             "message_title": "📊 Weekly Trade Commission - Where Winds Meet",  # Configurable header
             "initial_description": "This week's Trade Commission information will be added soon!\n\nCheck back later for updates.",  # Before addinfo
             "post_description": "This week's Trade Commission information:",  # After addinfo
             "ping_role_id": None,  # Role to ping when posting message
+            "previous_message_id": None,  # Previous week's message to delete
         }
 
         self.config.register_global(**default_global)
@@ -64,6 +103,11 @@ class TradeCommission(commands.Cog):
         """Check if a member has permission to use addinfo reactions."""
         # Check if user has Manage Server permission
         if member.guild_permissions.manage_guild:
+            return True
+
+        # Check if user is in the allowed users list
+        allowed_user_ids = await self.config.guild(member.guild).allowed_users()
+        if member.id in allowed_user_ids:
             return True
 
         # Check if user has one of the allowed roles
@@ -126,10 +170,26 @@ class TradeCommission(commands.Cog):
 
         config = await self.config.guild(guild).all()
 
+        # Delete previous week's message if it exists
+        if config["previous_message_id"]:
+            try:
+                prev_channel = guild.get_channel(config["current_channel_id"]) or channel
+                prev_message = await prev_channel.fetch_message(config["previous_message_id"])
+                await prev_message.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass  # Message already deleted or no permission
+
+        # Determine embed color from ping role or default
+        embed_color = discord.Color.blue()
+        if config["ping_role_id"]:
+            ping_role = guild.get_role(config["ping_role_id"])
+            if ping_role and ping_role.color != discord.Color.default():
+                embed_color = ping_role.color
+
         embed = discord.Embed(
             title=config["message_title"],
             description=config["initial_description"],
-            color=discord.Color.blue(),
+            color=embed_color,
         )
 
         # Prepare content with ping if role is configured
@@ -141,6 +201,9 @@ class TradeCommission(commands.Cog):
 
         try:
             message = await channel.send(content=content, embed=embed)
+            # Store current message as previous for next week
+            await self.config.guild(guild).previous_message_id.set(config["current_message_id"])
+            # Set new current message
             await self.config.guild(guild).current_message_id.set(message.id)
             await self.config.guild(guild).current_channel_id.set(channel.id)
         except discord.Forbidden:
@@ -329,6 +392,94 @@ class TradeCommission(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    @tradecommission.command(name="adduser")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_adduser(self, ctx: commands.Context, user: discord.Member):
+        """
+        Add a user that can use addinfo reactions.
+
+        Users added with this command will be able to click reactions on the addinfo message
+        to select Trade Commission options, even if they don't have Manage Server permission.
+
+        **Arguments:**
+        - `user`: The user to add
+
+        **Example:**
+        - `[p]tc adduser @JohnDoe`
+        """
+        async with self.config.guild(ctx.guild).allowed_users() as allowed_users:
+            if user.id in allowed_users:
+                await ctx.send(f"❌ {user.mention} is already allowed to use addinfo!")
+                return
+
+            allowed_users.append(user.id)
+
+        await ctx.send(f"✅ {user.mention} can now use addinfo reactions!")
+
+    @tradecommission.command(name="removeuser")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_removeuser(self, ctx: commands.Context, user: discord.Member):
+        """
+        Remove a user from the addinfo allowed list.
+
+        **Arguments:**
+        - `user`: The user to remove
+
+        **Example:**
+        - `[p]tc removeuser @JohnDoe`
+        """
+        async with self.config.guild(ctx.guild).allowed_users() as allowed_users:
+            if user.id not in allowed_users:
+                await ctx.send(f"❌ {user.mention} is not in the allowed users list!")
+                return
+
+            allowed_users.remove(user.id)
+
+        await ctx.send(f"✅ {user.mention} can no longer use addinfo reactions.")
+
+    @tradecommission.command(name="listusers")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_listusers(self, ctx: commands.Context):
+        """
+        List all users that can use addinfo reactions.
+
+        Shows which individual users have permission to click reactions on the addinfo message,
+        in addition to users with Manage Server permission or allowed roles.
+        """
+        allowed_user_ids = await self.config.guild(ctx.guild).allowed_users()
+
+        if not allowed_user_ids:
+            await ctx.send(
+                "❌ No individual users configured.\n"
+                "Only users with **Manage Server** permission or allowed roles can use addinfo reactions.\n\n"
+                "Use `[p]tc adduser` to add a user."
+            )
+            return
+
+        # Get user objects
+        users = []
+        for user_id in allowed_user_ids:
+            user = ctx.guild.get_member(user_id)
+            if user:
+                users.append(user.mention)
+            else:
+                users.append(f"Left Server (ID: {user_id})")
+
+        embed = discord.Embed(
+            title="📝 Addinfo Allowed Users",
+            description=(
+                "The following users can use addinfo reactions:\n\n"
+                + "\n".join(f"• {user}" for user in users) +
+                "\n\n*Note: Users with Manage Server permission or allowed roles can also use addinfo.*"
+            ),
+            color=discord.Color.blue()
+        )
+
+        await ctx.send(embed=embed)
+
     @tradecommission.command(name="settitle")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
@@ -458,9 +609,10 @@ class TradeCommission(commands.Cog):
             await ctx.send("❌ Message not found!")
             return
 
-        # Get global trade options
+        # Get global trade options and emoji titles
         trade_options = await self.config.trade_options()
         active_options = await self.config.guild(ctx.guild).active_options()
+        emoji_titles = await self.config.emoji_titles()
 
         if not trade_options:
             await ctx.send("❌ No trade options configured! Use `[p]tc setoption` to add options first.")
@@ -477,43 +629,97 @@ class TradeCommission(commands.Cog):
             color=discord.Color.green(),
         )
 
-        # Show current options - split into multiple fields if needed to avoid 1024 char limit
-        options_text = []
+        # Group options by their final emoji in description
+        emoji_groups = {}  # {emoji: [(idx, option), ...]}
+        no_emoji_options = []  # [(idx, option), ...]
+
         for idx, option in enumerate(trade_options):
-            status = "✅" if idx in active_options else "⬜"
-            options_text.append(f"{status} {option['emoji']} **{option['title']}**")
+            final_emoji = extract_final_emoji(option['description'])
+            if final_emoji:
+                if final_emoji not in emoji_groups:
+                    emoji_groups[final_emoji] = []
+                emoji_groups[final_emoji].append((idx, option))
+            else:
+                no_emoji_options.append((idx, option))
 
-        # Split options into chunks that fit within Discord's 1024 character field limit
-        if options_text:
-            current_chunk = []
-            current_length = 0
-            field_num = 1
+        # Build fields for each emoji group
+        if emoji_groups or no_emoji_options:
+            # Display emoji groups first
+            for category_emoji, options_list in sorted(emoji_groups.items()):
+                # Get custom title or use default
+                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
 
-            for option_line in options_text:
-                line_length = len(option_line) + 1  # +1 for newline
-                if current_length + line_length > 1000:  # Leave some buffer
-                    # Add current chunk as a field
-                    field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                group_lines = []
+                for idx, option in options_list:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1  # +1 for newline
+                    if current_length + line_length > 1000:  # Leave buffer
+                        # Add current chunk
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"{group_title}{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=True
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                # Add remaining chunk
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                     embed.add_field(
-                        name=field_name,
+                        name=f"{group_title}{field_suffix}",
                         value="\n".join(current_chunk),
                         inline=False
                     )
-                    current_chunk = [option_line]
-                    current_length = line_length
-                    field_num += 1
-                else:
-                    current_chunk.append(option_line)
-                    current_length += line_length
 
-            # Add remaining options
-            if current_chunk:
-                field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
-                embed.add_field(
-                    name=field_name,
-                    value="\n".join(current_chunk),
-                    inline=False
-                )
+            # Display options without emoji last
+            if no_emoji_options:
+                group_lines = []
+                for idx, option in no_emoji_options:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1
+                    if current_length + line_length > 1000:
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"Other Options{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=True
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                    embed.add_field(
+                        name=f"Other Options{field_suffix}",
+                        value="\n".join(current_chunk),
+                        inline=False
+                    )
         else:
             embed.add_field(
                 name="Available Options",
@@ -597,8 +803,18 @@ class TradeCommission(commands.Cog):
         # Update the Trade Commission message
         await self.update_commission_message(guild)
 
-        # Update the control message
-        await self._update_addinfo_message(guild, reaction.message)
+        # Check if we now have 3 options selected
+        active_options = await self.config.guild(guild).active_options()
+        if len(active_options) == 3:
+            # Delete the addinfo message
+            try:
+                await reaction.message.delete()
+                await self.config.guild(guild).addinfo_message_id.set(None)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+        else:
+            # Update the control message
+            await self._update_addinfo_message(guild, reaction.message)
 
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.User):
@@ -650,6 +866,7 @@ class TradeCommission(commands.Cog):
         """Update the addinfo control message."""
         trade_options = await self.config.trade_options()
         active_options = await self.config.guild(guild).active_options()
+        emoji_titles = await self.config.emoji_titles()
 
         embed = discord.Embed(
             title="📝 Add Trade Commission Information",
@@ -662,43 +879,97 @@ class TradeCommission(commands.Cog):
             color=discord.Color.green(),
         )
 
-        # Show current options - split into multiple fields if needed to avoid 1024 char limit
-        options_text = []
+        # Group options by their final emoji in description
+        emoji_groups = {}  # {emoji: [(idx, option), ...]}
+        no_emoji_options = []  # [(idx, option), ...]
+
         for idx, option in enumerate(trade_options):
-            status = "✅" if idx in active_options else "⬜"
-            options_text.append(f"{status} {option['emoji']} **{option['title']}**")
+            final_emoji = extract_final_emoji(option['description'])
+            if final_emoji:
+                if final_emoji not in emoji_groups:
+                    emoji_groups[final_emoji] = []
+                emoji_groups[final_emoji].append((idx, option))
+            else:
+                no_emoji_options.append((idx, option))
 
-        # Split options into chunks that fit within Discord's 1024 character field limit
-        if options_text:
-            current_chunk = []
-            current_length = 0
-            field_num = 1
+        # Build fields for each emoji group
+        if emoji_groups or no_emoji_options:
+            # Display emoji groups first
+            for category_emoji, options_list in sorted(emoji_groups.items()):
+                # Get custom title or use default
+                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
 
-            for option_line in options_text:
-                line_length = len(option_line) + 1  # +1 for newline
-                if current_length + line_length > 1000:  # Leave some buffer
-                    # Add current chunk as a field
-                    field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                group_lines = []
+                for idx, option in options_list:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1  # +1 for newline
+                    if current_length + line_length > 1000:  # Leave buffer
+                        # Add current chunk
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"{group_title}{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=True
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                # Add remaining chunk
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                     embed.add_field(
-                        name=field_name,
+                        name=f"{group_title}{field_suffix}",
                         value="\n".join(current_chunk),
                         inline=False
                     )
-                    current_chunk = [option_line]
-                    current_length = line_length
-                    field_num += 1
-                else:
-                    current_chunk.append(option_line)
-                    current_length += line_length
 
-            # Add remaining options
-            if current_chunk:
-                field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
-                embed.add_field(
-                    name=field_name,
-                    value="\n".join(current_chunk),
-                    inline=False
-                )
+            # Display options without emoji last
+            if no_emoji_options:
+                group_lines = []
+                for idx, option in no_emoji_options:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1
+                    if current_length + line_length > 1000:
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"Other Options{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=True
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                    embed.add_field(
+                        name=f"Other Options{field_suffix}",
+                        value="\n".join(current_chunk),
+                        inline=False
+                    )
         else:
             embed.add_field(
                 name="Available Options",
@@ -924,6 +1195,116 @@ class TradeCommission(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    @tradecommission.command(name="setgrouptitle")
+    async def tc_setgrouptitle(self, ctx: commands.Context, emoji: str, *, title: str):
+        """
+        Set a custom title for an emoji-grouped option category (Global Setting).
+
+        This is a global setting that affects all servers using this cog.
+        Can be used in DMs by the bot owner.
+
+        When options are grouped by their final emoji in the addinfo message,
+        this allows you to customize the group name instead of just showing the emoji.
+
+        **Arguments:**
+        - `emoji`: The emoji that groups options (e.g., 🔥)
+        - `title`: Custom title for this emoji group
+
+        **Examples:**
+        - `[p]tc setgrouptitle 🔥 Fire Routes`
+        - `[p]tc setgrouptitle 🌊 Water Routes`
+        - `[p]tc setgrouptitle ⚔️ Combat Missions`
+        """
+        # Check permissions - bot owner only for global config
+        if not await ctx.bot.is_owner(ctx.author):
+            # If in guild, check for admin permissions
+            if ctx.guild:
+                if not (ctx.author.guild_permissions.manage_guild or await ctx.bot.is_admin(ctx.author)):
+                    await ctx.send("❌ You need Manage Server permission or Admin role to use this command!")
+                    return
+            else:
+                await ctx.send("❌ Only the bot owner can use this command in DMs!")
+                return
+
+        # Validate emoji
+        try:
+            await ctx.message.add_reaction(emoji)
+            await ctx.message.clear_reaction(emoji)
+        except discord.HTTPException:
+            await ctx.send("❌ Invalid emoji! Make sure it's a valid unicode emoji or custom Discord emoji.")
+            return
+
+        async with self.config.emoji_titles() as emoji_titles:
+            emoji_titles[emoji] = title
+
+        await ctx.send(f"✅ Set emoji group title: {emoji} → **{title}**")
+
+    @tradecommission.command(name="removegrouptitle")
+    async def tc_removegrouptitle(self, ctx: commands.Context, emoji: str):
+        """
+        Remove a custom title for an emoji-grouped option category (Global Setting).
+
+        This is a global setting that affects all servers using this cog.
+        Can be used in DMs by the bot owner.
+
+        **Arguments:**
+        - `emoji`: The emoji to remove the custom title from
+
+        **Example:**
+        - `[p]tc removegrouptitle 🔥`
+        """
+        # Check permissions - bot owner only for global config
+        if not await ctx.bot.is_owner(ctx.author):
+            # If in guild, check for admin permissions
+            if ctx.guild:
+                if not (ctx.author.guild_permissions.manage_guild or await ctx.bot.is_admin(ctx.author)):
+                    await ctx.send("❌ You need Manage Server permission or Admin role to use this command!")
+                    return
+            else:
+                await ctx.send("❌ Only the bot owner can use this command in DMs!")
+                return
+
+        async with self.config.emoji_titles() as emoji_titles:
+            if emoji not in emoji_titles:
+                await ctx.send(f"❌ No custom title set for {emoji}")
+                return
+
+            removed_title = emoji_titles.pop(emoji)
+
+        await ctx.send(f"✅ Removed custom title for {emoji} (was: **{removed_title}**)")
+
+    @tradecommission.command(name="listgrouptitles")
+    async def tc_listgrouptitles(self, ctx: commands.Context):
+        """
+        List all custom emoji group titles (Global Setting).
+
+        Shows all configured custom titles for emoji-grouped option categories.
+        Can be used in DMs by the bot owner.
+        """
+        emoji_titles = await self.config.emoji_titles()
+
+        if not emoji_titles:
+            await ctx.send(
+                "❌ No custom emoji group titles configured.\n\n"
+                "Use `[p]tc setgrouptitle <emoji> <title>` to add custom titles."
+            )
+            return
+
+        embed = discord.Embed(
+            title="📋 Emoji Group Titles",
+            description=f"**Total:** {len(emoji_titles)}\n\nCustom titles for emoji-grouped options:",
+            color=discord.Color.blue()
+        )
+
+        for emoji, title in emoji_titles.items():
+            embed.add_field(
+                name=f"{emoji}",
+                value=f"**{title}**",
+                inline=True
+            )
+
+        await ctx.send(embed=embed)
+
     @tradecommission.command(name="info")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
@@ -1057,10 +1438,17 @@ class TradeCommission(commands.Cog):
         except discord.NotFound:
             return
 
+        # Determine embed color from ping role or default
+        embed_color = discord.Color.gold()
+        if guild_config["ping_role_id"]:
+            ping_role = guild.get_role(guild_config["ping_role_id"])
+            if ping_role and ping_role.color != discord.Color.default():
+                embed_color = ping_role.color
+
         # Build embed with active options
         embed = discord.Embed(
             title=guild_config["message_title"],
-            color=discord.Color.gold(),
+            color=embed_color,
         )
 
         active_options = guild_config["active_options"]
@@ -1068,7 +1456,7 @@ class TradeCommission(commands.Cog):
         image_url = global_config["image_url"]
 
         if active_options:
-            description_parts = []
+            description_parts = [guild_config["post_description"]]
             for option_idx in active_options:
                 # Ensure the index is valid
                 if 0 <= option_idx < len(trade_options):
