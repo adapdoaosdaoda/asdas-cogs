@@ -637,20 +637,35 @@ class TradeCommission(commands.Cog):
 
         **Arguments:**
         - `option_number`: Option number (1, 2, or 3)
-        - `emoji`: Emoji to use for reactions (e.g., 🔥, 💎, ⚔️)
+        - `emoji`: Emoji to use for reactions (unicode emoji or custom server emoji)
         - `title`: Title for this option
         - `description`: Description/information to show when this option is selected
 
-        **Example:**
+        **Examples:**
         - `[p]tc setoption 1 🔥 "Silk Road" This week's trade route is the Silk Road with 20% bonus on silk items.`
+        - `[p]tc setoption 2 :custom_emoji: "Tea Trade" Premium tea trading available.`
+
+        **Note:** To use custom server emojis, just type them normally (e.g., :tradeicon:) and Discord will auto-convert them.
         """
         if option_number not in [1, 2, 3]:
             await ctx.send("❌ Option number must be 1, 2, or 3!")
             return
 
-        # Validate emoji (basic check)
-        if len(emoji) > 10:  # Custom emojis will be longer
-            await ctx.send("❌ Invalid emoji!")
+        # Validate emoji by testing if it can be added as a reaction
+        # This works for both unicode emojis and custom Discord emojis
+        test_emoji = emoji
+
+        # Try to add it as a reaction to verify it's valid
+        try:
+            await ctx.message.add_reaction(test_emoji)
+            await ctx.message.clear_reaction(test_emoji)
+        except (discord.HTTPException, discord.InvalidArgument):
+            await ctx.send(
+                "❌ Invalid emoji! Make sure the emoji is:\n"
+                "• A valid unicode emoji (🔥, 💎, ⚔️)\n"
+                "• A custom emoji from this server or a server the bot is in\n"
+                "• Properly formatted"
+            )
             return
 
         option_key = f"option{option_number}"

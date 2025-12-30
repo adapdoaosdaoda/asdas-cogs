@@ -33,7 +33,16 @@ First, set up the information for each of the 3 available options. **These optio
 [p]tc setoption 3 ⚔️ "Spice Markets" Special spice market event active this week.
 ```
 
-**Note:** The emoji you choose will be used as the reaction emote in the addinfo command.
+**Custom Emojis:**
+You can also use custom Discord server emojis! Just type them normally:
+```
+[p]tc setoption 1 :tradeicon: "Silk Road" This week's trade route...
+```
+
+**Note:**
+- The emoji you choose will be used as the reaction emote in the addinfo command
+- Custom emojis must be from your server or a server the bot is in
+- Both unicode emojis (🔥) and custom emojis (:custom:) are supported
 
 ### 2. Set Image (Optional - Global)
 
