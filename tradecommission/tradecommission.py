@@ -203,6 +203,44 @@ class AddInfoView(discord.ui.View):
 
             # Check if we now have 3 options selected
             if len(self.active_options) == 3:
+                # Send notification message
+                try:
+                    guild_config = await self.cog.config.guild(self.guild).all()
+                    current_channel = self.guild.get_channel(guild_config["current_channel_id"])
+
+                    if current_channel:
+                        # Delete old notification if it exists
+                        old_notification_id = guild_config["notification_message_id"]
+                        if old_notification_id:
+                            try:
+                                old_notification = await current_channel.fetch_message(old_notification_id)
+                                await old_notification.delete()
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                pass
+
+                        # Send new notification
+                        notification_content = guild_config["notification_message"]
+
+                        # Add role ping if configured
+                        if guild_config["ping_role_id"]:
+                            ping_role = self.guild.get_role(guild_config["ping_role_id"])
+                            if ping_role:
+                                notification_content = f"{ping_role.mention} {notification_content}"
+
+                        notification_msg = await current_channel.send(notification_content)
+
+                        # Store notification message ID
+                        await self.cog.config.guild(self.guild).notification_message_id.set(notification_msg.id)
+
+                        # Schedule deletion after 3 hours
+                        asyncio.create_task(
+                            self.cog._delete_notification_after_delay(
+                                self.guild, current_channel, notification_msg.id, 3
+                            )
+                        )
+                except (discord.Forbidden, discord.HTTPException):
+                    pass  # Couldn't send notification
+
                 # Delete the addinfo message
                 try:
                     await interaction.message.delete()
@@ -264,6 +302,8 @@ class TradeCommission(commands.Cog):
             "post_description": "This week's Trade Commission information:",  # After addinfo
             "ping_role_id": None,  # Role to ping when posting message
             "previous_message_id": None,  # Previous week's message to delete
+            "notification_message": "📢 All 3 trade commission options have been selected! Check them out above!",  # Message sent when 3 options selected
+            "notification_message_id": None,  # ID of notification message to delete after 3 hours
         }
 
         self.config.register_global(**default_global)
@@ -298,6 +338,19 @@ class TradeCommission(commands.Cog):
         member_role_ids = [role.id for role in member.roles]
 
         return any(role_id in allowed_role_ids for role_id in member_role_ids)
+
+    async def _delete_notification_after_delay(self, guild: discord.Guild, channel: discord.TextChannel, message_id: int, delay_hours: int = 3):
+        """Delete a notification message after a specified delay."""
+        try:
+            await asyncio.sleep(delay_hours * 3600)  # Convert hours to seconds
+            try:
+                message = await channel.fetch_message(message_id)
+                await message.delete()
+                await self.config.guild(guild).notification_message_id.set(None)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass  # Message already deleted or no permission
+        except asyncio.CancelledError:
+            pass  # Task was cancelled
 
     async def _create_addinfo_embed(self, guild: discord.Guild, trade_options: List[Dict], active_options: List[int]) -> discord.Embed:
         """Create the embed for the addinfo message."""
@@ -850,6 +903,27 @@ class TradeCommission(commands.Cog):
             await self.config.guild(ctx.guild).ping_role_id.set(role.id)
             await ctx.send(f"✅ Will ping {role.mention} when posting Trade Commission messages.")
 
+    @tradecommission.command(name="setnotification")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_setnotification(self, ctx: commands.Context, *, message: str):
+        """
+        Set the notification message sent when all 3 options are selected.
+
+        This message will be sent to the trade commission channel when someone
+        selects the 3rd option via the addinfo panel. The configured ping role
+        will be mentioned with this message. The message will automatically
+        delete after 3 hours.
+
+        **Arguments:**
+        - `message`: The notification message text
+
+        **Example:**
+        - `[p]tc setnotification 📢 All 3 trade commission options have been selected! Check them out above!`
+        """
+        await self.config.guild(ctx.guild).notification_message.set(message)
+        await ctx.send(f"✅ Notification message set to:\n> {message[:100]}{'...' if len(message) > 100 else ''}\n\n*This message will be sent (with role ping) when 3 options are selected and will auto-delete after 3 hours.*")
+
     @tradecommission.command(name="post")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
@@ -882,7 +956,14 @@ class TradeCommission(commands.Cog):
 
         This will create a message with buttons. Click the buttons to add
         up to 3 options to the weekly Trade Commission message.
+
+        The addinfo panel will also be sent to you via DM for easy access.
         """
+        # Check if user has permission (for DM sending)
+        if not await self._has_addinfo_permission(ctx.author):
+            await ctx.send("❌ You don't have permission to use addinfo!")
+            return
+
         current_msg_id = await self.config.guild(ctx.guild).current_message_id()
         current_ch_id = await self.config.guild(ctx.guild).current_channel_id()
 
@@ -923,6 +1004,39 @@ class TradeCommission(commands.Cog):
 
         # Store the control message ID
         await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
+
+        # Send DM to the user with the embed
+        try:
+            dm_embed = discord.Embed(
+                title="📝 Trade Commission Addinfo Panel",
+                description=f"You've opened the addinfo panel in **{ctx.guild.name}**.\n\n"
+                           f"Use the dropdowns in {channel.mention} to select the trade commission options.\n\n"
+                           f"[Jump to addinfo panel]({control_msg.jump_url})",
+                color=discord.Color.green()
+            )
+            # Add current selections to DM embed
+            if active_options:
+                selections = []
+                for idx in active_options:
+                    if 0 <= idx < len(trade_options):
+                        opt = trade_options[idx]
+                        selections.append(f"{opt['emoji']} **{opt['title']}**")
+                dm_embed.add_field(
+                    name=f"Current Selections ({len(active_options)}/3)",
+                    value="\n".join(selections),
+                    inline=False
+                )
+            else:
+                dm_embed.add_field(
+                    name="Current Selections (0/3)",
+                    value="No options selected yet",
+                    inline=False
+                )
+
+            await ctx.author.send(embed=dm_embed)
+        except discord.Forbidden:
+            # User has DMs disabled
+            await ctx.send("⚠️ I couldn't send you a DM. Please enable DMs from server members.", delete_after=10)
 
     @tradecommission.command(name="setoption")
     async def tc_setoption(
