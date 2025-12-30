@@ -9,6 +9,7 @@ A Discord cog for Where Winds Meet that sends weekly Trade Commission informatio
 - **Separate Scheduling**: Post the message early, add information later in the day
 - **Timezone Support**: Configure your preferred timezone for accurate scheduling
 - **Customizable Options**: Configure titles and descriptions for each option
+- **Image Support**: Display an image when Trade Commission information is added
 
 ## Installation
 
@@ -29,7 +30,17 @@ First, set up the information for each of the 3 available options:
 [p]tc setoption 3 "Spice Markets" Special spice market event active this week.
 ```
 
-### 2. Schedule Weekly Messages
+### 2. Set Image (Optional)
+
+Set an image to display when Trade Commission information is added:
+
+```
+[p]tc setimage https://example.com/trade-commission-banner.png
+```
+
+The image will only appear when options are selected via `[p]tc addinfo`.
+
+### 3. Schedule Weekly Messages
 
 Configure when the weekly message should be sent:
 
@@ -115,6 +126,7 @@ Re-enable:
 | `[p]tc post [channel]` | Manually post a message now | Admin |
 | `[p]tc addinfo` | Add information via interactive buttons | Admin |
 | `[p]tc setoption <num> <title> <description>` | Configure an option | Admin |
+| `[p]tc setimage <url>` | Set image to display with information | Admin |
 | `[p]tc info` | View current configuration | Admin |
 | `[p]tc enable` | Enable weekly messages | Admin |
 | `[p]tc disable` | Disable weekly messages | Admin |
@@ -130,6 +142,7 @@ Re-enable:
 
 3. **Admin clicks buttons**: Selects options 1 and 3
    - Trade Commission message updates immediately with selected information
+   - Configured image appears on the message
    - Players can now see the week's trade routes
 
 4. **Next Monday**: Process repeats automatically

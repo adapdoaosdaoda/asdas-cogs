@@ -36,6 +36,7 @@ class TradeCommission(commands.Cog):
                 "option3": {"emoji": "3️⃣", "title": "Option 3", "description": ""},
             },
             "active_options": [],  # List of option keys that are currently active
+            "image_url": None,  # Image to display when information is added
         }
         self.config.register_guild(**default_guild)
         self._task = None
@@ -319,6 +320,49 @@ class TradeCommission(commands.Cog):
             f"**Description:** {description[:100]}{'...' if len(description) > 100 else ''}"
         )
 
+    @tradecommission.command(name="setimage")
+    async def tc_setimage(self, ctx: commands.Context, image_url: str):
+        """
+        Set the image to display when Trade Commission information is added.
+
+        **Arguments:**
+        - `image_url`: Direct URL to an image file (must end in .png, .jpg, .jpeg, .gif, or .webp)
+
+        **Example:**
+        - `[p]tc setimage https://example.com/trade-commission.png`
+
+        To remove the image, use: `[p]tc setimage none`
+        """
+        if image_url.lower() == "none":
+            await self.config.guild(ctx.guild).image_url.set(None)
+            await ctx.send("✅ Trade Commission image removed.")
+            return
+
+        # Basic URL validation
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+        if not any(image_url.lower().endswith(ext) for ext in valid_extensions):
+            await ctx.send(
+                f"❌ Invalid image URL! Must end with one of: {', '.join(valid_extensions)}\n"
+                f"Or use `none` to remove the image."
+            )
+            return
+
+        if not image_url.startswith(('http://', 'https://')):
+            await ctx.send("❌ Image URL must start with http:// or https://")
+            return
+
+        await self.config.guild(ctx.guild).image_url.set(image_url)
+
+        # Show preview
+        embed = discord.Embed(
+            title="✅ Trade Commission Image Set",
+            description="This image will be displayed when information is added to the weekly message.",
+            color=discord.Color.green()
+        )
+        embed.set_image(url=image_url)
+
+        await ctx.send(embed=embed)
+
     @tradecommission.command(name="info")
     async def tc_info(self, ctx: commands.Context):
         """Show current Trade Commission configuration."""
@@ -354,6 +398,14 @@ class TradeCommission(commands.Cog):
             value="\n\n".join(options_text) if options_text else "No options configured",
             inline=False
         )
+
+        # Image info
+        if config["image_url"]:
+            embed.add_field(
+                name="📸 Image",
+                value=f"[View Image]({config['image_url']})",
+                inline=False
+            )
 
         # Current week info
         if config["current_message_id"]:
@@ -413,6 +465,7 @@ class TradeCommission(commands.Cog):
 
         active_options = config["active_options"]
         trade_info = config["trade_info"]
+        image_url = config["image_url"]
 
         if active_options:
             description_parts = ["This week's Trade Commission information:\n"]
@@ -421,6 +474,10 @@ class TradeCommission(commands.Cog):
                 description_parts.append(f"\n{info['emoji']} **{info['title']}**\n{info['description']}")
 
             embed.description = "\n".join(description_parts)
+
+            # Add image when information is present
+            if image_url:
+                embed.set_image(url=image_url)
         else:
             embed.description = "This week's Trade Commission information will be added soon!\n\nCheck back later for updates."
 
