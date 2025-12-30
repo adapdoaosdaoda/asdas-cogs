@@ -296,84 +296,72 @@ class TradeCommission(commands.Cog):
             else:
                 no_emoji_options.append((idx, option))
 
-        # Build fields for each emoji group
-        if emoji_groups or no_emoji_options:
-            # Display emoji groups first
-            for category_emoji, options_list in sorted(emoji_groups.items()):
-                # Get custom title or use default
-                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
+        # Build all option lines grouped by category
+        all_groups = []
 
-                group_lines = []
-                for idx, option in options_list:
-                    status = "✅" if idx in active_options else "⬜"
-                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+        # Add emoji groups first (sorted)
+        for category_emoji in sorted(emoji_groups.keys()):
+            options_list = emoji_groups[category_emoji]
+            group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
 
-                # Split into multiple fields if needed
-                current_chunk = []
-                current_length = 0
-                field_count = 0
+            group_data = {
+                'title': group_title,
+                'lines': []
+            }
 
-                for line in group_lines:
-                    line_length = len(line) + 1  # +1 for newline
-                    if current_length + line_length > 1000:  # Leave buffer
-                        # Add current chunk
-                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                        embed.add_field(
-                            name=f"{group_title}{field_suffix}",
-                            value="\n".join(current_chunk),
-                            inline=True
-                        )
-                        current_chunk = [line]
-                        current_length = line_length
-                        field_count += 1
-                    else:
-                        current_chunk.append(line)
-                        current_length += line_length
+            for idx, option in options_list:
+                status = "✅" if idx in active_options else "⬜"
+                group_data['lines'].append(f"{status} {option['emoji']} **{option['title']}**")
 
-                # Add remaining chunk
-                if current_chunk:
-                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                    embed.add_field(
-                        name=f"{group_title}{field_suffix}",
-                        value="\n".join(current_chunk),
-                        inline=True
-                    )
+            all_groups.append(group_data)
 
-            # Display options without emoji last
-            if no_emoji_options:
-                group_lines = []
-                for idx, option in no_emoji_options:
-                    status = "✅" if idx in active_options else "⬜"
-                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+        # Add options without emoji last
+        if no_emoji_options:
+            group_data = {
+                'title': "Other Options",
+                'lines': []
+            }
 
-                # Split into multiple fields if needed
-                current_chunk = []
-                current_length = 0
-                field_count = 0
+            for idx, option in no_emoji_options:
+                status = "✅" if idx in active_options else "⬜"
+                group_data['lines'].append(f"{status} {option['emoji']} **{option['title']}**")
 
-                for line in group_lines:
-                    line_length = len(line) + 1
-                    if current_length + line_length > 1000:
-                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                        embed.add_field(
-                            name=f"Other Options{field_suffix}",
-                            value="\n".join(current_chunk),
-                            inline=True
-                        )
-                        current_chunk = [line]
-                        current_length = line_length
-                        field_count += 1
-                    else:
-                        current_chunk.append(line)
-                        current_length += line_length
+            all_groups.append(group_data)
 
-                if current_chunk:
-                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                    embed.add_field(
-                        name=f"Other Options{field_suffix}",
-                        value="\n".join(current_chunk),
-                        inline=True
-                    )
+        # Split groups into 2 columns
+        if all_groups:
+            # Calculate split point for roughly equal columns
+            total_groups = len(all_groups)
+            mid_point = (total_groups + 1) // 2
+
+            # Column 1 (left)
+            column1_content = []
+            for group in all_groups[:mid_point]:
+                column1_content.append(f"**{group['title']}**")
+                column1_content.extend(group['lines'])
+                column1_content.append("")  # Spacing between groups
+
+            # Column 2 (right)
+            column2_content = []
+            for group in all_groups[mid_point:]:
+                column2_content.append(f"**{group['title']}**")
+                column2_content.extend(group['lines'])
+                column2_content.append("")  # Spacing between groups
+
+            # Add fields for 2 columns
+            if column1_content:
+                embed.add_field(
+                    name="Available Options (1/2)",
+                    value="\n".join(column1_content).strip() or "No options",
+                    inline=True
+                )
+
+            if column2_content:
+                embed.add_field(
+                    name="Available Options (2/2)",
+                    value="\n".join(column2_content).strip() or "No options",
+                    inline=True
+                )
         else:
             embed.add_field(
                 name="Available Options",
@@ -461,7 +449,10 @@ class TradeCommission(commands.Cog):
             color=embed_color,
         )
 
-        # Note: Image is only added after options are selected (see update_commission_message)
+        # Add configured image if available
+        image_url = await self.config.image_url()
+        if image_url:
+            embed.set_image(url=image_url)
 
         # Prepare content with ping if role is configured
         content = None
@@ -1264,35 +1255,6 @@ class TradeCommission(commands.Cog):
             message_custom_text += "\n**Ping Role:** None"
 
         embed.add_field(name="Message Customization", value=message_custom_text, inline=False)
-
-        # Options info (from global config)
-        options_text = []
-        total_options = len(global_config["trade_options"])
-
-        if total_options == 0:
-            options_value = "No options configured. Use `[p]tc setoption` to add options."
-        else:
-            # Build the options list, but stop if we exceed the Discord limit
-            for idx, option in enumerate(global_config["trade_options"], 1):
-                option_line = (
-                    f"{idx}. {option['emoji']} **{option['title']}**\n"
-                    f"   └ {option['description'][:80]}{'...' if len(option['description']) > 80 else ''}"
-                )
-                # Check if adding this option would exceed the limit
-                test_value = "\n\n".join(options_text + [option_line])
-                if len(test_value) > 950:  # Leave some buffer for the "and X more" message
-                    remaining = total_options - idx + 1
-                    options_text.append(f"\n_...and {remaining} more options_")
-                    break
-                options_text.append(option_line)
-
-            options_value = "\n\n".join(options_text)
-
-        embed.add_field(
-            name="Configured Options (Global)",
-            value=options_value,
-            inline=False
-        )
 
         # Image info (from global config)
         if global_config["image_url"]:
