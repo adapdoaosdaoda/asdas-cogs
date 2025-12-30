@@ -46,7 +46,7 @@ def extract_final_emoji(text: str) -> Optional[str]:
 
 
 class AddInfoView(discord.ui.View):
-    """View for adding Trade Commission information with buttons organized by category."""
+    """View for adding Trade Commission information with dropdowns organized by category."""
 
     def __init__(self, cog: "TradeCommission", guild: discord.Guild, trade_options: List[Dict], active_options: List[int], emoji_titles: Dict[str, str]):
         super().__init__(timeout=None)  # Persistent view
@@ -55,7 +55,7 @@ class AddInfoView(discord.ui.View):
         self.trade_options = trade_options
         self.active_options = active_options
 
-        # Group options by their final emoji
+        # Group options by their final emoji for organized display
         emoji_groups = {}  # {emoji: [(idx, option), ...]}
         no_emoji_options = []  # [(idx, option), ...]
 
@@ -68,55 +68,61 @@ class AddInfoView(discord.ui.View):
             else:
                 no_emoji_options.append((idx, option))
 
-        # Create buttons organized by category
-        current_row = 0
+        # Create 3 dropdowns for the 3 option slots
+        for slot_num in range(3):
+            # Create select options organized by category (vertically)
+            select_options = [
+                discord.SelectOption(
+                    label="(Empty)",
+                    value="-1",
+                    emoji="❌"
+                )
+            ]
 
-        # Process emoji groups first
-        for category_emoji in sorted(emoji_groups.keys()):
-            options_list = emoji_groups[category_emoji]
-
-            # Add up to 5 buttons per row (Discord limit)
-            for i in range(0, len(options_list), 5):
-                chunk = options_list[i:i+5]
-                for idx, option in chunk:
-                    button = discord.ui.Button(
-                        label=option['title'][:80],
-                        emoji=option['emoji'],
-                        style=discord.ButtonStyle.success if idx in active_options else discord.ButtonStyle.secondary,
-                        custom_id=f"tc_option_{idx}",
-                        row=current_row
+            # Add options grouped by category (emoji groups first, sorted)
+            for category_emoji in sorted(emoji_groups.keys()):
+                options_list = emoji_groups[category_emoji]
+                for idx, option in options_list:
+                    # Don't include description - only label and emoji
+                    select_options.append(
+                        discord.SelectOption(
+                            label=option['title'][:100],  # Discord label limit
+                            value=str(idx),
+                            emoji=option['emoji'],
+                            default=(idx == active_options[slot_num] if slot_num < len(active_options) else False)
+                        )
                     )
-                    button.callback = self._create_button_callback(idx)
-                    self.add_item(button)
 
-                current_row += 1
-                if current_row >= 5:  # Discord limit: 5 rows
-                    break
-
-            if current_row >= 5:
-                break
-
-        # Add options without emoji if there's room
-        if current_row < 5 and no_emoji_options:
-            for i in range(0, len(no_emoji_options), 5):
-                if current_row >= 5:
-                    break
-                chunk = no_emoji_options[i:i+5]
-                for idx, option in chunk:
-                    button = discord.ui.Button(
-                        label=option['title'][:80],
+            # Add options without category emoji last
+            for idx, option in no_emoji_options:
+                select_options.append(
+                    discord.SelectOption(
+                        label=option['title'][:100],
+                        value=str(idx),
                         emoji=option['emoji'],
-                        style=discord.ButtonStyle.success if idx in active_options else discord.ButtonStyle.secondary,
-                        custom_id=f"tc_option_{idx}",
-                        row=current_row
+                        default=(idx == active_options[slot_num] if slot_num < len(active_options) else False)
                     )
-                    button.callback = self._create_button_callback(idx)
-                    self.add_item(button)
+                )
 
-                current_row += 1
+            # Limit to 25 options (Discord limit)
+            select_options = select_options[:25]
 
-    def _create_button_callback(self, option_idx: int):
-        """Create a callback function for a specific option button."""
+            # Create the select menu
+            select = discord.ui.Select(
+                placeholder=f"Option {slot_num + 1}: " + (
+                    trade_options[active_options[slot_num]]['title'][:80]
+                    if slot_num < len(active_options) and active_options[slot_num] < len(trade_options)
+                    else "Not selected"
+                ),
+                options=select_options,
+                custom_id=f"tc_slot_{slot_num}",
+                row=slot_num
+            )
+            select.callback = self._create_select_callback(slot_num)
+            self.add_item(select)
+
+    def _create_select_callback(self, slot_num: int):
+        """Create a callback function for a specific dropdown slot."""
         async def callback(interaction: discord.Interaction):
             # Check permissions
             member = interaction.user
@@ -128,24 +134,39 @@ class AddInfoView(discord.ui.View):
                 await interaction.response.send_message("❌ You don't have permission to use this!", ephemeral=True)
                 return
 
-            # Toggle the option
+            # Get the selected value
+            select = interaction.data.get('values', [])[0] if interaction.data.get('values') else None
+            if select is None:
+                return
+
+            selected_idx = int(select)
+
+            # Update active options
             async with self.cog.config.guild(self.guild).active_options() as active_options:
-                if option_idx in active_options:
-                    # Remove this option
-                    active_options.remove(option_idx)
-                    self.active_options = list(active_options)
+                # Ensure the list has enough slots
+                while len(active_options) <= slot_num:
+                    active_options.append(-1)
+
+                if selected_idx == -1:
+                    # Clear this slot
+                    active_options[slot_num] = -1
                 else:
-                    # Check if we already have 3 options
-                    if len(active_options) >= 3:
+                    # Check if this option is already selected in another slot
+                    if selected_idx in active_options and active_options.index(selected_idx) != slot_num:
                         await interaction.response.send_message(
-                            "❌ You can only select up to 3 options! Deselect an option first.",
+                            f"❌ This option is already selected in Slot {active_options.index(selected_idx) + 1}!",
                             ephemeral=True
                         )
                         return
 
-                    # Add this option
-                    active_options.append(option_idx)
-                    self.active_options = list(active_options)
+                    # Set this slot
+                    active_options[slot_num] = selected_idx
+
+                # Remove any -1 values and keep only valid selections
+                self.active_options = [opt for opt in active_options if opt != -1]
+                # Update config with cleaned list
+                active_options.clear()
+                active_options.extend(self.active_options)
 
             # Update the Trade Commission message
             await self.cog.update_commission_message(self.guild)
@@ -255,9 +276,9 @@ class TradeCommission(commands.Cog):
         embed = discord.Embed(
             title="📝 Add Trade Commission Information",
             description=(
-                "Select up to **3 options** from the buttons below.\n\n"
-                "Options are organized by category. Click any button to toggle it on/off.\n\n"
-                "**Green** = Selected | **Gray** = Not selected"
+                "Use the **3 dropdowns** below to select options for this week's Trade Commission message.\n\n"
+                "Options are organized by category within each dropdown.\n\n"
+                "Select an option from each dropdown to fill all 3 slots."
             ),
             color=discord.Color.green(),
         )
