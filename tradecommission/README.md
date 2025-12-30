@@ -1,14 +1,15 @@
 # Trade Commission Cog
 
-A Discord cog for Where Winds Meet that sends weekly Trade Commission information with interactive options.
+A Discord cog for Where Winds Meet that sends weekly Trade Commission information with interactive reaction-based options.
 
 ## Features
 
 - **Weekly Scheduled Messages**: Automatically send Trade Commission updates on a configured day/time
-- **Interactive Information**: Add up to 3 pieces of information via clickable buttons
+- **Reaction-Based Information**: Add up to 3 pieces of information by clicking reaction emotes
 - **Separate Scheduling**: Post the message early, add information later in the day
 - **Timezone Support**: Configure your preferred timezone for accurate scheduling
-- **Customizable Options**: Configure titles and descriptions for each option
+- **Global Options**: Configure option content once, use across all servers
+- **Customizable Emotes**: Each option uses a custom emoji for reactions
 - **Image Support**: Display an image when Trade Commission information is added
 
 ## Installation
@@ -20,19 +21,21 @@ A Discord cog for Where Winds Meet that sends weekly Trade Commission informatio
 
 ## Setup
 
-### 1. Configure Options
+### 1. Configure Options (Global)
 
-First, set up the information for each of the 3 available options:
+First, set up the information for each of the 3 available options. **These options are global** and will be shared across all servers using this cog:
 
 ```
-[p]tc setoption 1 "Silk Road" This week's trade route is the Silk Road with 20% bonus on silk items.
-[p]tc setoption 2 "Tea Trade" Premium tea trading available with double rewards.
-[p]tc setoption 3 "Spice Markets" Special spice market event active this week.
+[p]tc setoption 1 🔥 "Silk Road" This week's trade route is the Silk Road with 20% bonus on silk items.
+[p]tc setoption 2 💎 "Tea Trade" Premium tea trading available with double rewards.
+[p]tc setoption 3 ⚔️ "Spice Markets" Special spice market event active this week.
 ```
 
-### 2. Set Image (Optional)
+**Note:** The emoji you choose will be used as the reaction emote in the addinfo command.
 
-Set an image to display when Trade Commission information is added:
+### 2. Set Image (Optional - Global)
+
+Set an image to display when Trade Commission information is added (bot owner only):
 
 ```
 [p]tc setimage https://example.com/trade-commission-banner.png
@@ -40,9 +43,9 @@ Set an image to display when Trade Commission information is added:
 
 The image will only appear when options are selected via `[p]tc addinfo`.
 
-### 3. Schedule Weekly Messages
+### 3. Schedule Weekly Messages (Per-Server)
 
-Configure when the weekly message should be sent:
+Configure when the weekly message should be sent for your server:
 
 ```
 [p]tc schedule #trade-info Monday 9 0 America/New_York
@@ -65,7 +68,7 @@ Once configured, the cog will automatically:
 1. Post the weekly message at the scheduled time
 2. Wait for you to add information using the `addinfo` command
 
-### Adding Information
+### Adding Information (Reaction-Based)
 
 After the weekly message is posted (either automatically or manually), use:
 
@@ -73,14 +76,15 @@ After the weekly message is posted (either automatically or manually), use:
 [p]tc addinfo
 ```
 
-This creates an interactive panel with buttons for each option. Click up to 3 buttons to add their information to the Trade Commission message.
+This creates an interactive message with reaction emotes. **Click the reactions to select up to 3 options** to add their information to the Trade Commission message.
 
-**Features:**
-- Click a button to add that option's information
-- Click again to remove it
-- Maximum 3 options can be selected
-- The Trade Commission message updates in real-time
-- Buttons change color when selected (green = active, blue = inactive)
+**How it works:**
+1. Bot posts a message with all configured option emojis as reactions
+2. Click a reaction to add that option to the weekly message
+3. Click again to remove it (or remove your reaction)
+4. Maximum 3 options can be selected at once
+5. The Trade Commission message updates in real-time
+6. Only users with "Manage Server" permission can modify selections
 
 ### Manual Posting
 
@@ -124,9 +128,9 @@ Re-enable:
 |---------|-------------|------------|
 | `[p]tc schedule <channel> <day> <hour> [minute] [timezone]` | Schedule weekly messages | Admin |
 | `[p]tc post [channel]` | Manually post a message now | Admin |
-| `[p]tc addinfo` | Add information via interactive buttons | Admin |
-| `[p]tc setoption <num> <title> <description>` | Configure an option | Admin |
-| `[p]tc setimage <url>` | Set image to display with information | Admin |
+| `[p]tc addinfo` | Add information via reaction emotes | Admin |
+| `[p]tc setoption <num> <emoji> <title> <description>` | Configure an option (global) | Admin |
+| `[p]tc setimage <url>` | Set image to display with information (global) | Owner |
 | `[p]tc info` | View current configuration | Admin |
 | `[p]tc enable` | Enable weekly messages | Admin |
 | `[p]tc disable` | Disable weekly messages | Admin |
@@ -138,14 +142,29 @@ Re-enable:
    - Message shows "Information will be added soon"
 
 2. **Monday 3:00 PM**: Admin runs `[p]tc addinfo`
-   - Interactive panel appears with 3 buttons
+   - Bot posts a control message with reaction emojis
 
-3. **Admin clicks buttons**: Selects options 1 and 3
+3. **Admin clicks reactions**: Clicks on 🔥 and ⚔️ emotes
    - Trade Commission message updates immediately with selected information
    - Configured image appears on the message
    - Players can now see the week's trade routes
 
 4. **Next Monday**: Process repeats automatically
+
+## Configuration Types
+
+### Global Configuration
+These settings are shared across **all servers** using the cog:
+- Option content (emoji, title, description) - set via `[p]tc setoption`
+- Image URL - set via `[p]tc setimage`
+
+### Per-Server Configuration
+These settings are unique to each server:
+- Schedule (day, time, timezone, channel) - set via `[p]tc schedule`
+- Current message tracking
+- Active option selections
+
+This design allows you to configure the Trade Commission options once and use them across multiple Where Winds Meet community servers, while each server can have its own posting schedule.
 
 ## Permissions
 
@@ -153,9 +172,23 @@ The bot needs:
 - `Send Messages` in the configured channel
 - `Embed Links` to send rich embeds
 - `Read Message History` to update messages
+- `Add Reactions` to add reaction emojis
+- `Manage Messages` to remove invalid reactions
 
 Users need:
-- `Manage Server` permission to use Trade Commission commands
+- `Manage Server` permission to use Trade Commission commands and modify selections via reactions
+
+## Troubleshooting
+
+**Reactions not working?**
+- Make sure the bot has `Add Reactions` permission
+- Ensure you have `Manage Server` permission
+- Verify you're reacting to the correct message from `[p]tc addinfo`
+
+**Options not updating?**
+- Global options (`[p]tc setoption`) affect all servers
+- Use `[p]tc info` to verify your configuration
+- Try running `[p]tc addinfo` again to create a fresh control message
 
 ## Support
 

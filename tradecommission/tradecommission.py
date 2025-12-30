@@ -8,8 +8,6 @@ from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import box, humanize_list
 import pytz
 
-from .views import TradeCommissionView
-
 
 class TradeCommission(commands.Cog):
     """Send weekly Trade Commission information for Where Winds Meet."""
@@ -21,6 +19,17 @@ class TradeCommission(commands.Cog):
             identifier=205192943327321000143939875896557571751,
             force_registration=True,
         )
+        # Global config - shared across all guilds
+        default_global = {
+            "trade_info": {
+                "option1": {"emoji": "1️⃣", "title": "Option 1", "description": ""},
+                "option2": {"emoji": "2️⃣", "title": "Option 2", "description": ""},
+                "option3": {"emoji": "3️⃣", "title": "Option 3", "description": ""},
+            },
+            "image_url": None,  # Image to display when information is added
+        }
+
+        # Per-guild config - only for addinfo tracking
         default_guild = {
             "channel_id": None,
             "schedule_day": 0,  # 0 = Monday, 6 = Sunday
@@ -30,14 +39,11 @@ class TradeCommission(commands.Cog):
             "enabled": False,
             "current_message_id": None,
             "current_channel_id": None,
-            "trade_info": {
-                "option1": {"emoji": "1️⃣", "title": "Option 1", "description": ""},
-                "option2": {"emoji": "2️⃣", "title": "Option 2", "description": ""},
-                "option3": {"emoji": "3️⃣", "title": "Option 3", "description": ""},
-            },
             "active_options": [],  # List of option keys that are currently active
-            "image_url": None,  # Image to display when information is added
+            "addinfo_message_id": None,  # The addinfo control message
         }
+
+        self.config.register_global(**default_global)
         self.config.register_guild(**default_guild)
         self._task = None
         self._ready = False
@@ -232,8 +238,8 @@ class TradeCommission(commands.Cog):
         """
         Add information to the current week's Trade Commission message via reactions.
 
-        This will create an interactive message where you can click up to 3 options
-        to add their information to the weekly Trade Commission message.
+        This will create a message with reaction emotes. Click the reactions to add
+        up to 3 options to the weekly Trade Commission message.
         """
         current_msg_id = await self.config.guild(ctx.guild).current_message_id()
         current_ch_id = await self.config.guild(ctx.guild).current_channel_id()
@@ -253,23 +259,22 @@ class TradeCommission(commands.Cog):
             await ctx.send("❌ Message not found!")
             return
 
-        # Create interactive view
-        view = TradeCommissionView(self, ctx.guild, message)
+        # Get global trade info
+        trade_info = await self.config.trade_info()
+        active_options = await self.config.guild(ctx.guild).active_options()
 
         embed = discord.Embed(
             title="📝 Add Trade Commission Information",
             description=(
-                "Click the buttons below to add information to this week's Trade Commission message.\n\n"
+                "React with the emotes below to add information to this week's Trade Commission message.\n\n"
                 "You can select up to **3 options**. Each option will add its configured information "
-                "to the weekly message."
+                "to the weekly message.\n\n"
+                "**Click a reaction to toggle that option on/off.**"
             ),
             color=discord.Color.green(),
         )
 
         # Show current options
-        trade_info = await self.config.guild(ctx.guild).trade_info()
-        active_options = await self.config.guild(ctx.guild).active_options()
-
         options_text = []
         for key, info in trade_info.items():
             status = "✅" if key in active_options else "⬜"
@@ -283,13 +288,170 @@ class TradeCommission(commands.Cog):
 
         embed.set_footer(text=f"Selected: {len(active_options)}/3")
 
-        await ctx.send(embed=embed, view=view)
+        # Send the message and add reactions
+        control_msg = await ctx.send(embed=embed)
+
+        # Store the control message ID
+        await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
+
+        # Add reaction emotes
+        for info in trade_info.values():
+            if info["emoji"]:  # Only add if emoji is configured
+                try:
+                    await control_msg.add_reaction(info["emoji"])
+                except (discord.HTTPException, discord.InvalidArgument):
+                    pass  # Skip if emoji is invalid
+
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
+        """Handle reactions on addinfo messages."""
+        # Ignore bot reactions
+        if user.bot:
+            return
+
+        # Check if this is a guild
+        if not reaction.message.guild:
+            return
+
+        guild = reaction.message.guild
+
+        # Check if user has permission
+        member = guild.get_member(user.id)
+        if not member or not member.guild_permissions.manage_guild:
+            return
+
+        # Check if this is an addinfo message
+        addinfo_msg_id = await self.config.guild(guild).addinfo_message_id()
+        if not addinfo_msg_id or reaction.message.id != addinfo_msg_id:
+            return
+
+        # Find which option this emoji corresponds to
+        trade_info = await self.config.trade_info()
+        option_key = None
+
+        for key, info in trade_info.items():
+            if str(reaction.emoji) == info["emoji"]:
+                option_key = key
+                break
+
+        if not option_key:
+            return
+
+        # Toggle the option
+        async with self.config.guild(guild).active_options() as active_options:
+            if option_key in active_options:
+                # Remove option
+                active_options.remove(option_key)
+            else:
+                # Check if we've reached the limit
+                if len(active_options) >= 3:
+                    # Remove reaction and notify user
+                    try:
+                        await reaction.remove(user)
+                    except discord.HTTPException:
+                        pass
+                    try:
+                        await user.send("❌ Maximum of 3 options can be selected! Please deselect an option first.")
+                    except discord.Forbidden:
+                        pass
+                    return
+
+                # Add option
+                active_options.append(option_key)
+
+        # Update the Trade Commission message
+        await self.update_commission_message(guild)
+
+        # Update the control message
+        await self._update_addinfo_message(guild, reaction.message)
+
+    @commands.Cog.listener()
+    async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.User):
+        """Handle reaction removals on addinfo messages."""
+        # Ignore bot reactions
+        if user.bot:
+            return
+
+        # Check if this is a guild
+        if not reaction.message.guild:
+            return
+
+        guild = reaction.message.guild
+
+        # Check if user has permission
+        member = guild.get_member(user.id)
+        if not member or not member.guild_permissions.manage_guild:
+            return
+
+        # Check if this is an addinfo message
+        addinfo_msg_id = await self.config.guild(guild).addinfo_message_id()
+        if not addinfo_msg_id or reaction.message.id != addinfo_msg_id:
+            return
+
+        # Find which option this emoji corresponds to
+        trade_info = await self.config.trade_info()
+        option_key = None
+
+        for key, info in trade_info.items():
+            if str(reaction.emoji) == info["emoji"]:
+                option_key = key
+                break
+
+        if not option_key:
+            return
+
+        # Remove the option if it's active
+        async with self.config.guild(guild).active_options() as active_options:
+            if option_key in active_options:
+                active_options.remove(option_key)
+
+        # Update the Trade Commission message
+        await self.update_commission_message(guild)
+
+        # Update the control message
+        await self._update_addinfo_message(guild, reaction.message)
+
+    async def _update_addinfo_message(self, guild: discord.Guild, message: discord.Message):
+        """Update the addinfo control message."""
+        trade_info = await self.config.trade_info()
+        active_options = await self.config.guild(guild).active_options()
+
+        embed = discord.Embed(
+            title="📝 Add Trade Commission Information",
+            description=(
+                "React with the emotes below to add information to this week's Trade Commission message.\n\n"
+                "You can select up to **3 options**. Each option will add its configured information "
+                "to the weekly message.\n\n"
+                "**Click a reaction to toggle that option on/off.**"
+            ),
+            color=discord.Color.green(),
+        )
+
+        # Show current options
+        options_text = []
+        for key, info in trade_info.items():
+            status = "✅" if key in active_options else "⬜"
+            options_text.append(f"{status} {info['emoji']} **{info['title']}**")
+
+        embed.add_field(
+            name="Available Options",
+            value="\n".join(options_text),
+            inline=False
+        )
+
+        embed.set_footer(text=f"Selected: {len(active_options)}/3")
+
+        try:
+            await message.edit(embed=embed)
+        except discord.HTTPException:
+            pass
 
     @tradecommission.command(name="setoption")
     async def tc_setoption(
         self,
         ctx: commands.Context,
         option_number: int,
+        emoji: str,
         title: str,
         *,
         description: str
@@ -299,28 +461,37 @@ class TradeCommission(commands.Cog):
 
         **Arguments:**
         - `option_number`: Option number (1, 2, or 3)
+        - `emoji`: Emoji to use for reactions (e.g., 🔥, 💎, ⚔️)
         - `title`: Title for this option
         - `description`: Description/information to show when this option is selected
 
         **Example:**
-        - `[p]tc setoption 1 "Silk Road" This week's trade route is the Silk Road with 20% bonus on silk items.`
+        - `[p]tc setoption 1 🔥 "Silk Road" This week's trade route is the Silk Road with 20% bonus on silk items.`
         """
         if option_number not in [1, 2, 3]:
             await ctx.send("❌ Option number must be 1, 2, or 3!")
             return
 
+        # Validate emoji (basic check)
+        if len(emoji) > 10:  # Custom emojis will be longer
+            await ctx.send("❌ Invalid emoji!")
+            return
+
         option_key = f"option{option_number}"
-        async with self.config.guild(ctx.guild).trade_info() as trade_info:
+        async with self.config.trade_info() as trade_info:
+            trade_info[option_key]["emoji"] = emoji
             trade_info[option_key]["title"] = title
             trade_info[option_key]["description"] = description
 
         await ctx.send(
             f"✅ Option {option_number} configured!\n"
+            f"**Emoji:** {emoji}\n"
             f"**Title:** {title}\n"
             f"**Description:** {description[:100]}{'...' if len(description) > 100 else ''}"
         )
 
     @tradecommission.command(name="setimage")
+    @commands.is_owner()
     async def tc_setimage(self, ctx: commands.Context, image_url: str):
         """
         Set the image to display when Trade Commission information is added.
@@ -334,7 +505,7 @@ class TradeCommission(commands.Cog):
         To remove the image, use: `[p]tc setimage none`
         """
         if image_url.lower() == "none":
-            await self.config.guild(ctx.guild).image_url.set(None)
+            await self.config.image_url.set(None)
             await ctx.send("✅ Trade Commission image removed.")
             return
 
@@ -351,7 +522,7 @@ class TradeCommission(commands.Cog):
             await ctx.send("❌ Image URL must start with http:// or https://")
             return
 
-        await self.config.guild(ctx.guild).image_url.set(image_url)
+        await self.config.image_url.set(image_url)
 
         # Show preview
         embed = discord.Embed(
@@ -366,7 +537,8 @@ class TradeCommission(commands.Cog):
     @tradecommission.command(name="info")
     async def tc_info(self, ctx: commands.Context):
         """Show current Trade Commission configuration."""
-        config = await self.config.guild(ctx.guild).all()
+        guild_config = await self.config.guild(ctx.guild).all()
+        global_config = await self.config.all()
 
         embed = discord.Embed(
             title="📊 Trade Commission Configuration",
@@ -375,45 +547,45 @@ class TradeCommission(commands.Cog):
 
         # Schedule info
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        channel = ctx.guild.get_channel(config["channel_id"]) if config["channel_id"] else None
+        channel = ctx.guild.get_channel(guild_config["channel_id"]) if guild_config["channel_id"] else None
 
         schedule_text = (
-            f"**Status:** {'✅ Enabled' if config['enabled'] else '❌ Disabled'}\n"
+            f"**Status:** {'✅ Enabled' if guild_config['enabled'] else '❌ Disabled'}\n"
             f"**Channel:** {channel.mention if channel else 'Not set'}\n"
-            f"**Schedule:** {days[config['schedule_day']]} at {config['schedule_hour']:02d}:{config['schedule_minute']:02d}\n"
-            f"**Timezone:** {config['timezone']}"
+            f"**Schedule:** {days[guild_config['schedule_day']]} at {guild_config['schedule_hour']:02d}:{guild_config['schedule_minute']:02d}\n"
+            f"**Timezone:** {guild_config['timezone']}"
         )
         embed.add_field(name="Schedule", value=schedule_text, inline=False)
 
-        # Options info
+        # Options info (from global config)
         options_text = []
-        for key, info in config["trade_info"].items():
+        for key, info in global_config["trade_info"].items():
             options_text.append(
                 f"{info['emoji']} **{info['title']}**\n"
                 f"└ {info['description'][:80]}{'...' if len(info['description']) > 80 else ''}"
             )
 
         embed.add_field(
-            name="Configured Options",
+            name="Configured Options (Global)",
             value="\n\n".join(options_text) if options_text else "No options configured",
             inline=False
         )
 
-        # Image info
-        if config["image_url"]:
+        # Image info (from global config)
+        if global_config["image_url"]:
             embed.add_field(
                 name="📸 Image",
-                value=f"[View Image]({config['image_url']})",
+                value=f"[View Image]({global_config['image_url']})",
                 inline=False
             )
 
         # Current week info
-        if config["current_message_id"]:
-            current_ch = ctx.guild.get_channel(config["current_channel_id"])
-            active_options = config["active_options"]
+        if guild_config["current_message_id"]:
+            current_ch = ctx.guild.get_channel(guild_config["current_channel_id"])
+            active_options = guild_config["active_options"]
             current_text = (
                 f"**Channel:** {current_ch.mention if current_ch else 'Unknown'}\n"
-                f"**Message ID:** {config['current_message_id']}\n"
+                f"**Message ID:** {guild_config['current_message_id']}\n"
                 f"**Active Options:** {len(active_options)}/3"
             )
             embed.add_field(name="Current Week", value=current_text, inline=False)
@@ -439,10 +611,11 @@ class TradeCommission(commands.Cog):
 
     async def update_commission_message(self, guild: discord.Guild):
         """Update the current Trade Commission message with active options."""
-        config = await self.config.guild(guild).all()
+        guild_config = await self.config.guild(guild).all()
+        global_config = await self.config.all()
 
-        current_msg_id = config["current_message_id"]
-        current_ch_id = config["current_channel_id"]
+        current_msg_id = guild_config["current_message_id"]
+        current_ch_id = guild_config["current_channel_id"]
 
         if not current_msg_id or not current_ch_id:
             return
@@ -463,9 +636,9 @@ class TradeCommission(commands.Cog):
             timestamp=datetime.utcnow(),
         )
 
-        active_options = config["active_options"]
-        trade_info = config["trade_info"]
-        image_url = config["image_url"]
+        active_options = guild_config["active_options"]
+        trade_info = global_config["trade_info"]
+        image_url = global_config["image_url"]
 
         if active_options:
             description_parts = ["This week's Trade Commission information:\n"]
