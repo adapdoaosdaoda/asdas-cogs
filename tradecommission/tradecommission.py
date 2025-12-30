@@ -42,6 +42,10 @@ class TradeCommission(commands.Cog):
             "active_options": [],  # List of option keys that are currently active
             "addinfo_message_id": None,  # The addinfo control message
             "allowed_roles": [],  # Role IDs that can use addinfo reactions
+            "message_title": "📊 Weekly Trade Commission - Where Winds Meet",  # Configurable header
+            "initial_description": "This week's Trade Commission information will be added soon!\n\nCheck back later for updates.",  # Before addinfo
+            "post_description": "This week's Trade Commission information:",  # After addinfo
+            "ping_role_id": None,  # Role to ping when posting message
         }
 
         self.config.register_global(**default_global)
@@ -124,16 +128,23 @@ class TradeCommission(commands.Cog):
         # Clear active options for new week
         await self.config.guild(guild).active_options.clear()
 
+        config = await self.config.guild(guild).all()
+
         embed = discord.Embed(
-            title="📊 Weekly Trade Commission - Where Winds Meet",
-            description="This week's Trade Commission information will be added soon!\n\nCheck back later for updates.",
+            title=config["message_title"],
+            description=config["initial_description"],
             color=discord.Color.blue(),
-            timestamp=datetime.utcnow(),
         )
-        embed.set_footer(text="Where Winds Meet | Trade Commission")
+
+        # Prepare content with ping if role is configured
+        content = None
+        if config["ping_role_id"]:
+            role = guild.get_role(config["ping_role_id"])
+            if role:
+                content = role.mention
 
         try:
-            message = await channel.send(embed=embed)
+            message = await channel.send(content=content, embed=embed)
             await self.config.guild(guild).current_message_id.set(message.id)
             await self.config.guild(guild).current_channel_id.set(channel.id)
         except discord.Forbidden:
@@ -306,6 +317,76 @@ class TradeCommission(commands.Cog):
         )
 
         await ctx.send(embed=embed)
+
+    @tradecommission.command(name="settitle")
+    async def tc_settitle(self, ctx: commands.Context, *, title: str):
+        """
+        Set the title/header for Trade Commission messages.
+
+        **Arguments:**
+        - `title`: The title text to display at the top of the embed
+
+        **Example:**
+        - `[p]tc settitle 📊 Weekly Trade Routes - Where Winds Meet`
+        """
+        await self.config.guild(ctx.guild).message_title.set(title)
+        await ctx.send(f"✅ Message title set to:\n> {title}")
+
+    @tradecommission.command(name="setinitial")
+    async def tc_setinitial(self, ctx: commands.Context, *, description: str):
+        """
+        Set the initial description shown before options are added.
+
+        This text appears when the weekly message is first posted,
+        before anyone uses addinfo to select options.
+
+        **Arguments:**
+        - `description`: The description text
+
+        **Example:**
+        - `[p]tc setinitial This week's trade routes will be announced soon! Check back later.`
+        """
+        await self.config.guild(ctx.guild).initial_description.set(description)
+        await ctx.send(f"✅ Initial description set to:\n> {description[:100]}{'...' if len(description) > 100 else ''}")
+
+    @tradecommission.command(name="setpost")
+    async def tc_setpost(self, ctx: commands.Context, *, description: str):
+        """
+        Set the description shown after options are added.
+
+        This text appears at the top of the message when options have been
+        selected via addinfo reactions.
+
+        **Arguments:**
+        - `description`: The description text
+
+        **Example:**
+        - `[p]tc setpost This week's Trade Commission routes:`
+        """
+        await self.config.guild(ctx.guild).post_description.set(description)
+        await ctx.send(f"✅ Post description set to:\n> {description[:100]}{'...' if len(description) > 100 else ''}")
+
+    @tradecommission.command(name="setpingrole")
+    async def tc_setpingrole(self, ctx: commands.Context, role: Optional[discord.Role] = None):
+        """
+        Set a role to ping when posting Trade Commission messages.
+
+        The role will be mentioned when the weekly message is posted,
+        alerting members with that role.
+
+        **Arguments:**
+        - `role`: The role to ping (or omit to remove ping)
+
+        **Examples:**
+        - `[p]tc setpingrole @Traders` - Set ping role
+        - `[p]tc setpingrole` - Remove ping role
+        """
+        if role is None:
+            await self.config.guild(ctx.guild).ping_role_id.set(None)
+            await ctx.send("✅ Ping role removed. Messages will no longer ping a role.")
+        else:
+            await self.config.guild(ctx.guild).ping_role_id.set(role.id)
+            await ctx.send(f"✅ Will ping {role.mention} when posting Trade Commission messages.")
 
     @tradecommission.command(name="post")
     async def tc_post(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
@@ -652,6 +733,22 @@ class TradeCommission(commands.Cog):
         )
         embed.add_field(name="Schedule", value=schedule_text, inline=False)
 
+        # Message customization info
+        message_custom_text = (
+            f"**Title:** {guild_config['message_title']}\n"
+            f"**Initial Description:** {guild_config['initial_description'][:60]}{'...' if len(guild_config['initial_description']) > 60 else ''}\n"
+            f"**Post Description:** {guild_config['post_description'][:60]}{'...' if len(guild_config['post_description']) > 60 else ''}"
+        )
+
+        # Add ping role if set
+        if guild_config['ping_role_id']:
+            ping_role = ctx.guild.get_role(guild_config['ping_role_id'])
+            message_custom_text += f"\n**Ping Role:** {ping_role.mention if ping_role else 'Deleted Role'}"
+        else:
+            message_custom_text += "\n**Ping Role:** None"
+
+        embed.add_field(name="Message Customization", value=message_custom_text, inline=False)
+
         # Options info (from global config)
         options_text = []
         for key, info in global_config["trade_info"].items():
@@ -745,9 +842,8 @@ class TradeCommission(commands.Cog):
 
         # Build embed with active options
         embed = discord.Embed(
-            title="📊 Weekly Trade Commission - Where Winds Meet",
+            title=guild_config["message_title"],
             color=discord.Color.gold(),
-            timestamp=datetime.utcnow(),
         )
 
         active_options = guild_config["active_options"]
@@ -755,7 +851,7 @@ class TradeCommission(commands.Cog):
         image_url = global_config["image_url"]
 
         if active_options:
-            description_parts = ["This week's Trade Commission information:\n"]
+            description_parts = [guild_config["post_description"] + "\n"]
             for option_key in active_options:
                 info = trade_info[option_key]
                 description_parts.append(f"\n{info['emoji']} **{info['title']}**\n{info['description']}")
@@ -766,9 +862,7 @@ class TradeCommission(commands.Cog):
             if image_url:
                 embed.set_image(url=image_url)
         else:
-            embed.description = "This week's Trade Commission information will be added soon!\n\nCheck back later for updates."
-
-        embed.set_footer(text="Where Winds Meet | Trade Commission")
+            embed.description = guild_config["initial_description"]
 
         try:
             await message.edit(embed=embed)

@@ -11,6 +11,8 @@ A Discord cog for Where Winds Meet that sends weekly Trade Commission informatio
 - **Global Options**: Configure option content once, use across all servers
 - **Customizable Emotes**: Each option uses a custom emoji for reactions
 - **Image Support**: Display an image when Trade Commission information is added
+- **Fully Customizable Messages**: Personalize title, descriptions, and ping roles per server
+- **Clean Design**: No footer or timestamps for a streamlined appearance
 
 ## Installation
 
@@ -79,6 +81,36 @@ Users with these roles will be able to click reactions on the addinfo message to
 **Remove a role:**
 ```
 [p]tc removerole @Trade Manager
+```
+
+### 5. Customize Messages (Optional - Per-Server)
+
+Personalize the Trade Commission messages for your server:
+
+**Set the title/header:**
+```
+[p]tc settitle 📊 Weekly Trade Routes - Where Winds Meet
+```
+
+**Set the initial description (shown before options are added):**
+```
+[p]tc setinitial This week's trade routes will be announced soon! Check back later for updates.
+```
+
+**Set the post description (shown after options are added):**
+```
+[p]tc setpost This week's Trade Commission routes:
+```
+
+**Set a role to ping when posting:**
+```
+[p]tc setpingrole @Traders
+```
+The role will be mentioned when the weekly message is posted.
+
+**Remove ping role:**
+```
+[p]tc setpingrole
 ```
 
 ## Usage
@@ -155,6 +187,10 @@ Re-enable:
 | `[p]tc addrole <role>` | Add role that can use addinfo reactions | Admin |
 | `[p]tc removerole <role>` | Remove role from addinfo allowed list | Admin |
 | `[p]tc listroles` | List roles allowed to use addinfo | Admin |
+| `[p]tc settitle <title>` | Set message title/header | Admin |
+| `[p]tc setinitial <description>` | Set initial description (before addinfo) | Admin |
+| `[p]tc setpost <description>` | Set post description (after addinfo) | Admin |
+| `[p]tc setpingrole [role]` | Set role to ping when posting | Admin |
 | `[p]tc info` | View current configuration | Admin |
 | `[p]tc enable` | Enable weekly messages | Admin |
 | `[p]tc disable` | Disable weekly messages | Admin |
@@ -186,10 +222,11 @@ These settings are shared across **all servers** using the cog:
 These settings are unique to each server:
 - Schedule (day, time, timezone, channel) - set via `[p]tc schedule`
 - Allowed roles for addinfo reactions - set via `[p]tc addrole`
+- Message customization (title, descriptions, ping role) - set via `[p]tc settitle`, `[p]tc setinitial`, `[p]tc setpost`, `[p]tc setpingrole`
 - Current message tracking
 - Active option selections
 
-This design allows you to configure the Trade Commission options once and use them across multiple Where Winds Meet community servers, while each server can have its own posting schedule and role permissions.
+This design allows you to configure the Trade Commission options once and use them across multiple Where Winds Meet community servers, while each server can have its own posting schedule, role permissions, and customized messaging.
 
 ## Permissions
 
