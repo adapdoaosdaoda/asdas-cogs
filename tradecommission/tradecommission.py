@@ -151,13 +151,18 @@ class TradeCommission(commands.Cog):
             pass
 
     @commands.group(name="tradecommission", aliases=["tc"])
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tradecommission(self, ctx: commands.Context):
-        """Manage Trade Commission weekly messages."""
+        """
+        Manage Trade Commission weekly messages.
+
+        Global config commands (setoption, setimage) can be used in DMs by the bot owner.
+        Server-specific commands require being used in a server with admin permissions.
+        """
         pass
 
     @tradecommission.command(name="schedule")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_schedule(
         self,
         ctx: commands.Context,
@@ -220,12 +225,16 @@ class TradeCommission(commands.Cog):
         )
 
     @tradecommission.command(name="disable")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_disable(self, ctx: commands.Context):
         """Disable weekly Trade Commission messages."""
         await self.config.guild(ctx.guild).enabled.set(False)
         await ctx.send("✅ Weekly Trade Commission messages disabled.")
 
     @tradecommission.command(name="enable")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_enable(self, ctx: commands.Context):
         """Enable weekly Trade Commission messages."""
         channel_id = await self.config.guild(ctx.guild).channel_id()
@@ -237,6 +246,8 @@ class TradeCommission(commands.Cog):
         await ctx.send("✅ Weekly Trade Commission messages enabled.")
 
     @tradecommission.command(name="addrole")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_addrole(self, ctx: commands.Context, role: discord.Role):
         """
         Add a role that can use addinfo reactions.
@@ -260,6 +271,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ {role.mention} can now use addinfo reactions!")
 
     @tradecommission.command(name="removerole")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_removerole(self, ctx: commands.Context, role: discord.Role):
         """
         Remove a role from the addinfo allowed list.
@@ -280,6 +293,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ {role.mention} can no longer use addinfo reactions.")
 
     @tradecommission.command(name="listroles")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_listroles(self, ctx: commands.Context):
         """
         List all roles that can use addinfo reactions.
@@ -319,6 +334,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(embed=embed)
 
     @tradecommission.command(name="settitle")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_settitle(self, ctx: commands.Context, *, title: str):
         """
         Set the title/header for Trade Commission messages.
@@ -333,6 +350,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ Message title set to:\n> {title}")
 
     @tradecommission.command(name="setinitial")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_setinitial(self, ctx: commands.Context, *, description: str):
         """
         Set the initial description shown before options are added.
@@ -350,6 +369,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ Initial description set to:\n> {description[:100]}{'...' if len(description) > 100 else ''}")
 
     @tradecommission.command(name="setpost")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_setpost(self, ctx: commands.Context, *, description: str):
         """
         Set the description shown after options are added.
@@ -367,6 +388,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ Post description set to:\n> {description[:100]}{'...' if len(description) > 100 else ''}")
 
     @tradecommission.command(name="setpingrole")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_setpingrole(self, ctx: commands.Context, role: Optional[discord.Role] = None):
         """
         Set a role to ping when posting Trade Commission messages.
@@ -389,6 +412,8 @@ class TradeCommission(commands.Cog):
             await ctx.send(f"✅ Will ping {role.mention} when posting Trade Commission messages.")
 
     @tradecommission.command(name="post")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_post(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
         """
         Manually post a Trade Commission message now.
@@ -410,6 +435,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ Posted Trade Commission message to {channel.mention}")
 
     @tradecommission.command(name="addinfo")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_addinfo(self, ctx: commands.Context):
         """
         Add information to the current week's Trade Commission message via reactions.
@@ -633,7 +660,10 @@ class TradeCommission(commands.Cog):
         description: str
     ):
         """
-        Configure an option's information.
+        Configure an option's information (Global Setting).
+
+        This is a global setting that affects all servers using this cog.
+        Can be used in DMs by the bot owner.
 
         **Arguments:**
         - `option_number`: Option number (1, 2, or 3)
@@ -647,6 +677,17 @@ class TradeCommission(commands.Cog):
 
         **Note:** To use custom server emojis, just type them normally (e.g., :tradeicon:) and Discord will auto-convert them.
         """
+        # Check permissions - bot owner only for global config
+        if not await ctx.bot.is_owner(ctx.author):
+            # If in guild, check for admin permissions
+            if ctx.guild:
+                if not (ctx.author.guild_permissions.manage_guild or await ctx.bot.is_admin(ctx.author)):
+                    await ctx.send("❌ You need Manage Server permission or Admin role to use this command!")
+                    return
+            else:
+                await ctx.send("❌ Only the bot owner can use this command in DMs!")
+                return
+
         if option_number not in [1, 2, 3]:
             await ctx.send("❌ Option number must be 1, 2, or 3!")
             return
@@ -685,7 +726,10 @@ class TradeCommission(commands.Cog):
     @commands.is_owner()
     async def tc_setimage(self, ctx: commands.Context, image_url: str):
         """
-        Set the image to display when Trade Commission information is added.
+        Set the image to display when Trade Commission information is added (Global Setting).
+
+        This is a global setting that affects all servers using this cog.
+        Can be used in DMs by the bot owner.
 
         **Arguments:**
         - `image_url`: Direct URL to an image file (must end in .png, .jpg, .jpeg, .gif, or .webp)
@@ -726,6 +770,8 @@ class TradeCommission(commands.Cog):
         await ctx.send(embed=embed)
 
     @tradecommission.command(name="info")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_info(self, ctx: commands.Context):
         """Show current Trade Commission configuration."""
         guild_config = await self.config.guild(ctx.guild).all()
@@ -819,6 +865,7 @@ class TradeCommission(commands.Cog):
         await ctx.send(embed=embed)
 
     @tradecommission.command(name="testnow")
+    @commands.guild_only()
     @commands.is_owner()
     async def tc_testnow(self, ctx: commands.Context):
         """[Owner only] Test sending the weekly message immediately."""
