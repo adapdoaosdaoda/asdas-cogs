@@ -13,11 +13,13 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]cog install asdas-cogs eventchannels
 [p]cog install asdas-cogs eventrolereadd
 [p]cog install asdas-cogs reminders
+[p]cog install asdas-cogs tradecommission
 ```
 ```
 [p]load eventchannels
 [p]load eventrolereadd
 [p]load reminders
+[p]load tradecommission
 ```
 
 ## 📦 Available Cogs
@@ -46,6 +48,17 @@ Extension to EventChannels that automatically re-adds event roles based on log c
 **Added Features:**
 - Discord relative timestamp support (`{time}` variable)
 
+### TradeCommission
+A Discord cog for Where Winds Meet that sends weekly Trade Commission information with interactive options.
+
+**Key Features:**
+- Weekly scheduled messages with timezone support
+- Dropdown based information selection (up to 3 options)
+- Unlimited configurable trade options
+- Customizable emotes and messages
+- Image support for Trade Commission updates
+- Role-based access control
+
 
 ## 📚 Documentation
 
@@ -55,6 +68,7 @@ Extension to EventChannels that automatically re-adds event roles based on log c
 - **[EventChannels Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels)** - Complete guide with examples
 - **[EventRoleReadd Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd)** - Setup and commands
 - **[Reminders Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders)** - Features and usage
+- **[TradeCommission Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/TradeCommission)** - Setup and commands
 
 
 ## 🔗 Links
@@ -79,6 +93,7 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
+- **TradeCommission** - Custom development for Red-Discord Bot
 
 ## 📄 License
 - **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
