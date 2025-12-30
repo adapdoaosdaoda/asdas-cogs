@@ -477,17 +477,49 @@ class TradeCommission(commands.Cog):
             color=discord.Color.green(),
         )
 
-        # Show current options
+        # Show current options - split into multiple fields if needed to avoid 1024 char limit
         options_text = []
         for idx, option in enumerate(trade_options):
             status = "✅" if idx in active_options else "⬜"
             options_text.append(f"{status} {option['emoji']} **{option['title']}**")
 
-        embed.add_field(
-            name="Available Options",
-            value="\n".join(options_text) if options_text else "No options configured",
-            inline=False
-        )
+        # Split options into chunks that fit within Discord's 1024 character field limit
+        if options_text:
+            current_chunk = []
+            current_length = 0
+            field_num = 1
+
+            for option_line in options_text:
+                line_length = len(option_line) + 1  # +1 for newline
+                if current_length + line_length > 1000:  # Leave some buffer
+                    # Add current chunk as a field
+                    field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                    embed.add_field(
+                        name=field_name,
+                        value="\n".join(current_chunk),
+                        inline=False
+                    )
+                    current_chunk = [option_line]
+                    current_length = line_length
+                    field_num += 1
+                else:
+                    current_chunk.append(option_line)
+                    current_length += line_length
+
+            # Add remaining options
+            if current_chunk:
+                field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                embed.add_field(
+                    name=field_name,
+                    value="\n".join(current_chunk),
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="Available Options",
+                value="No options configured",
+                inline=False
+            )
 
         embed.set_footer(text=f"Selected: {len(active_options)}/3")
 
@@ -630,17 +662,49 @@ class TradeCommission(commands.Cog):
             color=discord.Color.green(),
         )
 
-        # Show current options
+        # Show current options - split into multiple fields if needed to avoid 1024 char limit
         options_text = []
         for idx, option in enumerate(trade_options):
             status = "✅" if idx in active_options else "⬜"
             options_text.append(f"{status} {option['emoji']} **{option['title']}**")
 
-        embed.add_field(
-            name="Available Options",
-            value="\n".join(options_text) if options_text else "No options configured",
-            inline=False
-        )
+        # Split options into chunks that fit within Discord's 1024 character field limit
+        if options_text:
+            current_chunk = []
+            current_length = 0
+            field_num = 1
+
+            for option_line in options_text:
+                line_length = len(option_line) + 1  # +1 for newline
+                if current_length + line_length > 1000:  # Leave some buffer
+                    # Add current chunk as a field
+                    field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                    embed.add_field(
+                        name=field_name,
+                        value="\n".join(current_chunk),
+                        inline=False
+                    )
+                    current_chunk = [option_line]
+                    current_length = line_length
+                    field_num += 1
+                else:
+                    current_chunk.append(option_line)
+                    current_length += line_length
+
+            # Add remaining options
+            if current_chunk:
+                field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                embed.add_field(
+                    name=field_name,
+                    value="\n".join(current_chunk),
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="Available Options",
+                value="No options configured",
+                inline=False
+            )
 
         embed.set_footer(text=f"Selected: {len(active_options)}/3")
 
@@ -1004,14 +1068,14 @@ class TradeCommission(commands.Cog):
         image_url = global_config["image_url"]
 
         if active_options:
-            description_parts = [guild_config["post_description"] + "\n"]
+            description_parts = []
             for option_idx in active_options:
                 # Ensure the index is valid
                 if 0 <= option_idx < len(trade_options):
                     option = trade_options[option_idx]
-                    description_parts.append(f"\n{option['emoji']} **{option['title']}**\n{option['description']}")
+                    description_parts.append(f"{option['emoji']} **{option['title']}**\n{option['description']}")
 
-            embed.description = "\n".join(description_parts)
+            embed.description = "\n\n".join(description_parts)
 
             # Add image when information is present
             if image_url:
