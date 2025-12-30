@@ -218,14 +218,8 @@ class AddInfoView(discord.ui.View):
                             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                                 pass
 
-                        # Send new notification
+                        # Send new notification (without role ping)
                         notification_content = guild_config["notification_message"]
-
-                        # Add role ping if configured
-                        if guild_config["ping_role_id"]:
-                            ping_role = self.guild.get_role(guild_config["ping_role_id"])
-                            if ping_role:
-                                notification_content = f"{ping_role.mention} {notification_content}"
 
                         notification_msg = await current_channel.send(notification_content)
 
@@ -999,44 +993,18 @@ class TradeCommission(commands.Cog):
         # Create the view with buttons
         view = AddInfoView(self, ctx.guild, trade_options, active_options, emoji_titles)
 
-        # Send the message with the view
-        control_msg = await ctx.send(embed=embed, view=view)
-
-        # Store the control message ID
-        await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
-
-        # Send DM to the user with the embed
+        # Send the full addinfo panel to the user's DM
         try:
-            dm_embed = discord.Embed(
-                title="📝 Trade Commission Addinfo Panel",
-                description=f"You've opened the addinfo panel in **{ctx.guild.name}**.\n\n"
-                           f"Use the dropdowns in {channel.mention} to select the trade commission options.\n\n"
-                           f"[Jump to addinfo panel]({control_msg.jump_url})",
-                color=discord.Color.green()
-            )
-            # Add current selections to DM embed
-            if active_options:
-                selections = []
-                for idx in active_options:
-                    if 0 <= idx < len(trade_options):
-                        opt = trade_options[idx]
-                        selections.append(f"{opt['emoji']} **{opt['title']}**")
-                dm_embed.add_field(
-                    name=f"Current Selections ({len(active_options)}/3)",
-                    value="\n".join(selections),
-                    inline=False
-                )
-            else:
-                dm_embed.add_field(
-                    name="Current Selections (0/3)",
-                    value="No options selected yet",
-                    inline=False
-                )
+            control_msg = await ctx.author.send(embed=embed, view=view)
 
-            await ctx.author.send(embed=dm_embed)
+            # Store the control message ID
+            await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
+
+            # Send a confirmation message to the channel
+            await ctx.send(f"✅ Addinfo panel sent to your DM! Use the dropdowns there to select trade commission options.", delete_after=15)
         except discord.Forbidden:
             # User has DMs disabled
-            await ctx.send("⚠️ I couldn't send you a DM. Please enable DMs from server members.", delete_after=10)
+            await ctx.send("❌ I couldn't send you a DM. Please enable DMs from server members to use this feature.")
 
     @tradecommission.command(name="setoption")
     async def tc_setoption(
