@@ -1249,15 +1249,30 @@ class TradeCommission(commands.Cog):
 
         # Options info (from global config)
         options_text = []
-        for idx, option in enumerate(global_config["trade_options"], 1):
-            options_text.append(
-                f"{idx}. {option['emoji']} **{option['title']}**\n"
-                f"   └ {option['description'][:80]}{'...' if len(option['description']) > 80 else ''}"
-            )
+        total_options = len(global_config["trade_options"])
+
+        if total_options == 0:
+            options_value = "No options configured. Use `[p]tc setoption` to add options."
+        else:
+            # Build the options list, but stop if we exceed the Discord limit
+            for idx, option in enumerate(global_config["trade_options"], 1):
+                option_line = (
+                    f"{idx}. {option['emoji']} **{option['title']}**\n"
+                    f"   └ {option['description'][:80]}{'...' if len(option['description']) > 80 else ''}"
+                )
+                # Check if adding this option would exceed the limit
+                test_value = "\n\n".join(options_text + [option_line])
+                if len(test_value) > 950:  # Leave some buffer for the "and X more" message
+                    remaining = total_options - idx + 1
+                    options_text.append(f"\n_...and {remaining} more options_")
+                    break
+                options_text.append(option_line)
+
+            options_value = "\n\n".join(options_text)
 
         embed.add_field(
             name="Configured Options (Global)",
-            value="\n\n".join(options_text) if options_text else "No options configured. Use `[p]tc setoption` to add options.",
+            value=options_value,
             inline=False
         )
 
@@ -1280,8 +1295,23 @@ class TradeCommission(commands.Cog):
                 else:
                     roles.append(f"Deleted Role (ID: {role_id})")
 
-            roles_text = "\n".join(f"• {role}" for role in roles)
-            roles_text += "\n\n*Users with Manage Server permission also have access*"
+            # Build roles text with length check
+            roles_lines = [f"• {role}" for role in roles]
+            footer = "\n\n*Users with Manage Server permission also have access*"
+
+            # Check if it exceeds the limit
+            roles_text = "\n".join(roles_lines) + footer
+            if len(roles_text) > 1024:
+                # Truncate the list
+                truncated_roles = []
+                for i, role_line in enumerate(roles_lines):
+                    test_text = "\n".join(truncated_roles + [role_line]) + f"\n_...and {len(roles_lines) - i - 1} more_" + footer
+                    if len(test_text) > 1024:
+                        truncated_roles.append(f"_...and {len(roles_lines) - i} more_")
+                        break
+                    truncated_roles.append(role_line)
+                roles_text = "\n".join(truncated_roles) + footer
+
             embed.add_field(
                 name="📝 Addinfo Allowed Roles",
                 value=roles_text,
