@@ -74,10 +74,12 @@ class TradeCommission(commands.Cog):
             "active_options": [],  # List of option indices that are currently active (max 3)
             "addinfo_message_id": None,  # The addinfo control message
             "allowed_roles": [],  # Role IDs that can use addinfo reactions
+            "allowed_users": [],  # User IDs that can use addinfo reactions
             "message_title": "📊 Weekly Trade Commission - Where Winds Meet",  # Configurable header
             "initial_description": "This week's Trade Commission information will be added soon!\n\nCheck back later for updates.",  # Before addinfo
             "post_description": "This week's Trade Commission information:",  # After addinfo
             "ping_role_id": None,  # Role to ping when posting message
+            "previous_message_id": None,  # Previous week's message to delete
         }
 
         self.config.register_global(**default_global)
@@ -100,6 +102,11 @@ class TradeCommission(commands.Cog):
         """Check if a member has permission to use addinfo reactions."""
         # Check if user has Manage Server permission
         if member.guild_permissions.manage_guild:
+            return True
+
+        # Check if user is in the allowed users list
+        allowed_user_ids = await self.config.guild(member.guild).allowed_users()
+        if member.id in allowed_user_ids:
             return True
 
         # Check if user has one of the allowed roles
@@ -162,10 +169,26 @@ class TradeCommission(commands.Cog):
 
         config = await self.config.guild(guild).all()
 
+        # Delete previous week's message if it exists
+        if config["previous_message_id"]:
+            try:
+                prev_channel = guild.get_channel(config["current_channel_id"]) or channel
+                prev_message = await prev_channel.fetch_message(config["previous_message_id"])
+                await prev_message.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass  # Message already deleted or no permission
+
+        # Determine embed color from ping role or default
+        embed_color = discord.Color.blue()
+        if config["ping_role_id"]:
+            ping_role = guild.get_role(config["ping_role_id"])
+            if ping_role and ping_role.color != discord.Color.default():
+                embed_color = ping_role.color
+
         embed = discord.Embed(
             title=config["message_title"],
             description=config["initial_description"],
-            color=discord.Color.blue(),
+            color=embed_color,
         )
 
         # Prepare content with ping if role is configured
@@ -177,6 +200,9 @@ class TradeCommission(commands.Cog):
 
         try:
             message = await channel.send(content=content, embed=embed)
+            # Store current message as previous for next week
+            await self.config.guild(guild).previous_message_id.set(config["current_message_id"])
+            # Set new current message
             await self.config.guild(guild).current_message_id.set(message.id)
             await self.config.guild(guild).current_channel_id.set(channel.id)
         except discord.Forbidden:
@@ -359,6 +385,94 @@ class TradeCommission(commands.Cog):
                 "The following roles can use addinfo reactions:\n\n"
                 + "\n".join(f"• {role}" for role in roles) +
                 "\n\n*Note: Users with Manage Server permission can always use addinfo.*"
+            ),
+            color=discord.Color.blue()
+        )
+
+        await ctx.send(embed=embed)
+
+    @tradecommission.command(name="adduser")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_adduser(self, ctx: commands.Context, user: discord.Member):
+        """
+        Add a user that can use addinfo reactions.
+
+        Users added with this command will be able to click reactions on the addinfo message
+        to select Trade Commission options, even if they don't have Manage Server permission.
+
+        **Arguments:**
+        - `user`: The user to add
+
+        **Example:**
+        - `[p]tc adduser @JohnDoe`
+        """
+        async with self.config.guild(ctx.guild).allowed_users() as allowed_users:
+            if user.id in allowed_users:
+                await ctx.send(f"❌ {user.mention} is already allowed to use addinfo!")
+                return
+
+            allowed_users.append(user.id)
+
+        await ctx.send(f"✅ {user.mention} can now use addinfo reactions!")
+
+    @tradecommission.command(name="removeuser")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_removeuser(self, ctx: commands.Context, user: discord.Member):
+        """
+        Remove a user from the addinfo allowed list.
+
+        **Arguments:**
+        - `user`: The user to remove
+
+        **Example:**
+        - `[p]tc removeuser @JohnDoe`
+        """
+        async with self.config.guild(ctx.guild).allowed_users() as allowed_users:
+            if user.id not in allowed_users:
+                await ctx.send(f"❌ {user.mention} is not in the allowed users list!")
+                return
+
+            allowed_users.remove(user.id)
+
+        await ctx.send(f"✅ {user.mention} can no longer use addinfo reactions.")
+
+    @tradecommission.command(name="listusers")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_listusers(self, ctx: commands.Context):
+        """
+        List all users that can use addinfo reactions.
+
+        Shows which individual users have permission to click reactions on the addinfo message,
+        in addition to users with Manage Server permission or allowed roles.
+        """
+        allowed_user_ids = await self.config.guild(ctx.guild).allowed_users()
+
+        if not allowed_user_ids:
+            await ctx.send(
+                "❌ No individual users configured.\n"
+                "Only users with **Manage Server** permission or allowed roles can use addinfo reactions.\n\n"
+                "Use `[p]tc adduser` to add a user."
+            )
+            return
+
+        # Get user objects
+        users = []
+        for user_id in allowed_user_ids:
+            user = ctx.guild.get_member(user_id)
+            if user:
+                users.append(user.mention)
+            else:
+                users.append(f"Left Server (ID: {user_id})")
+
+        embed = discord.Embed(
+            title="📝 Addinfo Allowed Users",
+            description=(
+                "The following users can use addinfo reactions:\n\n"
+                + "\n".join(f"• {user}" for user in users) +
+                "\n\n*Note: Users with Manage Server permission or allowed roles can also use addinfo.*"
             ),
             color=discord.Color.blue()
         )
@@ -548,7 +662,7 @@ class TradeCommission(commands.Cog):
                         embed.add_field(
                             name=f"{category_emoji} Options{field_suffix}",
                             value="\n".join(current_chunk),
-                            inline=False
+                            inline=True
                         )
                         current_chunk = [line]
                         current_length = line_length
@@ -585,7 +699,7 @@ class TradeCommission(commands.Cog):
                         embed.add_field(
                             name=f"Other Options{field_suffix}",
                             value="\n".join(current_chunk),
-                            inline=False
+                            inline=True
                         )
                         current_chunk = [line]
                         current_length = line_length
@@ -684,8 +798,18 @@ class TradeCommission(commands.Cog):
         # Update the Trade Commission message
         await self.update_commission_message(guild)
 
-        # Update the control message
-        await self._update_addinfo_message(guild, reaction.message)
+        # Check if we now have 3 options selected
+        active_options = await self.config.guild(guild).active_options()
+        if len(active_options) == 3:
+            # Delete the addinfo message
+            try:
+                await reaction.message.delete()
+                await self.config.guild(guild).addinfo_message_id.set(None)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+        else:
+            # Update the control message
+            await self._update_addinfo_message(guild, reaction.message)
 
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.User):
@@ -784,7 +908,7 @@ class TradeCommission(commands.Cog):
                         embed.add_field(
                             name=f"{category_emoji} Options{field_suffix}",
                             value="\n".join(current_chunk),
-                            inline=False
+                            inline=True
                         )
                         current_chunk = [line]
                         current_length = line_length
@@ -821,7 +945,7 @@ class TradeCommission(commands.Cog):
                         embed.add_field(
                             name=f"Other Options{field_suffix}",
                             value="\n".join(current_chunk),
-                            inline=False
+                            inline=True
                         )
                         current_chunk = [line]
                         current_length = line_length
@@ -1195,10 +1319,17 @@ class TradeCommission(commands.Cog):
         except discord.NotFound:
             return
 
+        # Determine embed color from ping role or default
+        embed_color = discord.Color.gold()
+        if guild_config["ping_role_id"]:
+            ping_role = guild.get_role(guild_config["ping_role_id"])
+            if ping_role and ping_role.color != discord.Color.default():
+                embed_color = ping_role.color
+
         # Build embed with active options
         embed = discord.Embed(
             title=guild_config["message_title"],
-            color=discord.Color.gold(),
+            color=embed_color,
         )
 
         active_options = guild_config["active_options"]
@@ -1206,7 +1337,7 @@ class TradeCommission(commands.Cog):
         image_url = global_config["image_url"]
 
         if active_options:
-            description_parts = []
+            description_parts = [guild_config["post_description"]]
             for option_idx in active_options:
                 # Ensure the index is valid
                 if 0 <= option_idx < len(trade_options):
