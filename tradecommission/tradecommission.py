@@ -41,6 +41,7 @@ class TradeCommission(commands.Cog):
             "current_channel_id": None,
             "active_options": [],  # List of option keys that are currently active
             "addinfo_message_id": None,  # The addinfo control message
+            "allowed_roles": [],  # Role IDs that can use addinfo reactions
         }
 
         self.config.register_global(**default_global)
@@ -58,6 +59,18 @@ class TradeCommission(commands.Cog):
         """Cancel background task when cog unloads."""
         if self._task:
             self._task.cancel()
+
+    async def _has_addinfo_permission(self, member: discord.Member) -> bool:
+        """Check if a member has permission to use addinfo reactions."""
+        # Check if user has Manage Server permission
+        if member.guild_permissions.manage_guild:
+            return True
+
+        # Check if user has one of the allowed roles
+        allowed_role_ids = await self.config.guild(member.guild).allowed_roles()
+        member_role_ids = [role.id for role in member.roles]
+
+        return any(role_id in allowed_role_ids for role_id in member_role_ids)
 
     async def _check_schedule_loop(self):
         """Background loop to check for scheduled messages."""
@@ -212,6 +225,88 @@ class TradeCommission(commands.Cog):
         await self.config.guild(ctx.guild).enabled.set(True)
         await ctx.send("✅ Weekly Trade Commission messages enabled.")
 
+    @tradecommission.command(name="addrole")
+    async def tc_addrole(self, ctx: commands.Context, role: discord.Role):
+        """
+        Add a role that can use addinfo reactions.
+
+        Users with this role will be able to click reactions on the addinfo message
+        to select Trade Commission options, even if they don't have Manage Server permission.
+
+        **Arguments:**
+        - `role`: The role to add
+
+        **Example:**
+        - `[p]tc addrole @Trade Manager`
+        """
+        async with self.config.guild(ctx.guild).allowed_roles() as allowed_roles:
+            if role.id in allowed_roles:
+                await ctx.send(f"❌ {role.mention} is already allowed to use addinfo!")
+                return
+
+            allowed_roles.append(role.id)
+
+        await ctx.send(f"✅ {role.mention} can now use addinfo reactions!")
+
+    @tradecommission.command(name="removerole")
+    async def tc_removerole(self, ctx: commands.Context, role: discord.Role):
+        """
+        Remove a role from the addinfo allowed list.
+
+        **Arguments:**
+        - `role`: The role to remove
+
+        **Example:**
+        - `[p]tc removerole @Trade Manager`
+        """
+        async with self.config.guild(ctx.guild).allowed_roles() as allowed_roles:
+            if role.id not in allowed_roles:
+                await ctx.send(f"❌ {role.mention} is not in the allowed roles list!")
+                return
+
+            allowed_roles.remove(role.id)
+
+        await ctx.send(f"✅ {role.mention} can no longer use addinfo reactions.")
+
+    @tradecommission.command(name="listroles")
+    async def tc_listroles(self, ctx: commands.Context):
+        """
+        List all roles that can use addinfo reactions.
+
+        Shows which roles have permission to click reactions on the addinfo message,
+        in addition to users with Manage Server permission.
+        """
+        allowed_role_ids = await self.config.guild(ctx.guild).allowed_roles()
+
+        if not allowed_role_ids:
+            await ctx.send(
+                "❌ No additional roles configured.\n"
+                "Only users with **Manage Server** permission can use addinfo reactions.\n\n"
+                "Use `[p]tc addrole` to add a role."
+            )
+            return
+
+        # Get role objects
+        roles = []
+        for role_id in allowed_role_ids:
+            role = ctx.guild.get_role(role_id)
+            if role:
+                roles.append(role.mention)
+            else:
+                roles.append(f"Deleted Role (ID: {role_id})")
+
+        embed = discord.Embed(
+            title="📝 Addinfo Allowed Roles",
+            description=(
+                "The following roles can use addinfo reactions:\n\n"
+                + "\n".join(f"• {role}" for role in roles) +
+                "\n\n*Note: Users with Manage Server permission can always use addinfo.*"
+            ),
+            color=discord.Color.blue()
+        )
+
+        await ctx.send(embed=embed)
+
     @tradecommission.command(name="post")
     async def tc_post(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
         """
@@ -317,7 +412,7 @@ class TradeCommission(commands.Cog):
 
         # Check if user has permission
         member = guild.get_member(user.id)
-        if not member or not member.guild_permissions.manage_guild:
+        if not member or not await self._has_addinfo_permission(member):
             return
 
         # Check if this is an addinfo message
@@ -380,7 +475,7 @@ class TradeCommission(commands.Cog):
 
         # Check if user has permission
         member = guild.get_member(user.id)
-        if not member or not member.guild_permissions.manage_guild:
+        if not member or not await self._has_addinfo_permission(member):
             return
 
         # Check if this is an addinfo message
@@ -576,6 +671,25 @@ class TradeCommission(commands.Cog):
             embed.add_field(
                 name="📸 Image",
                 value=f"[View Image]({global_config['image_url']})",
+                inline=False
+            )
+
+        # Allowed roles info
+        allowed_role_ids = guild_config["allowed_roles"]
+        if allowed_role_ids:
+            roles = []
+            for role_id in allowed_role_ids:
+                role = ctx.guild.get_role(role_id)
+                if role:
+                    roles.append(role.mention)
+                else:
+                    roles.append(f"Deleted Role (ID: {role_id})")
+
+            roles_text = "\n".join(f"• {role}" for role in roles)
+            roles_text += "\n\n*Users with Manage Server permission also have access*"
+            embed.add_field(
+                name="📝 Addinfo Allowed Roles",
+                value=roles_text,
                 inline=False
             )
 

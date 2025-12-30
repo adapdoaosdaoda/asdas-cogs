@@ -60,6 +60,27 @@ This will send a message to `#trade-info` every Monday at 9:00 AM Eastern Time.
 - `minute`: Minute (0-59)
 - `timezone`: Timezone (e.g., UTC, America/New_York, Europe/London)
 
+### 4. Configure Allowed Roles (Optional - Per-Server)
+
+By default, only users with "Manage Server" permission can use addinfo reactions. You can add specific roles that should also have access:
+
+```
+[p]tc addrole @Trade Manager
+[p]tc addrole @Community Helper
+```
+
+Users with these roles will be able to click reactions on the addinfo message to select Trade Commission options.
+
+**View allowed roles:**
+```
+[p]tc listroles
+```
+
+**Remove a role:**
+```
+[p]tc removerole @Trade Manager
+```
+
 ## Usage
 
 ### Automatic Weekly Flow
@@ -84,7 +105,7 @@ This creates an interactive message with reaction emotes. **Click the reactions 
 3. Click again to remove it (or remove your reaction)
 4. Maximum 3 options can be selected at once
 5. The Trade Commission message updates in real-time
-6. Only users with "Manage Server" permission can modify selections
+6. Only authorized users can modify selections (users with "Manage Server" permission or configured allowed roles)
 
 ### Manual Posting
 
@@ -131,6 +152,9 @@ Re-enable:
 | `[p]tc addinfo` | Add information via reaction emotes | Admin |
 | `[p]tc setoption <num> <emoji> <title> <description>` | Configure an option (global) | Admin |
 | `[p]tc setimage <url>` | Set image to display with information (global) | Owner |
+| `[p]tc addrole <role>` | Add role that can use addinfo reactions | Admin |
+| `[p]tc removerole <role>` | Remove role from addinfo allowed list | Admin |
+| `[p]tc listroles` | List roles allowed to use addinfo | Admin |
 | `[p]tc info` | View current configuration | Admin |
 | `[p]tc enable` | Enable weekly messages | Admin |
 | `[p]tc disable` | Disable weekly messages | Admin |
@@ -161,13 +185,15 @@ These settings are shared across **all servers** using the cog:
 ### Per-Server Configuration
 These settings are unique to each server:
 - Schedule (day, time, timezone, channel) - set via `[p]tc schedule`
+- Allowed roles for addinfo reactions - set via `[p]tc addrole`
 - Current message tracking
 - Active option selections
 
-This design allows you to configure the Trade Commission options once and use them across multiple Where Winds Meet community servers, while each server can have its own posting schedule.
+This design allows you to configure the Trade Commission options once and use them across multiple Where Winds Meet community servers, while each server can have its own posting schedule and role permissions.
 
 ## Permissions
 
+### Bot Permissions
 The bot needs:
 - `Send Messages` in the configured channel
 - `Embed Links` to send rich embeds
@@ -175,8 +201,15 @@ The bot needs:
 - `Add Reactions` to add reaction emojis
 - `Manage Messages` to remove invalid reactions
 
-Users need:
-- `Manage Server` permission to use Trade Commission commands and modify selections via reactions
+### User Permissions
+**For commands** (`[p]tc schedule`, `[p]tc setoption`, etc.):
+- `Manage Server` permission required (or admin role)
+
+**For addinfo reactions** (clicking reactions to select options):
+- `Manage Server` permission OR
+- One of the roles configured via `[p]tc addrole`
+
+This allows you to give specific roles (like "Trade Manager" or "Community Helper") the ability to update Trade Commission information without needing full server management permissions.
 
 ## Troubleshooting
 
