@@ -7,6 +7,42 @@ from redbot.core import commands, Config
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import box, humanize_list
 import pytz
+import re
+
+
+def extract_final_emoji(text: str) -> Optional[str]:
+    """Extract the final emoji from a text string.
+
+    Args:
+        text: The text to extract emoji from
+
+    Returns:
+        The final emoji found in the text, or None if no emoji found
+    """
+    # Unicode emoji pattern - matches standard emoji characters
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F700-\U0001F77F"  # alchemical symbols
+        "\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
+        "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+        "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+        "\U0001FA00-\U0001FA6F"  # Chess Symbols
+        "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+        "\U00002702-\U000027B0"  # Dingbats
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE
+    )
+
+    # Find all emojis in the text
+    emojis = emoji_pattern.findall(text)
+
+    # Return the last emoji found, or None if no emojis
+    return emojis[-1] if emojis else None
 
 
 class TradeCommission(commands.Cog):
@@ -477,43 +513,94 @@ class TradeCommission(commands.Cog):
             color=discord.Color.green(),
         )
 
-        # Show current options - split into multiple fields if needed to avoid 1024 char limit
-        options_text = []
+        # Group options by their final emoji in description
+        emoji_groups = {}  # {emoji: [(idx, option), ...]}
+        no_emoji_options = []  # [(idx, option), ...]
+
         for idx, option in enumerate(trade_options):
-            status = "✅" if idx in active_options else "⬜"
-            options_text.append(f"{status} {option['emoji']} **{option['title']}**")
+            final_emoji = extract_final_emoji(option['description'])
+            if final_emoji:
+                if final_emoji not in emoji_groups:
+                    emoji_groups[final_emoji] = []
+                emoji_groups[final_emoji].append((idx, option))
+            else:
+                no_emoji_options.append((idx, option))
 
-        # Split options into chunks that fit within Discord's 1024 character field limit
-        if options_text:
-            current_chunk = []
-            current_length = 0
-            field_num = 1
+        # Build fields for each emoji group
+        if emoji_groups or no_emoji_options:
+            # Display emoji groups first
+            for category_emoji, options_list in sorted(emoji_groups.items()):
+                group_lines = []
+                for idx, option in options_list:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
 
-            for option_line in options_text:
-                line_length = len(option_line) + 1  # +1 for newline
-                if current_length + line_length > 1000:  # Leave some buffer
-                    # Add current chunk as a field
-                    field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1  # +1 for newline
+                    if current_length + line_length > 1000:  # Leave buffer
+                        # Add current chunk
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"{category_emoji} Options{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=False
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                # Add remaining chunk
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                     embed.add_field(
-                        name=field_name,
+                        name=f"{category_emoji} Options{field_suffix}",
                         value="\n".join(current_chunk),
                         inline=False
                     )
-                    current_chunk = [option_line]
-                    current_length = line_length
-                    field_num += 1
-                else:
-                    current_chunk.append(option_line)
-                    current_length += line_length
 
-            # Add remaining options
-            if current_chunk:
-                field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
-                embed.add_field(
-                    name=field_name,
-                    value="\n".join(current_chunk),
-                    inline=False
-                )
+            # Display options without emoji last
+            if no_emoji_options:
+                group_lines = []
+                for idx, option in no_emoji_options:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1
+                    if current_length + line_length > 1000:
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"Other Options{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=False
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                    embed.add_field(
+                        name=f"Other Options{field_suffix}",
+                        value="\n".join(current_chunk),
+                        inline=False
+                    )
         else:
             embed.add_field(
                 name="Available Options",
@@ -662,43 +749,94 @@ class TradeCommission(commands.Cog):
             color=discord.Color.green(),
         )
 
-        # Show current options - split into multiple fields if needed to avoid 1024 char limit
-        options_text = []
+        # Group options by their final emoji in description
+        emoji_groups = {}  # {emoji: [(idx, option), ...]}
+        no_emoji_options = []  # [(idx, option), ...]
+
         for idx, option in enumerate(trade_options):
-            status = "✅" if idx in active_options else "⬜"
-            options_text.append(f"{status} {option['emoji']} **{option['title']}**")
+            final_emoji = extract_final_emoji(option['description'])
+            if final_emoji:
+                if final_emoji not in emoji_groups:
+                    emoji_groups[final_emoji] = []
+                emoji_groups[final_emoji].append((idx, option))
+            else:
+                no_emoji_options.append((idx, option))
 
-        # Split options into chunks that fit within Discord's 1024 character field limit
-        if options_text:
-            current_chunk = []
-            current_length = 0
-            field_num = 1
+        # Build fields for each emoji group
+        if emoji_groups or no_emoji_options:
+            # Display emoji groups first
+            for category_emoji, options_list in sorted(emoji_groups.items()):
+                group_lines = []
+                for idx, option in options_list:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
 
-            for option_line in options_text:
-                line_length = len(option_line) + 1  # +1 for newline
-                if current_length + line_length > 1000:  # Leave some buffer
-                    # Add current chunk as a field
-                    field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1  # +1 for newline
+                    if current_length + line_length > 1000:  # Leave buffer
+                        # Add current chunk
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"{category_emoji} Options{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=False
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                # Add remaining chunk
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
                     embed.add_field(
-                        name=field_name,
+                        name=f"{category_emoji} Options{field_suffix}",
                         value="\n".join(current_chunk),
                         inline=False
                     )
-                    current_chunk = [option_line]
-                    current_length = line_length
-                    field_num += 1
-                else:
-                    current_chunk.append(option_line)
-                    current_length += line_length
 
-            # Add remaining options
-            if current_chunk:
-                field_name = "Available Options" if field_num == 1 else f"Available Options (continued)"
-                embed.add_field(
-                    name=field_name,
-                    value="\n".join(current_chunk),
-                    inline=False
-                )
+            # Display options without emoji last
+            if no_emoji_options:
+                group_lines = []
+                for idx, option in no_emoji_options:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1
+                    if current_length + line_length > 1000:
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"Other Options{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=False
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                    embed.add_field(
+                        name=f"Other Options{field_suffix}",
+                        value="\n".join(current_chunk),
+                        inline=False
+                    )
         else:
             embed.add_field(
                 name="Available Options",
