@@ -45,6 +45,130 @@ def extract_final_emoji(text: str) -> Optional[str]:
     return emojis[-1] if emojis else None
 
 
+class AddInfoView(discord.ui.View):
+    """View for adding Trade Commission information with dropdowns."""
+
+    def __init__(self, cog: "TradeCommission", guild: discord.Guild, trade_options: List[Dict], active_options: List[int]):
+        super().__init__(timeout=None)  # Persistent view
+        self.cog = cog
+        self.guild = guild
+        self.trade_options = trade_options
+        self.active_options = active_options
+
+        # Create 3 dropdowns for the 3 option slots
+        for slot_num in range(3):
+            # Create select options for this dropdown
+            select_options = [
+                discord.SelectOption(
+                    label="(Empty)",
+                    value="-1",
+                    description="Clear this slot",
+                    emoji="❌"
+                )
+            ]
+
+            # Add all trade options (Discord limit: 25 options per select)
+            for idx, option in enumerate(trade_options[:25]):
+                select_options.append(
+                    discord.SelectOption(
+                        label=option['title'][:100],  # Discord label limit
+                        value=str(idx),
+                        description=option['description'][:100] if option['description'] else None,
+                        emoji=option['emoji'],
+                        default=(idx == active_options[slot_num] if slot_num < len(active_options) else False)
+                    )
+                )
+
+            # Create the select menu
+            select = discord.ui.Select(
+                placeholder=f"Option {slot_num + 1}: " + (
+                    trade_options[active_options[slot_num]]['title'][:80]
+                    if slot_num < len(active_options) and active_options[slot_num] < len(trade_options)
+                    else "Not selected"
+                ),
+                options=select_options,
+                custom_id=f"tc_slot_{slot_num}",
+                row=slot_num
+            )
+            select.callback = self._create_select_callback(slot_num)
+            self.add_item(select)
+
+    def _create_select_callback(self, slot_num: int):
+        """Create a callback function for a specific dropdown slot."""
+        async def callback(interaction: discord.Interaction):
+            # Check permissions
+            member = interaction.user
+            if not isinstance(member, discord.Member):
+                await interaction.response.send_message("❌ This can only be used in a server!", ephemeral=True)
+                return
+
+            if not await self.cog._has_addinfo_permission(member):
+                await interaction.response.send_message("❌ You don't have permission to use this!", ephemeral=True)
+                return
+
+            # Get the selected value
+            select = interaction.data.get('values', [])[0] if interaction.data.get('values') else None
+            if select is None:
+                return
+
+            selected_idx = int(select)
+
+            # Update active options
+            async with self.cog.config.guild(self.guild).active_options() as active_options:
+                # Ensure the list has enough slots
+                while len(active_options) <= slot_num:
+                    active_options.append(-1)
+
+                if selected_idx == -1:
+                    # Clear this slot
+                    active_options[slot_num] = -1
+                else:
+                    # Check if this option is already selected in another slot
+                    if selected_idx in active_options and active_options.index(selected_idx) != slot_num:
+                        await interaction.response.send_message(
+                            f"❌ This option is already selected in Slot {active_options.index(selected_idx) + 1}!",
+                            ephemeral=True
+                        )
+                        return
+
+                    # Set this slot
+                    active_options[slot_num] = selected_idx
+
+                # Remove any -1 values and keep only valid selections
+                self.active_options = [opt for opt in active_options if opt != -1]
+                # Update config with cleaned list
+                active_options.clear()
+                active_options.extend(self.active_options)
+
+            # Update the Trade Commission message
+            await self.cog.update_commission_message(self.guild)
+
+            # Check if we now have 3 options selected
+            if len(self.active_options) == 3:
+                # Delete the addinfo message
+                try:
+                    await interaction.message.delete()
+                    await self.cog.config.guild(self.guild).addinfo_message_id.set(None)
+                    await interaction.response.send_message("✅ All 3 options selected! The addinfo panel has been closed.", ephemeral=True)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    pass
+                return
+            else:
+                # Recreate the view with updated selections
+                new_view = AddInfoView(self.cog, self.guild, self.trade_options, self.active_options)
+
+                # Get updated embed
+                embed = await self.cog._create_addinfo_embed(self.guild, self.trade_options, self.active_options)
+
+                # Update the message
+                try:
+                    await interaction.response.edit_message(embed=embed, view=new_view)
+                except discord.HTTPException:
+                    pass
+
+        return callback
+
+
 class TradeCommission(commands.Cog):
     """Send weekly Trade Commission information for Where Winds Meet."""
 
@@ -115,6 +239,123 @@ class TradeCommission(commands.Cog):
         member_role_ids = [role.id for role in member.roles]
 
         return any(role_id in allowed_role_ids for role_id in member_role_ids)
+
+    async def _create_addinfo_embed(self, guild: discord.Guild, trade_options: List[Dict], active_options: List[int]) -> discord.Embed:
+        """Create the embed for the addinfo message."""
+        emoji_titles = await self.config.emoji_titles()
+
+        embed = discord.Embed(
+            title="📝 Add Trade Commission Information",
+            description=(
+                "Click the buttons below to add information to this week's Trade Commission message.\n\n"
+                "You can select up to **3 options**. Each option will add its configured information "
+                "to the weekly message.\n\n"
+                "**Click a button to toggle that option on/off.**"
+            ),
+            color=discord.Color.green(),
+        )
+
+        # Group options by their final emoji in description
+        emoji_groups = {}  # {emoji: [(idx, option), ...]}
+        no_emoji_options = []  # [(idx, option), ...]
+
+        for idx, option in enumerate(trade_options):
+            final_emoji = extract_final_emoji(option['description'])
+            if final_emoji:
+                if final_emoji not in emoji_groups:
+                    emoji_groups[final_emoji] = []
+                emoji_groups[final_emoji].append((idx, option))
+            else:
+                no_emoji_options.append((idx, option))
+
+        # Build fields for each emoji group
+        if emoji_groups or no_emoji_options:
+            # Display emoji groups first
+            for category_emoji, options_list in sorted(emoji_groups.items()):
+                # Get custom title or use default
+                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
+
+                group_lines = []
+                for idx, option in options_list:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1  # +1 for newline
+                    if current_length + line_length > 1000:  # Leave buffer
+                        # Add current chunk
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"{group_title}{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=True
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                # Add remaining chunk
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                    embed.add_field(
+                        name=f"{group_title}{field_suffix}",
+                        value="\n".join(current_chunk),
+                        inline=True
+                    )
+
+            # Display options without emoji last
+            if no_emoji_options:
+                group_lines = []
+                for idx, option in no_emoji_options:
+                    status = "✅" if idx in active_options else "⬜"
+                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
+
+                # Split into multiple fields if needed
+                current_chunk = []
+                current_length = 0
+                field_count = 0
+
+                for line in group_lines:
+                    line_length = len(line) + 1
+                    if current_length + line_length > 1000:
+                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                        embed.add_field(
+                            name=f"Other Options{field_suffix}",
+                            value="\n".join(current_chunk),
+                            inline=True
+                        )
+                        current_chunk = [line]
+                        current_length = line_length
+                        field_count += 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length
+
+                if current_chunk:
+                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
+                    embed.add_field(
+                        name=f"Other Options{field_suffix}",
+                        value="\n".join(current_chunk),
+                        inline=True
+                    )
+        else:
+            embed.add_field(
+                name="Available Options",
+                value="No options configured",
+                inline=False
+            )
+
+        embed.set_footer(text=f"Selected: {len(active_options)}/3")
+
+        return embed
 
     async def _check_schedule_loop(self):
         """Background loop to check for scheduled messages."""
@@ -191,6 +432,11 @@ class TradeCommission(commands.Cog):
             description=config["initial_description"],
             color=embed_color,
         )
+
+        # Add image if configured
+        image_url = await self.config.image_url()
+        if image_url:
+            embed.set_image(url=image_url)
 
         # Prepare content with ping if role is configured
         content = None
@@ -586,9 +832,9 @@ class TradeCommission(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     async def tc_addinfo(self, ctx: commands.Context):
         """
-        Add information to the current week's Trade Commission message via reactions.
+        Add information to the current week's Trade Commission message via buttons.
 
-        This will create a message with reaction emotes. Click the reactions to add
+        This will create a message with buttons. Click the buttons to add
         up to 3 options to the weekly Trade Commission message.
         """
         current_msg_id = await self.config.guild(ctx.guild).current_message_id()
@@ -609,380 +855,25 @@ class TradeCommission(commands.Cog):
             await ctx.send("❌ Message not found!")
             return
 
-        # Get global trade options and emoji titles
+        # Get global trade options
         trade_options = await self.config.trade_options()
         active_options = await self.config.guild(ctx.guild).active_options()
-        emoji_titles = await self.config.emoji_titles()
 
         if not trade_options:
             await ctx.send("❌ No trade options configured! Use `[p]tc setoption` to add options first.")
             return
 
-        embed = discord.Embed(
-            title="📝 Add Trade Commission Information",
-            description=(
-                "React with the emotes below to add information to this week's Trade Commission message.\n\n"
-                "You can select up to **3 options**. Each option will add its configured information "
-                "to the weekly message.\n\n"
-                "**Click a reaction to toggle that option on/off.**"
-            ),
-            color=discord.Color.green(),
-        )
+        # Create the embed
+        embed = await self._create_addinfo_embed(ctx.guild, trade_options, active_options)
 
-        # Group options by their final emoji in description
-        emoji_groups = {}  # {emoji: [(idx, option), ...]}
-        no_emoji_options = []  # [(idx, option), ...]
+        # Create the view with buttons
+        view = AddInfoView(self, ctx.guild, trade_options, active_options)
 
-        for idx, option in enumerate(trade_options):
-            final_emoji = extract_final_emoji(option['description'])
-            if final_emoji:
-                if final_emoji not in emoji_groups:
-                    emoji_groups[final_emoji] = []
-                emoji_groups[final_emoji].append((idx, option))
-            else:
-                no_emoji_options.append((idx, option))
-
-        # Build fields for each emoji group
-        if emoji_groups or no_emoji_options:
-            # Display emoji groups first
-            for category_emoji, options_list in sorted(emoji_groups.items()):
-                # Get custom title or use default
-                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
-
-                group_lines = []
-                for idx, option in options_list:
-                    status = "✅" if idx in active_options else "⬜"
-                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
-
-                # Split into multiple fields if needed
-                current_chunk = []
-                current_length = 0
-                field_count = 0
-
-                for line in group_lines:
-                    line_length = len(line) + 1  # +1 for newline
-                    if current_length + line_length > 1000:  # Leave buffer
-                        # Add current chunk
-                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                        embed.add_field(
-                            name=f"{group_title}{field_suffix}",
-                            value="\n".join(current_chunk),
-                            inline=True
-                        )
-                        current_chunk = [line]
-                        current_length = line_length
-                        field_count += 1
-                    else:
-                        current_chunk.append(line)
-                        current_length += line_length
-
-                # Add remaining chunk
-                if current_chunk:
-                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                    embed.add_field(
-                        name=f"{group_title}{field_suffix}",
-                        value="\n".join(current_chunk),
-                        inline=False
-                    )
-
-            # Display options without emoji last
-            if no_emoji_options:
-                group_lines = []
-                for idx, option in no_emoji_options:
-                    status = "✅" if idx in active_options else "⬜"
-                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
-
-                # Split into multiple fields if needed
-                current_chunk = []
-                current_length = 0
-                field_count = 0
-
-                for line in group_lines:
-                    line_length = len(line) + 1
-                    if current_length + line_length > 1000:
-                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                        embed.add_field(
-                            name=f"Other Options{field_suffix}",
-                            value="\n".join(current_chunk),
-                            inline=True
-                        )
-                        current_chunk = [line]
-                        current_length = line_length
-                        field_count += 1
-                    else:
-                        current_chunk.append(line)
-                        current_length += line_length
-
-                if current_chunk:
-                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                    embed.add_field(
-                        name=f"Other Options{field_suffix}",
-                        value="\n".join(current_chunk),
-                        inline=False
-                    )
-        else:
-            embed.add_field(
-                name="Available Options",
-                value="No options configured",
-                inline=False
-            )
-
-        embed.set_footer(text=f"Selected: {len(active_options)}/3")
-
-        # Send the message and add reactions
-        control_msg = await ctx.send(embed=embed)
+        # Send the message with the view
+        control_msg = await ctx.send(embed=embed, view=view)
 
         # Store the control message ID
         await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
-
-        # Add reaction emotes
-        for option in trade_options:
-            if option["emoji"]:  # Only add if emoji is configured
-                try:
-                    await control_msg.add_reaction(option["emoji"])
-                except discord.HTTPException:
-                    pass  # Skip if emoji is invalid
-
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
-        """Handle reactions on addinfo messages."""
-        # Ignore bot reactions
-        if user.bot:
-            return
-
-        # Check if this is a guild
-        if not reaction.message.guild:
-            return
-
-        guild = reaction.message.guild
-
-        # Check if user has permission
-        member = guild.get_member(user.id)
-        if not member or not await self._has_addinfo_permission(member):
-            return
-
-        # Check if this is an addinfo message
-        addinfo_msg_id = await self.config.guild(guild).addinfo_message_id()
-        if not addinfo_msg_id or reaction.message.id != addinfo_msg_id:
-            return
-
-        # Find which option this emoji corresponds to
-        trade_options = await self.config.trade_options()
-        option_idx = None
-
-        for idx, option in enumerate(trade_options):
-            if str(reaction.emoji) == option["emoji"]:
-                option_idx = idx
-                break
-
-        if option_idx is None:
-            return
-
-        # Toggle the option
-        async with self.config.guild(guild).active_options() as active_options:
-            if option_idx in active_options:
-                # Remove option
-                active_options.remove(option_idx)
-            else:
-                # Check if we've reached the limit
-                if len(active_options) >= 3:
-                    # Remove reaction and notify user
-                    try:
-                        await reaction.remove(user)
-                    except discord.HTTPException:
-                        pass
-                    try:
-                        await user.send("❌ Maximum of 3 options can be selected! Please deselect an option first.")
-                    except discord.Forbidden:
-                        pass
-                    return
-
-                # Add option
-                active_options.append(option_idx)
-
-        # Update the Trade Commission message
-        await self.update_commission_message(guild)
-
-        # Check if we now have 3 options selected
-        active_options = await self.config.guild(guild).active_options()
-        if len(active_options) == 3:
-            # Delete the addinfo message
-            try:
-                await reaction.message.delete()
-                await self.config.guild(guild).addinfo_message_id.set(None)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                pass
-        else:
-            # Update the control message
-            await self._update_addinfo_message(guild, reaction.message)
-
-    @commands.Cog.listener()
-    async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.User):
-        """Handle reaction removals on addinfo messages."""
-        # Ignore bot reactions
-        if user.bot:
-            return
-
-        # Check if this is a guild
-        if not reaction.message.guild:
-            return
-
-        guild = reaction.message.guild
-
-        # Check if user has permission
-        member = guild.get_member(user.id)
-        if not member or not await self._has_addinfo_permission(member):
-            return
-
-        # Check if this is an addinfo message
-        addinfo_msg_id = await self.config.guild(guild).addinfo_message_id()
-        if not addinfo_msg_id or reaction.message.id != addinfo_msg_id:
-            return
-
-        # Find which option this emoji corresponds to
-        trade_options = await self.config.trade_options()
-        option_idx = None
-
-        for idx, option in enumerate(trade_options):
-            if str(reaction.emoji) == option["emoji"]:
-                option_idx = idx
-                break
-
-        if option_idx is None:
-            return
-
-        # Remove the option if it's active
-        async with self.config.guild(guild).active_options() as active_options:
-            if option_idx in active_options:
-                active_options.remove(option_idx)
-
-        # Update the Trade Commission message
-        await self.update_commission_message(guild)
-
-        # Update the control message
-        await self._update_addinfo_message(guild, reaction.message)
-
-    async def _update_addinfo_message(self, guild: discord.Guild, message: discord.Message):
-        """Update the addinfo control message."""
-        trade_options = await self.config.trade_options()
-        active_options = await self.config.guild(guild).active_options()
-        emoji_titles = await self.config.emoji_titles()
-
-        embed = discord.Embed(
-            title="📝 Add Trade Commission Information",
-            description=(
-                "React with the emotes below to add information to this week's Trade Commission message.\n\n"
-                "You can select up to **3 options**. Each option will add its configured information "
-                "to the weekly message.\n\n"
-                "**Click a reaction to toggle that option on/off.**"
-            ),
-            color=discord.Color.green(),
-        )
-
-        # Group options by their final emoji in description
-        emoji_groups = {}  # {emoji: [(idx, option), ...]}
-        no_emoji_options = []  # [(idx, option), ...]
-
-        for idx, option in enumerate(trade_options):
-            final_emoji = extract_final_emoji(option['description'])
-            if final_emoji:
-                if final_emoji not in emoji_groups:
-                    emoji_groups[final_emoji] = []
-                emoji_groups[final_emoji].append((idx, option))
-            else:
-                no_emoji_options.append((idx, option))
-
-        # Build fields for each emoji group
-        if emoji_groups or no_emoji_options:
-            # Display emoji groups first
-            for category_emoji, options_list in sorted(emoji_groups.items()):
-                # Get custom title or use default
-                group_title = emoji_titles.get(category_emoji, f"{category_emoji} Options")
-
-                group_lines = []
-                for idx, option in options_list:
-                    status = "✅" if idx in active_options else "⬜"
-                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
-
-                # Split into multiple fields if needed
-                current_chunk = []
-                current_length = 0
-                field_count = 0
-
-                for line in group_lines:
-                    line_length = len(line) + 1  # +1 for newline
-                    if current_length + line_length > 1000:  # Leave buffer
-                        # Add current chunk
-                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                        embed.add_field(
-                            name=f"{group_title}{field_suffix}",
-                            value="\n".join(current_chunk),
-                            inline=True
-                        )
-                        current_chunk = [line]
-                        current_length = line_length
-                        field_count += 1
-                    else:
-                        current_chunk.append(line)
-                        current_length += line_length
-
-                # Add remaining chunk
-                if current_chunk:
-                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                    embed.add_field(
-                        name=f"{group_title}{field_suffix}",
-                        value="\n".join(current_chunk),
-                        inline=False
-                    )
-
-            # Display options without emoji last
-            if no_emoji_options:
-                group_lines = []
-                for idx, option in no_emoji_options:
-                    status = "✅" if idx in active_options else "⬜"
-                    group_lines.append(f"{status} {option['emoji']} **{option['title']}**")
-
-                # Split into multiple fields if needed
-                current_chunk = []
-                current_length = 0
-                field_count = 0
-
-                for line in group_lines:
-                    line_length = len(line) + 1
-                    if current_length + line_length > 1000:
-                        field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                        embed.add_field(
-                            name=f"Other Options{field_suffix}",
-                            value="\n".join(current_chunk),
-                            inline=True
-                        )
-                        current_chunk = [line]
-                        current_length = line_length
-                        field_count += 1
-                    else:
-                        current_chunk.append(line)
-                        current_length += line_length
-
-                if current_chunk:
-                    field_suffix = f" ({field_count + 1})" if field_count > 0 else ""
-                    embed.add_field(
-                        name=f"Other Options{field_suffix}",
-                        value="\n".join(current_chunk),
-                        inline=False
-                    )
-        else:
-            embed.add_field(
-                name="Available Options",
-                value="No options configured",
-                inline=False
-            )
-
-        embed.set_footer(text=f"Selected: {len(active_options)}/3")
-
-        try:
-            await message.edit(embed=embed)
-        except discord.HTTPException:
-            pass
 
     @tradecommission.command(name="setoption")
     async def tc_setoption(
