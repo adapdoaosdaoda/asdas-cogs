@@ -534,7 +534,7 @@ class TradeCommission(commands.Cog):
             if option["emoji"]:  # Only add if emoji is configured
                 try:
                     await control_msg.add_reaction(option["emoji"])
-                except (discord.HTTPException, discord.InvalidArgument):
+                except discord.HTTPException:
                     pass  # Skip if emoji is invalid
 
     @commands.Cog.listener()
@@ -758,7 +758,7 @@ class TradeCommission(commands.Cog):
         try:
             await ctx.message.add_reaction(emoji)
             await ctx.message.clear_reaction(emoji)
-        except (discord.HTTPException, discord.InvalidArgument):
+        except discord.HTTPException:
             await ctx.send(
                 "❌ Invalid emoji! Make sure the emoji is:\n"
                 "• A valid unicode emoji (🔥, 💎, ⚔️)\n"
