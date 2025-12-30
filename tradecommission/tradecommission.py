@@ -1428,6 +1428,13 @@ class TradeCommission(commands.Cog):
 
         embed.add_field(name="Message Customization", value=message_custom_text, inline=False)
 
+        # Notification message info
+        notification_text = (
+            f"**Message:** {guild_config['notification_message'][:100]}{'...' if len(guild_config['notification_message']) > 100 else ''}\n"
+            f"**Auto-delete:** After 3 hours"
+        )
+        embed.add_field(name="🔔 Notification (when 3 options selected)", value=notification_text, inline=False)
+
         # Image info (from global config)
         if global_config["image_url"]:
             embed.add_field(
@@ -1435,6 +1442,14 @@ class TradeCommission(commands.Cog):
                 value=f"[View Image]({global_config['image_url']})",
                 inline=False
             )
+
+        # Global options count
+        total_options = len(global_config["trade_options"])
+        embed.add_field(
+            name="📦 Available Options",
+            value=f"**Total:** {total_options} options configured\nUse `[p]tc listoptions` to view all",
+            inline=False
+        )
 
         # Allowed roles info
         allowed_role_ids = guild_config["allowed_roles"]
