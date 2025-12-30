@@ -121,6 +121,36 @@ class AddInfoView(discord.ui.View):
             select.callback = self._create_select_callback(slot_num)
             self.add_item(select)
 
+        # Add cancel button in row 3
+        cancel_button = discord.ui.Button(
+            label="Cancel",
+            style=discord.ButtonStyle.danger,
+            emoji="❌",
+            custom_id="tc_cancel",
+            row=3
+        )
+        cancel_button.callback = self._cancel_callback
+        self.add_item(cancel_button)
+
+    async def _cancel_callback(self, interaction: discord.Interaction):
+        """Handle cancel button click."""
+        # Check permissions
+        member = interaction.user
+        if not isinstance(member, discord.Member):
+            await interaction.response.send_message("❌ This can only be used in a server!", ephemeral=True)
+            return
+
+        if not await self.cog._has_addinfo_permission(member):
+            await interaction.response.send_message("❌ You don't have permission to use this!", ephemeral=True)
+            return
+
+        # Delete the addinfo message
+        try:
+            await self.cog.config.guild(self.guild).addinfo_message_id.set(None)
+            await interaction.message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            await interaction.response.send_message("❌ Failed to close the panel.", ephemeral=True)
+
     def _create_select_callback(self, slot_num: int):
         """Create a callback function for a specific dropdown slot."""
         async def callback(interaction: discord.Interaction):
