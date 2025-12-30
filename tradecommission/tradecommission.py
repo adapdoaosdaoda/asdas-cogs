@@ -1090,48 +1090,108 @@ class TradeCommission(commands.Cog):
 
     @tradecommission.command(name="setimage")
     @commands.is_owner()
-    async def tc_setimage(self, ctx: commands.Context, image_url: str):
+    async def tc_setimage(self, ctx: commands.Context, image_url: Optional[str] = None):
         """
-        Set the image to display when Trade Commission information is added (Global Setting).
+        Set the image to display in Trade Commission messages (Global Setting).
 
         This is a global setting that affects all servers using this cog.
         Can be used in DMs by the bot owner.
 
-        **Arguments:**
-        - `image_url`: Direct URL to an image file (must end in .png, .jpg, .jpeg, .gif, or .webp)
+        **Usage:**
+        1. Attach an image to your message (no URL needed)
+        2. Provide a direct image URL as an argument
+        3. Use "none" to remove the current image
 
-        **Example:**
+        **Examples:**
+        - `[p]tc setimage` (with image attached)
         - `[p]tc setimage https://example.com/trade-commission.png`
+        - `[p]tc setimage none` (to remove)
 
-        To remove the image, use: `[p]tc setimage none`
+        **Note:** The image will be displayed on both the initial post and when options are added.
         """
-        if image_url.lower() == "none":
+        # Check if user wants to remove the image
+        if image_url and image_url.lower() == "none":
             await self.config.image_url.set(None)
             await ctx.send("✅ Trade Commission image removed.")
             return
 
-        # Basic URL validation
-        valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
-        if not any(image_url.lower().endswith(ext) for ext in valid_extensions):
+        # Check for image attachment first
+        final_url = None
+        if ctx.message.attachments:
+            attachment = ctx.message.attachments[0]
+
+            # Validate that it's an image
+            if not attachment.content_type or not attachment.content_type.startswith('image/'):
+                await ctx.send(
+                    "❌ The attached file is not an image!\n"
+                    "Please attach a valid image file (PNG, JPG, GIF, or WebP)."
+                )
+                return
+
+            # Use the attachment URL
+            final_url = attachment.url
+
+        # If no attachment, check for URL parameter
+        elif image_url:
+            # Basic URL validation
+            valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+
+            if not image_url.startswith(('http://', 'https://')):
+                await ctx.send("❌ Image URL must start with http:// or https://")
+                return
+
+            # Check if URL ends with valid extension (less strict - query params are ok)
+            url_lower = image_url.lower().split('?')[0]  # Remove query params for extension check
+            if not any(url_lower.endswith(ext) for ext in valid_extensions):
+                await ctx.send(
+                    f"❌ Invalid image URL! URL should point to an image file.\n"
+                    f"Supported formats: {', '.join(valid_extensions)}\n\n"
+                    f"**Tip:** You can also attach an image directly to this command instead of using a URL."
+                )
+                return
+
+            final_url = image_url
+
+        # If neither attachment nor URL provided
+        else:
             await ctx.send(
-                f"❌ Invalid image URL! Must end with one of: {', '.join(valid_extensions)}\n"
-                f"Or use `none` to remove the image."
+                "❌ No image provided!\n\n"
+                "**Usage:**\n"
+                "• Attach an image file to your message, or\n"
+                "• Provide an image URL as an argument\n\n"
+                "**Examples:**\n"
+                "• `[p]tc setimage` (with image attached)\n"
+                "• `[p]tc setimage https://example.com/image.png`\n"
+                "• `[p]tc setimage none` (to remove current image)"
             )
             return
 
-        if not image_url.startswith(('http://', 'https://')):
-            await ctx.send("❌ Image URL must start with http:// or https://")
+        # Test the URL by trying to set it in an embed
+        test_embed = discord.Embed(title="Testing image...")
+        try:
+            test_embed.set_image(url=final_url)
+        except Exception as e:
+            await ctx.send(f"❌ Invalid image URL: {e}")
             return
 
-        await self.config.image_url.set(image_url)
+        # Save the image URL
+        await self.config.image_url.set(final_url)
 
         # Show preview
         embed = discord.Embed(
             title="✅ Trade Commission Image Set",
-            description="This image will be displayed when information is added to the weekly message.",
+            description=(
+                "This image will be displayed in Trade Commission messages.\n\n"
+                "**Image will appear:**\n"
+                "• In the initial weekly post\n"
+                "• When options are added via addinfo"
+            ),
             color=discord.Color.green()
         )
-        embed.set_image(url=image_url)
+        embed.set_image(url=final_url)
+
+        if ctx.message.attachments:
+            embed.set_footer(text="⚠️ Warning: Discord attachment URLs may expire. Consider using a permanent image host.")
 
         await ctx.send(embed=embed)
 
@@ -1405,12 +1465,12 @@ class TradeCommission(commands.Cog):
                     description_parts.append(f"{option['emoji']} **{option['title']}**\n{option['description']}")
 
             embed.description = "\n\n".join(description_parts)
-
-            # Add image when information is present
-            if image_url:
-                embed.set_image(url=image_url)
         else:
             embed.description = guild_config["initial_description"]
+
+        # Always add image if configured (regardless of whether options are selected)
+        if image_url:
+            embed.set_image(url=image_url)
 
         try:
             await message.edit(embed=embed)
