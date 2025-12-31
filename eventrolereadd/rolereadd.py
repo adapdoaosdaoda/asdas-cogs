@@ -280,57 +280,107 @@ class EventRoleReadd(commands.Cog):
     async def _parse_embed_description_to_role_name(self, guild: discord.Guild, embed_description: str) -> Optional[str]:
         """Parse embed description and convert to expected role name format.
 
-        Embed description format:
-        [**Event Name** (<t:1766853900:f>)](URL)
-        Username (123456789) signed up as <emoji>
+        Supports two formats:
+        1. Discord timestamp format: [**Event Name** (<t:1766853900:f>)](URL)
+        2. Human-readable format: Day﹒Event Name﹕details (DD Month YYYY HH:MM)
 
         Role format: "{name} {day_abbrev} {day}. {month_abbrev} {time}"
         Example: "Event Name Fri 27. Dec 21:00"
         """
-        # Extract event name and Unix timestamp from the first line
+        # Try Discord timestamp format first
         # Format: [**Event Name** (<t:UNIX_TIMESTAMP:f>)](URL)
         match = re.search(r'\*\*(.+?)\*\*\s*\(<t:(\d+):[fFdDtTR]>\)', embed_description)
-        if not match:
-            log.debug(f"Embed description does not match expected format: '{embed_description[:200]}'")
-            return None
 
-        event_name = match.group(1).strip()
-        unix_timestamp = int(match.group(2))
+        if match:
+            event_name = match.group(1).strip()
+            unix_timestamp = int(match.group(2))
 
-        try:
-            # Convert Unix timestamp to datetime
-            from datetime import datetime, timezone
-            parsed_date = datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
+            try:
+                # Convert Unix timestamp to datetime
+                from datetime import datetime, timezone
+                parsed_date = datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
 
-            # Get the timezone and role_format from EventChannels config
-            event_channels_config = Config.get_conf(None, identifier=817263540, cog_name="EventChannels")
-            tz_name = await event_channels_config.guild(guild).timezone()
-            role_format = await event_channels_config.guild(guild).role_format()
+                # Get the timezone and role_format from EventChannels config
+                event_channels_config = Config.get_conf(None, identifier=817263540, cog_name="EventChannels")
+                tz_name = await event_channels_config.guild(guild).timezone()
+                role_format = await event_channels_config.guild(guild).role_format()
 
-            # Convert to the guild's timezone
-            guild_tz = ZoneInfo(tz_name)
-            local_date = parsed_date.astimezone(guild_tz)
+                # Convert to the guild's timezone
+                guild_tz = ZoneInfo(tz_name)
+                local_date = parsed_date.astimezone(guild_tz)
 
-            # Format according to role_format
-            day_abbrev = local_date.strftime("%a")  # Sun, Mon, etc.
-            day_num = local_date.strftime("%d").lstrip("0")  # 27 (no leading zero)
-            month_abbrev = local_date.strftime("%b")  # Dec, Jan, etc.
-            time_formatted = local_date.strftime("%H:%M")  # 21:00
+                # Format according to role_format
+                day_abbrev = local_date.strftime("%a")  # Sun, Mon, etc.
+                day_num = local_date.strftime("%d").lstrip("0")  # 27 (no leading zero)
+                month_abbrev = local_date.strftime("%b")  # Dec, Jan, etc.
+                time_formatted = local_date.strftime("%H:%M")  # 21:00
 
-            expected_role_name = role_format.format(
-                name=event_name,
-                day_abbrev=day_abbrev,
-                day=day_num,
-                month_abbrev=month_abbrev,
-                time=time_formatted
-            )
+                expected_role_name = role_format.format(
+                    name=event_name,
+                    day_abbrev=day_abbrev,
+                    day=day_num,
+                    month_abbrev=month_abbrev,
+                    time=time_formatted
+                )
 
-            log.debug(f"Converted embed description to expected role name '{expected_role_name}' (event: '{event_name}', timestamp: {unix_timestamp})")
-            return expected_role_name
+                log.debug(f"Converted embed description to expected role name '{expected_role_name}' (event: '{event_name}', timestamp: {unix_timestamp})")
+                return expected_role_name
 
-        except Exception as e:
-            log.error(f"Error converting embed description to role name: {e}")
-            return None
+            except Exception as e:
+                log.error(f"Error converting Discord timestamp format to role name: {e}")
+                return None
+
+        # Try human-readable format: Day﹒Event Name﹕details (DD Month YYYY HH:MM)
+        # Example: "Wednesday﹒Sword Trial﹕5 man (31 December 2025 21:00)"
+        match = re.search(r'(\w+)﹒(.+?)﹕.*?\((\d+)\s+(\w+)\s+(\d{4})\s+(\d{2}):(\d{2})\)', embed_description)
+
+        if match:
+            day_name = match.group(1).strip()  # Wednesday
+            event_name = match.group(2).strip()  # Sword Trial
+            day_num = match.group(3)  # 31
+            month_name = match.group(4)  # December
+            year = match.group(5)  # 2025
+            hour = match.group(6)  # 21
+            minute = match.group(7)  # 00
+
+            try:
+                from datetime import datetime
+                # Parse the date string
+                date_str = f"{day_num} {month_name} {year} {hour}:{minute}"
+                parsed_date = datetime.strptime(date_str, "%d %B %Y %H:%M")
+
+                # Get the timezone and role_format from EventChannels config
+                event_channels_config = Config.get_conf(None, identifier=817263540, cog_name="EventChannels")
+                tz_name = await event_channels_config.guild(guild).timezone()
+                role_format = await event_channels_config.guild(guild).role_format()
+
+                # Assume the parsed date is in the guild's timezone
+                guild_tz = ZoneInfo(tz_name)
+                local_date = parsed_date.replace(tzinfo=guild_tz)
+
+                # Format according to role_format
+                day_abbrev = local_date.strftime("%a")  # Wed, Fri, etc.
+                day_num_formatted = local_date.strftime("%d").lstrip("0")  # 31 (no leading zero)
+                month_abbrev = local_date.strftime("%b")  # Dec, Jan, etc.
+                time_formatted = local_date.strftime("%H:%M")  # 21:00
+
+                expected_role_name = role_format.format(
+                    name=event_name,
+                    day_abbrev=day_abbrev,
+                    day=day_num_formatted,
+                    month_abbrev=month_abbrev,
+                    time=time_formatted
+                )
+
+                log.debug(f"Converted human-readable format to expected role name '{expected_role_name}' (event: '{event_name}', date: {date_str})")
+                return expected_role_name
+
+            except Exception as e:
+                log.error(f"Error converting human-readable format to role name: {e}")
+                return None
+
+        log.debug(f"Embed description does not match any expected format: '{embed_description[:200]}'")
+        return None
 
     async def _send_error_report(
         self,
