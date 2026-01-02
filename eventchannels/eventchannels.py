@@ -1795,6 +1795,61 @@ class EventChannels(commands.Cog):
                     pass
             return None
 
+    async def _get_role_member_count(self, guild: discord.Guild, role: discord.Role, event_name: str = None) -> tuple[int, bool]:
+        """
+        Get the member count for a role with diagnostic logging.
+
+        Returns:
+            tuple[int, bool]: (member_count, is_reliable)
+                - member_count: The number of members with the role
+                - is_reliable: False if the count might be incomplete due to missing intents/cache
+        """
+        member_count = len(role.members)
+        is_reliable = True
+
+        # Check if guild is chunked (indicates GUILD_MEMBERS intent is working)
+        if not guild.chunked:
+            is_reliable = False
+            log.warning(
+                f"⚠️ Member count for role '{role.name}' may be INCOMPLETE! "
+                f"Guild '{guild.name}' is not chunked, indicating missing GUILD_MEMBERS intent or incomplete cache. "
+                f"Reported count: {member_count}, but actual count may be higher. "
+                f"Enable GUILD_MEMBERS intent in the Discord Developer Portal to get accurate counts."
+            )
+            if event_name:
+                log.warning(
+                    f"Event '{event_name}': Role member count ({member_count}) may be unreliable. "
+                    f"This could cause incorrect minimum role checks or voice channel calculations."
+                )
+
+        # Additional diagnostic: Check if member count is suspiciously low
+        # If a role has very few cached members but the guild is large, it's likely incomplete
+        if member_count > 0 and member_count < 5 and guild.member_count > 100:
+            log.warning(
+                f"⚠️ Role '{role.name}' shows only {member_count} member(s), "
+                f"which seems low for a guild with {guild.member_count} total members. "
+                f"This may indicate incomplete member cache. Verify GUILD_MEMBERS intent is enabled."
+            )
+            is_reliable = False
+
+        # If whitelisted roles are configured, check if they're affecting the count
+        whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+        whitelisted_overlap = sum(1 for m in role.members if any(r.id in whitelisted_role_ids for r in m.roles))
+
+        if whitelisted_overlap > 0:
+            log.debug(
+                f"Role '{role.name}' has {whitelisted_overlap} member(s) who also have whitelisted roles. "
+                f"Note: Whitelisted roles do NOT affect setminimumroles calculations - only the event role members are counted."
+            )
+
+        log.info(
+            f"Role '{role.name}' member count: {member_count} "
+            f"(reliable: {is_reliable}, chunked: {guild.chunked}, "
+            f"guild members: {guild.member_count})"
+        )
+
+        return member_count, is_reliable
+
     async def _handle_event(self, guild: discord.Guild, event: discord.ScheduledEvent, retry_count: int = 0):
         try:
             start_time = event.start_time.astimezone(timezone.utc)
@@ -1977,7 +2032,16 @@ class EventChannels(commands.Cog):
                 minimum_required = voice_minimum_roles.get(matched_keyword)
 
                 if minimum_required:
-                    role_member_count = len(role.members)
+                    role_member_count, count_is_reliable = await self._get_role_member_count(guild, role, event.name)
+
+                    # Log warning if count may be unreliable
+                    if not count_is_reliable:
+                        log.warning(
+                            f"Event '{event.name}': Checking minimum role requirement with potentially incomplete count. "
+                            f"Current count: {role_member_count}, Required: {minimum_required}. "
+                            f"Enable GUILD_MEMBERS intent for accurate counting."
+                        )
+
                     if role_member_count < minimum_required:
                         # Check if we should retry
                         retry_intervals = await self.config.guild(guild).minimum_retry_intervals()
@@ -2030,7 +2094,15 @@ class EventChannels(commands.Cog):
 
             # Calculate number of voice channels based on role member count
             if matched_keyword and voice_multiplier_capacity and role:
-                role_member_count = len(role.members)
+                role_member_count, count_is_reliable = await self._get_role_member_count(guild, role, event.name)
+
+                # Log warning if count may be unreliable
+                if not count_is_reliable:
+                    log.warning(
+                        f"Event '{event.name}': Calculating voice channels with potentially incomplete count. "
+                        f"Current count: {role_member_count}. Enable GUILD_MEMBERS intent for accurate counting."
+                    )
+
                 # Formula: max(1, floor(members / multiplier))
                 voice_count = max(1, role_member_count // voice_multiplier_capacity)
                 # User limit is multiplier + 1
