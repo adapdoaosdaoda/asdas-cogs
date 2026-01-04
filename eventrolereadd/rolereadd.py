@@ -485,6 +485,8 @@ class EventRoleReadd(commands.Cog):
 
             # Re-add the role
             try:
+                # Wait 2 seconds to ensure Discord has processed the role removal
+                await asyncio.sleep(2)
                 await member.add_roles(matching_role, reason=f"EventRoleReadd: Auto re-add (keyword: {matched_keyword})")
                 log.info(
                     f"Re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
