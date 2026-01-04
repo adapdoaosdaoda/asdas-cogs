@@ -48,6 +48,8 @@ class Birthday(
             # easily checked
             require_role=False,
             allow_role_mention=False,
+            set_channel_id=None,  # channel where users can set their birthday
+            image_url=None,  # URL of image to include in birthday announcements
         )
         self.config.register_member(birthday={"year": 1, "month": 1, "day": 1})
 

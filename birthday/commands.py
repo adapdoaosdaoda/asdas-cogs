@@ -66,6 +66,24 @@ class BirthdayCommands(MixinMeta):
         # guild only check in group
         if TYPE_CHECKING:
             assert isinstance(ctx.author, discord.Member)
+            assert ctx.guild is not None
+
+        # Check if there's a channel restriction
+        set_channel_id = await self.config.guild(ctx.guild).set_channel_id()
+        if set_channel_id is not None and ctx.channel.id != set_channel_id:
+            set_channel = ctx.guild.get_channel(set_channel_id)
+            if set_channel:
+                await ctx.send(
+                    f"You can only set your birthday in {set_channel.mention}.",
+                    ephemeral=True
+                )
+            else:
+                await ctx.send(
+                    "You can only set your birthday in a specific channel, but that channel "
+                    "no longer exists. Please contact an admin.",
+                    ephemeral=True
+                )
+            return
 
         # year as 1 means year not specified
 
@@ -294,6 +312,24 @@ class BirthdayAdminCommands(MixinMeta):
                     "Required role",
                     "Not set. All users can set their birthday and have it announced.",
                 )
+
+            set_channel = ctx.guild.get_channel(conf.get("set_channel_id"))
+            if set_channel:
+                table.add_row(
+                    "Set channel restriction",
+                    f"{set_channel.name}. Users can only set birthdays in this channel.",
+                )
+            else:
+                table.add_row(
+                    "Set channel restriction",
+                    "Not set. Users can set their birthday in any channel.",
+                )
+
+            image_url = conf.get("image_url")
+            if image_url:
+                table.add_row("Announcement image", "Set")
+            else:
+                table.add_row("Announcement image", "Not set")
 
             message_w_year = conf["message_w_year"] or "No message set. You must set this before getting notifications."
             message_wo_year = conf["message_wo_year"] or "No message set. You must set this before getting notifications."
@@ -776,6 +812,142 @@ class BirthdayAdminCommands(MixinMeta):
                 purged += 1
 
         await ctx.send(f"Purged {purged} users from the database.")
+
+    @bdset.command()
+    async def setchannel(self, ctx: commands.Context, channel: Union[discord.TextChannel, None] = None):
+        """
+        Set a channel where users must use the birthday set command.
+
+        If users try to set their birthday outside this channel, they'll be told to use the correct channel.
+
+        If no channel is provided, the restriction is removed and users can set their birthday anywhere.
+
+        **Example:**
+        - `[p]bdset setchannel #birthdays` - require users to set birthdays in #birthdays
+        - `[p]bdset setchannel` - remove the channel restriction
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        if channel is None:
+            await self.config.guild(ctx.guild).set_channel_id.clear()
+            await ctx.send(
+                "The channel restriction has been removed. Users can now set their birthday in any channel."
+            )
+        else:
+            await self.config.guild(ctx.guild).set_channel_id.set(channel.id)
+            await ctx.send(
+                f"Users can now only set their birthday in {channel.mention}."
+            )
+
+    @bdset.command()
+    async def image(self, ctx: commands.Context, image_url: Union[str, None] = None):
+        """
+        Set an image URL to include in birthday announcements.
+
+        This should be a direct link to an image (e.g., from Imgur, Discord CDN, etc.).
+
+        If no URL is provided, the image will be removed from birthday announcements.
+
+        **Example:**
+        - `[p]bdset image https://i.imgur.com/example.png` - set the birthday image
+        - `[p]bdset image` - remove the birthday image
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        if image_url is None:
+            await self.config.guild(ctx.guild).image_url.clear()
+            await ctx.send("The birthday announcement image has been removed.")
+        else:
+            await self.config.guild(ctx.guild).image_url.set(image_url)
+            await ctx.send(f"Birthday announcements will now include the image: {image_url}")
+
+    @bdset.command()
+    async def test(self, ctx: commands.Context, *, member: discord.Member = None):
+        """
+        Send a test birthday announcement message.
+
+        This will send a test message to the configured birthday channel using the current settings.
+
+        **Example:**
+        - `[p]bdset test` - send a test announcement for yourself
+        - `[p]bdset test @User` - send a test announcement for a specific user
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+            assert isinstance(ctx.me, discord.Member)
+
+        if member is None:
+            member = ctx.author
+
+        # Check if setup is complete
+        if not await self.check_if_setup(ctx.guild):
+            await ctx.send(
+                "The birthday cog is not fully set up yet. Please complete the setup first using "
+                f"`{ctx.clean_prefix}bdset interactive` or check what's missing with "
+                f"`{ctx.clean_prefix}birthdayinfo`."
+            )
+            return
+
+        # Get the birthday channel
+        channel_id = await self.config.guild(ctx.guild).channel_id()
+        channel = ctx.guild.get_channel(channel_id)
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            await ctx.send("The birthday channel is not set or no longer exists.")
+            return
+
+        # Check permissions
+        if error := channel_perm_check(ctx.me, channel):
+            await ctx.send(f"I can't send messages in {channel.mention}: {error}")
+            return
+
+        # Get member's birthday to determine which message to use
+        member_bday = await self.config.member(member).birthday()
+        has_year = member_bday and member_bday.get("year") is not None
+
+        # Get the appropriate message
+        if has_year:
+            message = await self.config.guild(ctx.guild).message_w_year()
+            # Calculate a fake age for testing (using current year - birth year)
+            test_age = datetime.datetime.utcnow().year - member_bday["year"]
+            formatted_message = format_bday_message(message, member, test_age)
+        else:
+            message = await self.config.guild(ctx.guild).message_wo_year()
+            formatted_message = format_bday_message(message, member)
+
+        # Get image URL
+        image_url = await self.config.guild(ctx.guild).image_url()
+
+        # Get role mention setting
+        allow_role_mention = await self.config.guild(ctx.guild).allow_role_mention()
+
+        # Send the test message
+        await ctx.send(f"Sending test birthday announcement to {channel.mention}...")
+
+        try:
+            if image_url:
+                embed = discord.Embed(description=formatted_message)
+                embed.set_image(url=image_url)
+                await channel.send(
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=allow_role_mention, users=True
+                    ),
+                )
+            else:
+                await channel.send(
+                    formatted_message,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=allow_role_mention, users=True
+                    ),
+                )
+            await ctx.send("Test announcement sent successfully!")
+        except discord.HTTPException as e:
+            await ctx.send(f"Failed to send test announcement: {e}")
 
     @bdset.command()
     async def stop(self, ctx: commands.Context):

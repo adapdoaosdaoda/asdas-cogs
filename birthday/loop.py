@@ -68,7 +68,7 @@ class BirthdayLoop(MixinMeta):
         )
 
     async def send_announcement(
-        self, channel: discord.TextChannel, message: str, role_mention: bool
+        self, channel: discord.TextChannel, message: str, role_mention: bool, image_url: str | None = None
     ):
         if error := channel_perm_check(channel.guild.me, channel):
             log.warning(
@@ -81,14 +81,27 @@ class BirthdayLoop(MixinMeta):
 
         log.trace("Queued birthday announcement for %s in guild %s", channel.id, channel.guild.id)
         log.trace("Message: %s", message)
-        self.coro_queue.put_nowait(
-            channel.send(
-                message,
-                allowed_mentions=discord.AllowedMentions(
-                    everyone=False, roles=role_mention, users=True
-                ),
+
+        if image_url:
+            embed = discord.Embed(description=message)
+            embed.set_image(url=image_url)
+            self.coro_queue.put_nowait(
+                channel.send(
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=role_mention, users=True
+                    ),
+                )
             )
-        )
+        else:
+            self.coro_queue.put_nowait(
+                channel.send(
+                    message,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=role_mention, users=True
+                    ),
+                )
+            )
 
     async def birthday_loop(self) -> NoReturn:
         """The Birthday loop. This coro will run forever."""
@@ -226,6 +239,9 @@ class BirthdayLoop(MixinMeta):
 
             log.trace("Members with birthdays in guild %s: %s", guild_id, birthday_members)
 
+            # Get image URL for announcements
+            image_url = all_settings[guild.id].get("image_url")
+
             for member, dt in birthday_members.items():
                 if member not in role.members:
                     await self.add_role(guild.me, member, role)
@@ -235,6 +251,7 @@ class BirthdayLoop(MixinMeta):
                             channel,
                             format_bday_message(all_settings[guild.id]["message_wo_year"], member),
                             all_settings[guild.id]["allow_role_mention"],
+                            image_url,
                         )
 
                     else:
@@ -245,6 +262,7 @@ class BirthdayLoop(MixinMeta):
                                 all_settings[guild.id]["message_w_year"], member, age
                             ),
                             all_settings[guild.id]["allow_role_mention"],
+                            image_url,
                         )
 
             for member in role.members:
