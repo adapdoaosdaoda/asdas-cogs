@@ -68,7 +68,7 @@ class BirthdayLoop(MixinMeta):
         )
 
     async def send_announcement(
-        self, channel: discord.TextChannel, message: str, role_mention: bool
+        self, channel: discord.TextChannel, message: str, role_mention: bool, image_url: str | None = None
     ):
         if error := channel_perm_check(channel.guild.me, channel):
             log.warning(
@@ -81,14 +81,27 @@ class BirthdayLoop(MixinMeta):
 
         log.trace("Queued birthday announcement for %s in guild %s", channel.id, channel.guild.id)
         log.trace("Message: %s", message)
-        self.coro_queue.put_nowait(
-            channel.send(
-                message,
-                allowed_mentions=discord.AllowedMentions(
-                    everyone=False, roles=role_mention, users=True
-                ),
+
+        if image_url:
+            embed = discord.Embed(description=message)
+            embed.set_image(url=image_url)
+            self.coro_queue.put_nowait(
+                channel.send(
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=role_mention, users=True
+                    ),
+                )
             )
-        )
+        else:
+            self.coro_queue.put_nowait(
+                channel.send(
+                    message,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=role_mention, users=True
+                    ),
+                )
+            )
 
     async def birthday_loop(self) -> NoReturn:
         """The Birthday loop. This coro will run forever."""
@@ -175,7 +188,22 @@ class BirthdayLoop(MixinMeta):
             start = today_dt + hour_td
             end = start + datetime.timedelta(days=1)
 
-            required_role = guild.get_role(all_settings[guild.id].get("required_role"))
+            # Get required roles (migrate from old config if needed)
+            old_required_role = all_settings[guild.id].get("required_role")
+            required_role_ids = all_settings[guild.id].get("required_roles", [])
+
+            if old_required_role and not required_role_ids:
+                # Migrate from old single role to new list format
+                required_role_ids = [old_required_role]
+                await self.config.guild(guild).required_roles.set(required_role_ids)
+                await self.config.guild(guild).require_role.clear()
+
+            # Get role objects
+            required_roles = []
+            for role_id in required_role_ids:
+                role = guild.get_role(role_id)
+                if role:
+                    required_roles.append(role)
 
             async for member_id, data in AsyncIter(guild_data.items(), steps=50):
                 birthday = data["birthday"]
@@ -193,7 +221,8 @@ class BirthdayLoop(MixinMeta):
                 )
                 this_year_bday_dt = proper_bday_dt.replace(year=today_dt.year) + hour_td
 
-                if required_role and required_role not in member.roles:
+                # Check if member has at least one required role (if any are set)
+                if required_roles and not any(role in member.roles for role in required_roles):
                     log.trace(
                         "Member %s for guild %s does not have required role, skipping",
                         member_id,
@@ -226,6 +255,9 @@ class BirthdayLoop(MixinMeta):
 
             log.trace("Members with birthdays in guild %s: %s", guild_id, birthday_members)
 
+            # Get image URL for announcements
+            image_url = all_settings[guild.id].get("image_url")
+
             for member, dt in birthday_members.items():
                 if member not in role.members:
                     await self.add_role(guild.me, member, role)
@@ -235,6 +267,7 @@ class BirthdayLoop(MixinMeta):
                             channel,
                             format_bday_message(all_settings[guild.id]["message_wo_year"], member),
                             all_settings[guild.id]["allow_role_mention"],
+                            image_url,
                         )
 
                     else:
@@ -245,6 +278,7 @@ class BirthdayLoop(MixinMeta):
                                 all_settings[guild.id]["message_w_year"], member, age
                             ),
                             all_settings[guild.id]["allow_role_mention"],
+                            image_url,
                         )
 
             for member in role.members:

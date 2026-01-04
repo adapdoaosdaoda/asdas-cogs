@@ -66,6 +66,24 @@ class BirthdayCommands(MixinMeta):
         # guild only check in group
         if TYPE_CHECKING:
             assert isinstance(ctx.author, discord.Member)
+            assert ctx.guild is not None
+
+        # Check if there's a channel restriction
+        set_channel_id = await self.config.guild(ctx.guild).set_channel_id()
+        if set_channel_id is not None and ctx.channel.id != set_channel_id:
+            set_channel = ctx.guild.get_channel(set_channel_id)
+            if set_channel:
+                await ctx.send(
+                    f"You can only set your birthday in {set_channel.mention}.",
+                    ephemeral=True
+                )
+            else:
+                await ctx.send(
+                    "You can only set your birthday in a specific channel, but that channel "
+                    "no longer exists. Please contact an admin.",
+                    ephemeral=True
+                )
+            return
 
         # year as 1 means year not specified
 
@@ -282,18 +300,62 @@ class BirthdayAdminCommands(MixinMeta):
 
             table.add_row("Allow role mentions", str(conf["allow_role_mention"]))
 
-            req_role = ctx.guild.get_role(conf["require_role"])
-            if req_role:
-                table.add_row(
-                    "Required role",
-                    req_role.name
-                    + ". Only users with this role can set their birthday and have it announced.",
-                )
+            # Migrate old config if needed
+            old_require_role = conf.get("require_role")
+            required_roles = conf.get("required_roles", [])
+
+            if old_require_role and not required_roles:
+                # Migrate from old single role to new list format
+                required_roles = [old_require_role]
+                await self.config.guild(ctx.guild).required_roles.set(required_roles)
+                await self.config.guild(ctx.guild).require_role.clear()
+
+            if required_roles:
+                role_names = []
+                for role_id in required_roles:
+                    role = ctx.guild.get_role(role_id)
+                    if role:
+                        role_names.append(role.name)
+
+                if role_names:
+                    if len(role_names) == 1:
+                        table.add_row(
+                            "Required role",
+                            f"{role_names[0]}. Only users with this role can set their birthday and have it announced.",
+                        )
+                    else:
+                        table.add_row(
+                            "Required roles",
+                            f"{', '.join(role_names)}. Users must have at least one of these roles to set their birthday and have it announced.",
+                        )
+                else:
+                    table.add_row(
+                        "Required role",
+                        "Set, but all roles have been deleted. All users can set their birthday and have it announced.",
+                    )
             else:
                 table.add_row(
                     "Required role",
                     "Not set. All users can set their birthday and have it announced.",
                 )
+
+            set_channel = ctx.guild.get_channel(conf.get("set_channel_id"))
+            if set_channel:
+                table.add_row(
+                    "Set channel restriction",
+                    f"{set_channel.name}. Users can only set birthdays in this channel.",
+                )
+            else:
+                table.add_row(
+                    "Set channel restriction",
+                    "Not set. Users can set their birthday in any channel.",
+                )
+
+            image_url = conf.get("image_url")
+            if image_url:
+                table.add_row("Announcement image", "Set")
+            else:
+                table.add_row("Announcement image", "Not set")
 
             message_w_year = conf["message_w_year"] or "No message set. You must set this before getting notifications."
             message_wo_year = conf["message_wo_year"] or "No message set. You must set this before getting notifications."
@@ -691,76 +753,124 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send("Role mentions have been disabled.")
 
     @bdset.command()
-    async def requiredrole(self, ctx: commands.Context, *, role: Union[discord.Role, None] = None):
+    async def requiredrole(self, ctx: commands.Context, role1: Union[discord.Role, None] = None, role2: Union[discord.Role, None] = None):
         """
-        Set a role that users must have to set their birthday.
+        Set up to 2 roles that users must have to set their birthday.
 
-        If users don't have this role then they can't set their
-        birthday and they won't get a role or message on their birthday.
+        Users must have at least one of the specified roles to set their
+        birthday and have it announced.
 
-        If they set their birthday and then lose the role, their birthday
-        will be stored but will be ignored until they regain the role.
+        If they set their birthday and then lose all required roles, their birthday
+        will be stored but will be ignored until they regain at least one role.
 
-        You can purge birthdays of users who no longer have the role
+        You can purge birthdays of users who no longer have any required role
         with `[p]bdset requiredrolepurge`.
 
-        If no role is provided, the requirement is removed.
+        If no roles are provided, the requirement is removed.
 
-        View the current role with `[p]bdset settings`.
+        View the current roles with `[p]bdset settings`.
 
         **Example:**
-        - `[p]bdset requiredrole @Subscribers` - set the required role to @Subscribers
-        - `[p]bdset requiredrole Subscribers` - set the required role to @Subscribers
-        - `[p]bdset requiredrole` - remove the required role
-        """
-        if role is None:
-            current_role = await self.config.guild(ctx.guild).require_role()
-            if current_role:
-                await self.config.guild(ctx.guild).require_role.clear()
-                await ctx.send(
-                    "The required role has been removed. Birthdays can be set by anyone and will "
-                    "always be announced."
-                )
-            else:
-                await ctx.send(
-                    "No role is current set. Birthdays can be set by anyone and will always be "
-                    "announced."
-                )
-                await ctx.send_help()
-        else:
-            await self.config.guild(ctx.guild).require_role.set(role.id)
-            await ctx.send(
-                f"The required role has been set to {role.name}. Users without this role no longer"
-                " have their birthday announced."
-            )
-
-    @bdset.command(name="requiredrolepurge")
-    async def requiredrole_purge(self, ctx: commands.Context):
-        """Remove birthdays from the database for users who no longer have the required role.
-
-        If you have a required role set, this will remove birthdays for users who no longer have it
-
-        Uses without the role are temporarily ignored until they regain the role.
-
-        This command allows you to presently remove their birthday data from the database.
+        - `[p]bdset requiredrole @Subscribers` - set one required role
+        - `[p]bdset requiredrole @Subscribers @Members` - set two required roles
+        - `[p]bdset requiredrole` - remove all required roles
         """
         # group has guild check
         if TYPE_CHECKING:
             assert ctx.guild is not None
 
-        required_role: int | Literal[False] = await self.config.guild(ctx.guild).require_role()
-        if not required_role:
+        # Migrate old config if needed
+        old_require_role = await self.config.guild(ctx.guild).require_role()
+        current_required_roles = await self.config.guild(ctx.guild).required_roles()
+
+        if old_require_role and not current_required_roles:
+            # Migrate from old single role to new list format
+            current_required_roles = [old_require_role]
+            await self.config.guild(ctx.guild).required_roles.set(current_required_roles)
+            await self.config.guild(ctx.guild).require_role.clear()
+
+        if role1 is None and role2 is None:
+            # Clear all required roles
+            if current_required_roles:
+                await self.config.guild(ctx.guild).required_roles.set([])
+                await ctx.send(
+                    "All required roles have been removed. Birthdays can be set by anyone and will "
+                    "always be announced."
+                )
+            else:
+                await ctx.send(
+                    "No roles are currently set. Birthdays can be set by anyone and will always be "
+                    "announced."
+                )
+                await ctx.send_help()
+        else:
+            # Build list of role IDs
+            role_ids = []
+            role_names = []
+
+            if role1:
+                role_ids.append(role1.id)
+                role_names.append(role1.name)
+
+            if role2:
+                role_ids.append(role2.id)
+                role_names.append(role2.name)
+
+            await self.config.guild(ctx.guild).required_roles.set(role_ids)
+
+            if len(role_ids) == 1:
+                await ctx.send(
+                    f"The required role has been set to {role_names[0]}. Users without this role "
+                    "will not have their birthday announced."
+                )
+            else:
+                await ctx.send(
+                    f"Required roles have been set to {' and '.join(role_names)}. Users must have "
+                    "at least one of these roles to have their birthday announced."
+                )
+
+    @bdset.command(name="requiredrolepurge")
+    async def requiredrole_purge(self, ctx: commands.Context):
+        """Remove birthdays from the database for users who no longer have any required role.
+
+        If you have required roles set, this will remove birthdays for users who don't have any of them.
+
+        Users without any required role are temporarily ignored until they regain at least one role.
+
+        This command allows you to permanently remove their birthday data from the database.
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        # Migrate old config if needed
+        old_require_role = await self.config.guild(ctx.guild).require_role()
+        required_roles = await self.config.guild(ctx.guild).required_roles()
+
+        if old_require_role and not required_roles:
+            # Migrate from old single role to new list format
+            required_roles = [old_require_role]
+            await self.config.guild(ctx.guild).required_roles.set(required_roles)
+            await self.config.guild(ctx.guild).require_role.clear()
+
+        if not required_roles:
             await ctx.send(
-                "You don't have a required role set. This command is only useful if you have a"
-                " required role set."
+                "You don't have any required roles set. This command is only useful if you have "
+                "required roles set."
             )
             return
 
-        role = ctx.guild.get_role(required_role)
-        if role is None:
+        # Get all the role objects
+        roles = []
+        for role_id in required_roles:
+            role = ctx.guild.get_role(role_id)
+            if role:
+                roles.append(role)
+
+        if not roles:
             await ctx.send(
-                "The required role has been deleted. This command is only useful if you have a"
-                " required role set."
+                "All required roles have been deleted. This command is only useful if you have "
+                "valid required roles set."
             )
             return
 
@@ -771,11 +881,162 @@ class BirthdayAdminCommands(MixinMeta):
             if member is None:
                 continue
 
-            if role not in member.roles:
+            # Check if member has at least one of the required roles
+            has_required_role = any(role in member.roles for role in roles)
+
+            if not has_required_role:
                 await self.config.member_from_ids(ctx.guild.id, member_id).birthday.clear()
                 purged += 1
 
         await ctx.send(f"Purged {purged} users from the database.")
+
+    @bdset.command()
+    async def setchannel(self, ctx: commands.Context, channel: Union[discord.TextChannel, None] = None):
+        """
+        Set a channel where users must use the birthday set command.
+
+        If users try to set their birthday outside this channel, they'll be told to use the correct channel.
+
+        If no channel is provided, the restriction is removed and users can set their birthday anywhere.
+
+        **Example:**
+        - `[p]bdset setchannel #birthdays` - require users to set birthdays in #birthdays
+        - `[p]bdset setchannel` - remove the channel restriction
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        if channel is None:
+            await self.config.guild(ctx.guild).set_channel_id.clear()
+            await ctx.send(
+                "The channel restriction has been removed. Users can now set their birthday in any channel."
+            )
+        else:
+            await self.config.guild(ctx.guild).set_channel_id.set(channel.id)
+            await ctx.send(
+                f"Users can now only set their birthday in {channel.mention}."
+            )
+
+    @bdset.command()
+    async def image(self, ctx: commands.Context, image_url: Union[str, None] = None):
+        """
+        Set an image URL to include in birthday announcements.
+
+        You can either provide a direct link to an image or upload an image file directly.
+
+        If no URL is provided and no file is uploaded, the image will be removed from birthday announcements.
+
+        **Example:**
+        - `[p]bdset image https://i.imgur.com/example.png` - set the birthday image from URL
+        - `[p]bdset image` - remove the birthday image
+        - Upload a file with the command to use that image
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        # Check if there's an attachment
+        if ctx.message.attachments:
+            attachment = ctx.message.attachments[0]
+            # Verify it's an image
+            if not attachment.content_type or not attachment.content_type.startswith('image/'):
+                await ctx.send("The uploaded file doesn't appear to be an image. Please upload an image file.")
+                return
+
+            image_url = attachment.url
+            await self.config.guild(ctx.guild).image_url.set(image_url)
+            await ctx.send(f"Birthday announcements will now include the uploaded image.")
+        elif image_url is None:
+            await self.config.guild(ctx.guild).image_url.clear()
+            await ctx.send("The birthday announcement image has been removed.")
+        else:
+            await self.config.guild(ctx.guild).image_url.set(image_url)
+            await ctx.send(f"Birthday announcements will now include the image: {image_url}")
+
+    @bdset.command()
+    async def test(self, ctx: commands.Context, *, member: discord.Member = None):
+        """
+        Send a test birthday announcement message.
+
+        This will send a test message to the configured birthday channel using the current settings.
+
+        **Example:**
+        - `[p]bdset test` - send a test announcement for yourself
+        - `[p]bdset test @User` - send a test announcement for a specific user
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+            assert isinstance(ctx.me, discord.Member)
+
+        if member is None:
+            member = ctx.author
+
+        # Check if setup is complete
+        if not await self.check_if_setup(ctx.guild):
+            await ctx.send(
+                "The birthday cog is not fully set up yet. Please complete the setup first using "
+                f"`{ctx.clean_prefix}bdset interactive` or check what's missing with "
+                f"`{ctx.clean_prefix}birthdayinfo`."
+            )
+            return
+
+        # Get the birthday channel
+        channel_id = await self.config.guild(ctx.guild).channel_id()
+        channel = ctx.guild.get_channel(channel_id)
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            await ctx.send("The birthday channel is not set or no longer exists.")
+            return
+
+        # Check permissions
+        if error := channel_perm_check(ctx.me, channel):
+            await ctx.send(f"I can't send messages in {channel.mention}: {error}")
+            return
+
+        # Get member's birthday to determine which message to use
+        member_bday = await self.config.member(member).birthday()
+        has_year = member_bday and member_bday.get("year") is not None
+
+        # Get the appropriate message
+        if has_year:
+            message = await self.config.guild(ctx.guild).message_w_year()
+            # Calculate a fake age for testing (using current year - birth year)
+            test_age = datetime.datetime.utcnow().year - member_bday["year"]
+            formatted_message = format_bday_message(message, member, test_age)
+        else:
+            message = await self.config.guild(ctx.guild).message_wo_year()
+            formatted_message = format_bday_message(message, member)
+
+        # Get image URL
+        image_url = await self.config.guild(ctx.guild).image_url()
+
+        # Get role mention setting
+        allow_role_mention = await self.config.guild(ctx.guild).allow_role_mention()
+
+        # Send the test message
+        await ctx.send(f"Sending test birthday announcement to {channel.mention}...")
+
+        try:
+            if image_url:
+                embed = discord.Embed(description=formatted_message)
+                embed.set_image(url=image_url)
+                await channel.send(
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=allow_role_mention, users=True
+                    ),
+                )
+            else:
+                await channel.send(
+                    formatted_message,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=allow_role_mention, users=True
+                    ),
+                )
+            await ctx.send("Test announcement sent successfully!")
+        except discord.HTTPException as e:
+            await ctx.send(f"Failed to send test announcement: {e}")
 
     @bdset.command()
     async def stop(self, ctx: commands.Context):
