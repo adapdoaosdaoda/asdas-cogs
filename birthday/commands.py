@@ -100,12 +100,7 @@ class BirthdayCommands(MixinMeta):
             bday["month"] = birthday.month
             bday["day"] = birthday.day
 
-        if birthday.year == 1:
-            str_bday = birthday.strftime("%B %d")
-        else:
-            str_bday = birthday.strftime("%B %d, %Y")
-
-        await ctx.send(f"Your birthday has been set as {str_bday}.")
+        await ctx.message.add_reaction("✅")
 
     @birthday.command(aliases=["delete", "del"])
     async def remove(self, ctx: commands.Context):
