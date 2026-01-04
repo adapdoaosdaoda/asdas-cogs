@@ -56,7 +56,8 @@ class Birthday(
             announcement_reaction=None,  # deprecated, kept for migration
             announcement_reactions=[],  # list of emojis to react to announcement messages with
         )
-        self.config.register_member(birthday={"year": 1, "month": 1, "day": 1})
+        self.config.register_member(birthday={"year": 1, "month": 1, "day": 1})  # deprecated, kept for migration
+        self.config.register_user(birthday={"year": 1, "month": 1, "day": 1})
 
         # Set up data directory for storing images
         self.data_path = data_manager.cog_data_path(self)
@@ -92,26 +93,35 @@ class Birthday(
             log.info("Unable to delete user data for user with ID 0 because it's invalid.")
             return
 
-        hit = False
-
-        all_data = await self.config.all_members()
-        for g_id, g_data in all_data.items():
-            if target_u_id in g_data.keys():
-                hit = True
-                await self.config.member_from_ids(g_id, target_u_id).clear()
-                log.debug(
-                    "Deleted user data for user with ID %s in guild with ID %s.", target_u_id, g_id
-                )
-
-        if not hit:
+        # Delete from new user config
+        user_data = await self.config.user_from_id(target_u_id).birthday()
+        if user_data:
+            await self.config.user_from_id(target_u_id).clear()
+            log.debug("Deleted user data for user with ID %s.", target_u_id)
+        else:
             log.debug("No user data found for user with ID %s.", target_u_id)
 
     async def cog_load(self) -> None:
         version = await self.config.version()
         if version == 0:  # first load so no need to update
-            await self.config.version.set(1)
+            await self.config.version.set(2)
+        elif version == 1:
+            # Migrate from member-based to user-based storage
+            log.info("Migrating birthday data from member-based to user-based storage...")
+            all_members = await self.config.all_members()
+            migrated_users = set()
 
-        # no other versions exist yet
+            for guild_id, guild_data in all_members.items():
+                for user_id, data in guild_data.items():
+                    if user_id not in migrated_users and data.get("birthday"):
+                        # Only migrate if user doesn't already have a global birthday set
+                        user_bday = await self.config.user_from_id(user_id).birthday()
+                        if not user_bday or user_bday.get("year") == 1:
+                            await self.config.user_from_id(user_id).birthday.set(data["birthday"])
+                        migrated_users.add(user_id)
+
+            await self.config.version.set(2)
+            log.info(f"Migrated {len(migrated_users)} user birthdays to global storage")
 
         self.ready.set()
 

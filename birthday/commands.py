@@ -43,8 +43,6 @@ class BirthdayCommands(MixinMeta):
             )
             raise CheckFailure("cog needs setup")
 
-    @commands.guild_only()  # type:ignore
-    @commands.before_invoke(setup_check)  # type:ignore
     @commands.hybrid_group(aliases=["bday"])
     async def birthday(self, ctx: commands.Context):
         """Set and manage your birthday."""
@@ -58,6 +56,8 @@ class BirthdayCommands(MixinMeta):
 
         If you use a date in the format xx/xx/xx or xx-xx-xx MM-DD-YYYY is assumed.
 
+        This command works in DMs or in servers.
+
         **Examples:**
         - `[p]bday set 24th September`
         - `[p]bday set 24th Sept 2002`
@@ -65,27 +65,23 @@ class BirthdayCommands(MixinMeta):
         - `[p]bday set 9-24-2002`
         - `[p]bday set 9-24`
         """
-        # guild only check in group
-        if TYPE_CHECKING:
-            assert isinstance(ctx.author, discord.Member)
-            assert ctx.guild is not None
-
-        # Check if there's a channel restriction
-        set_channel_id = await self.config.guild(ctx.guild).set_channel_id()
-        if set_channel_id is not None and ctx.channel.id != set_channel_id:
-            set_channel = ctx.guild.get_channel(set_channel_id)
-            if set_channel:
-                await ctx.send(
-                    f"You can only set your birthday in {set_channel.mention}.",
-                    ephemeral=True
-                )
-            else:
-                await ctx.send(
-                    "You can only set your birthday in a specific channel, but that channel "
-                    "no longer exists. Please contact an admin.",
-                    ephemeral=True
-                )
-            return
+        # Check if there's a channel restriction (only in guilds)
+        if ctx.guild:
+            set_channel_id = await self.config.guild(ctx.guild).set_channel_id()
+            if set_channel_id is not None and ctx.channel.id != set_channel_id:
+                set_channel = ctx.guild.get_channel(set_channel_id)
+                if set_channel:
+                    await ctx.send(
+                        f"You can only set your birthday in {set_channel.mention}.",
+                        ephemeral=True
+                    )
+                else:
+                    await ctx.send(
+                        "You can only set your birthday in a specific channel, but that channel "
+                        "no longer exists. Please contact an admin.",
+                        ephemeral=True
+                    )
+                return
 
         # year as 1 means year not specified
 
@@ -97,21 +93,18 @@ class BirthdayCommands(MixinMeta):
             await ctx.send("You can't be born in the future!")
             return
 
-        async with self.config.member(ctx.author).birthday() as bday:
+        async with self.config.user(ctx.author).birthday() as bday:
             bday["year"] = birthday.year if birthday.year != 1 else None
             bday["month"] = birthday.month
             bday["day"] = birthday.day
 
-        await ctx.message.add_reaction("✅")
+        await ctx.send("✅ Your birthday has been set!")
+        if not ctx.guild:
+            await ctx.send("Your birthday will be announced in all servers where this bot is configured.")
 
     @birthday.command(aliases=["delete", "del"])
     async def remove(self, ctx: commands.Context):
-        """Remove your birthday."""
-        # guild only check in group
-        if TYPE_CHECKING:
-            assert isinstance(ctx.author, discord.Member)
-            assert ctx.guild is not None
-
+        """Remove your birthday. This command works in DMs or in servers."""
         m = await ctx.send("Are you sure?")
         start_adding_reactions(m, ReactionPredicate.YES_OR_NO_EMOJIS)
         check = ReactionPredicate.yes_or_no(m, ctx.author)  # type:ignore
@@ -120,16 +113,21 @@ class BirthdayCommands(MixinMeta):
             await self.bot.wait_for("reaction_add", check=check, timeout=60)
         except asyncio.TimeoutError:
             for reaction in ReactionPredicate.YES_OR_NO_EMOJIS:
-                await m.remove_reaction(reaction, ctx.guild.me)
+                if ctx.guild:
+                    await m.remove_reaction(reaction, ctx.guild.me)
+                else:
+                    await m.remove_reaction(reaction, self.bot.user)
             return
 
         if check.result is False:
             await ctx.send("Cancelled.")
             return
 
-        await self.config.member(ctx.author).birthday.set({})
+        await self.config.user(ctx.author).birthday.set({})
         await ctx.send("Your birthday has been removed.")
 
+    @commands.guild_only()  # type:ignore
+    @commands.before_invoke(setup_check)  # type:ignore
     @birthday.command()
     async def upcoming(self, ctx: commands.Context, days: int = 7):
         """View upcoming birthdays, defaults to 7 days.
@@ -138,7 +136,7 @@ class BirthdayCommands(MixinMeta):
         - `[p]birthday upcoming` - default of 7 days
         - `[p]birthday upcoming 14` - 14 days
         """
-        # guild only check in group
+        # guild only check in decorator
         if TYPE_CHECKING:
             assert isinstance(ctx.author, discord.Member)
             assert ctx.guild is not None
@@ -149,24 +147,24 @@ class BirthdayCommands(MixinMeta):
 
         today_dt = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-        all_birthdays: dict[int, dict[str, dict]] = await self.config.all_members(ctx.guild)
+        all_birthdays: dict[int, dict[str, dict]] = await self.config.all_users()
 
         log.trace("raw data for all bdays: %s", all_birthdays)
 
         parsed_bdays: dict[int, list[str]] = defaultdict(list)
         number_day_mapping: dict[int, str] = {}
 
-        async for member_id, member_data in AsyncIter(all_birthdays.items(), steps=50):
-            if not member_data["birthday"]:  # birthday removed but user remains in config
+        async for user_id, user_data in AsyncIter(all_birthdays.items(), steps=50):
+            if not user_data.get("birthday"):  # birthday removed or not set
                 continue
-            member = ctx.guild.get_member(member_id)
+            member = ctx.guild.get_member(user_id)
             if not isinstance(member, discord.Member):
                 continue
 
             birthday_dt = datetime.datetime(
-                year=member_data["birthday"]["year"] or 1,
-                month=member_data["birthday"]["month"],
-                day=member_data["birthday"]["day"],
+                year=user_data["birthday"]["year"] or 1,
+                month=user_data["birthday"]["month"],
+                day=user_data["birthday"]["day"],
             )
 
             if today_dt.month == birthday_dt.month and today_dt.day == birthday_dt.day:
@@ -397,6 +395,73 @@ class BirthdayAdminCommands(MixinMeta):
         await ctx.send(message)
 
     @bdset.command()
+    async def listall(self, ctx: commands.Context):
+        """List all birthdays for members in this server."""
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        all_birthdays: dict[int, dict[str, dict]] = await self.config.all_users()
+
+        members_with_birthdays = []
+
+        async for user_id, user_data in AsyncIter(all_birthdays.items(), steps=50):
+            if not user_data.get("birthday"):
+                continue
+
+            member = ctx.guild.get_member(user_id)
+            if not isinstance(member, discord.Member):
+                continue
+
+            birthday_data = user_data["birthday"]
+            birthday_dt = datetime.datetime(
+                year=birthday_data["year"] or 1,
+                month=birthday_data["month"],
+                day=birthday_data["day"],
+            )
+
+            if birthday_data["year"]:
+                date_str = birthday_dt.strftime("%B %d, %Y")
+            else:
+                date_str = birthday_dt.strftime("%B %d")
+
+            members_with_birthdays.append((member.display_name, date_str, birthday_dt))
+
+        if not members_with_birthdays:
+            await ctx.send("No members in this server have set their birthdays.")
+            return
+
+        # Sort by month and day
+        members_with_birthdays.sort(key=lambda x: (x[2].month, x[2].day))
+
+        # Build the message
+        lines = [f"**{name}**: {date}" for name, date, _ in members_with_birthdays]
+        message = "\n".join(lines)
+
+        # Send paginated if too long
+        if len(message) > 2000:
+            pages = []
+            current_page = []
+            current_length = 0
+
+            for line in lines:
+                if current_length + len(line) + 1 > 2000:
+                    pages.append("\n".join(current_page))
+                    current_page = [line]
+                    current_length = len(line)
+                else:
+                    current_page.append(line)
+                    current_length += len(line) + 1
+
+            if current_page:
+                pages.append("\n".join(current_page))
+
+            for i, page in enumerate(pages, 1):
+                await ctx.send(f"**Birthdays ({i}/{len(pages)})**\n{page}")
+        else:
+            await ctx.send(f"**Birthdays ({len(members_with_birthdays)} members)**\n{message}")
+
+    @bdset.command()
     async def time(self, ctx: commands.Context, *, time: TimeConverter):
         """
         Set the time of day for the birthday message.
@@ -622,7 +687,7 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send("You can't be born in the future!")
             return
 
-        async with self.config.member(user).birthday() as bday:
+        async with self.config.user(user).birthday() as bday:
             bday["year"] = birthday.year if birthday.year != 1 else None
             bday["month"] = birthday.month
             bday["day"] = birthday.day
@@ -632,7 +697,7 @@ class BirthdayAdminCommands(MixinMeta):
         else:
             str_bday = birthday.strftime("%B %d, %Y")
 
-        await ctx.send(f"{user.name}'s birthday has been set as {str_bday}.")
+        await ctx.send(f"{user.name}'s birthday has been set as {str_bday}. This will apply globally across all servers.")
 
     @bdset.command()
     async def forceremove(self, ctx: commands.Context, user: discord.Member):
@@ -657,8 +722,8 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send("Cancelled.")
             return
 
-        await self.config.member(user).birthday.set({})
-        await ctx.send(f"{user.name}'s birthday has been removed.")
+        await self.config.user(user).birthday.set({})
+        await ctx.send(f"{user.name}'s birthday has been removed globally.")
 
     @commands.is_owner()
     @bdset.command()
@@ -1131,8 +1196,8 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send(f"I can't send messages in {channel.mention}: {error}")
             return
 
-        # Get member's birthday to determine which message to use
-        member_bday = await self.config.member(member).birthday()
+        # Get user's birthday to determine which message to use
+        member_bday = await self.config.user(member).birthday()
         has_year = member_bday and member_bday.get("year") is not None
 
         # Get the appropriate message
