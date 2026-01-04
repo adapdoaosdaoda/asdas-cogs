@@ -846,19 +846,31 @@ class BirthdayAdminCommands(MixinMeta):
         """
         Set an image URL to include in birthday announcements.
 
-        This should be a direct link to an image (e.g., from Imgur, Discord CDN, etc.).
+        You can either provide a direct link to an image or upload an image file directly.
 
-        If no URL is provided, the image will be removed from birthday announcements.
+        If no URL is provided and no file is uploaded, the image will be removed from birthday announcements.
 
         **Example:**
-        - `[p]bdset image https://i.imgur.com/example.png` - set the birthday image
+        - `[p]bdset image https://i.imgur.com/example.png` - set the birthday image from URL
         - `[p]bdset image` - remove the birthday image
+        - Upload a file with the command to use that image
         """
         # group has guild check
         if TYPE_CHECKING:
             assert ctx.guild is not None
 
-        if image_url is None:
+        # Check if there's an attachment
+        if ctx.message.attachments:
+            attachment = ctx.message.attachments[0]
+            # Verify it's an image
+            if not attachment.content_type or not attachment.content_type.startswith('image/'):
+                await ctx.send("The uploaded file doesn't appear to be an image. Please upload an image file.")
+                return
+
+            image_url = attachment.url
+            await self.config.guild(ctx.guild).image_url.set(image_url)
+            await ctx.send(f"Birthday announcements will now include the uploaded image.")
+        elif image_url is None:
             await self.config.guild(ctx.guild).image_url.clear()
             await ctx.send("The birthday announcement image has been removed.")
         else:
