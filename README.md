@@ -31,6 +31,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 - Added the ability to upload and include an image to the birthday announcement messages
 - Increased the role requirerment from 1 to 2
 - Added the ability to limit the set subcommand to a single channel
+- Automatic emote reaction to the announcement
 
 ### EventChannels
 Automatically creates and manages temporary channels for Discord scheduled events, created with [Raid-Helper](https://raid-helper.dev/) in mind.
