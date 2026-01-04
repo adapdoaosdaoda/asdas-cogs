@@ -1358,6 +1358,154 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send(f"Failed to send test announcement: {e}")
 
     @bdset.command()
+    async def forcesend(self, ctx: commands.Context):
+        """
+        Force send birthday announcements for anyone with a birthday today.
+
+        This manually triggers birthday announcements, useful if the automated
+        announcement didn't run at the configured time.
+
+        This will send announcements even if they were already sent today.
+
+        **Example:**
+        - `[p]bdset forcesend` - force send all birthday announcements for today
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+            assert isinstance(ctx.me, discord.Member)
+
+        # Check if setup is complete
+        if not await self.check_if_setup(ctx.guild):
+            await ctx.send(
+                "The birthday cog is not fully set up yet. Please complete the setup first using "
+                f"`{ctx.clean_prefix}bdset interactive` or check what's missing with "
+                f"`{ctx.clean_prefix}birthdayinfo`."
+            )
+            return
+
+        async with ctx.typing():
+            # Get guild settings
+            guild_settings = await self.config.guild(ctx.guild).all()
+
+            # Get role time to determine "today"
+            role_time_utc_s = guild_settings.get("role_time_utc_s")
+            if role_time_utc_s is None:
+                await ctx.send("Role time is not configured. Please set it with `[p]bdset roletime`.")
+                return
+
+            role_hour_td = datetime.timedelta(seconds=role_time_utc_s)
+
+            # Determine today based on role time
+            today_dt = (datetime.datetime.utcnow() - role_hour_td).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+
+            start = today_dt + role_hour_td
+            end = start + datetime.timedelta(days=1)
+
+            # Get required roles
+            required_role_ids = guild_settings.get("required_roles", [])
+            required_roles = []
+            for role_id in required_role_ids:
+                role = ctx.guild.get_role(role_id)
+                if role:
+                    required_roles.append(role)
+
+            # Find all members with birthdays today
+            all_birthdays = await self.config.all_users()
+            birthday_members: dict[discord.Member, datetime.datetime] = {}
+
+            for user_id, user_data in all_birthdays.items():
+                birthday = user_data.get("birthday")
+                if not birthday:
+                    continue
+
+                member = ctx.guild.get_member(int(user_id))
+                if member is None:
+                    continue
+
+                # Check if member has required role (if any are set)
+                if required_roles and not any(role in member.roles for role in required_roles):
+                    continue
+
+                proper_bday_dt = datetime.datetime(
+                    year=birthday["year"] or 1, month=birthday["month"], day=birthday["day"]
+                )
+                this_year_bday_dt = proper_bday_dt.replace(year=today_dt.year) + role_hour_td
+
+                if start <= this_year_bday_dt < end:  # birthday is today
+                    birthday_members[member] = proper_bday_dt
+
+            if not birthday_members:
+                await ctx.send("No one has a birthday today.")
+                return
+
+            # Get the birthday channel
+            channel_id = guild_settings["channel_id"]
+            channel = ctx.guild.get_channel(channel_id)
+            if channel is None or not isinstance(channel, discord.TextChannel):
+                await ctx.send(
+                    f"Birthday channel (ID: {channel_id}) was not found or is not a text channel."
+                )
+                return
+
+            # Check permissions
+            if error := channel_perm_check(ctx.me, channel):
+                await ctx.send(f"I can't send messages in {channel.mention}: {error}")
+                return
+
+            # Get announcement settings
+            image_path = guild_settings.get("image_path")
+            announcement_reactions = guild_settings.get("announcement_reactions", [])
+            allow_role_mention = guild_settings.get("allow_role_mention", False)
+
+            # Migrate old reaction config if needed
+            old_reaction = guild_settings.get("announcement_reaction")
+            if old_reaction and not announcement_reactions:
+                announcement_reactions = [old_reaction]
+                await self.config.guild(ctx.guild).announcement_reactions.set(announcement_reactions)
+                await self.config.guild(ctx.guild).announcement_reaction.clear()
+
+            # Get the announced_today list
+            announced_today = guild_settings.get("announced_today", [])
+
+            # Send announcements
+            sent_count = 0
+            for member, dt in birthday_members.items():
+                if dt.year == 1:
+                    await self.send_announcement(
+                        channel,
+                        format_bday_message(guild_settings["message_wo_year"], member),
+                        allow_role_mention,
+                        image_path,
+                        announcement_reactions,
+                    )
+                else:
+                    age = today_dt.year - dt.year
+                    await self.send_announcement(
+                        channel,
+                        format_bday_message(guild_settings["message_w_year"], member, age),
+                        allow_role_mention,
+                        image_path,
+                        announcement_reactions,
+                    )
+
+                # Add to announced_today list if not already there
+                if member.id not in announced_today:
+                    announced_today.append(member.id)
+
+                sent_count += 1
+
+            # Update the announced_today list
+            await self.config.guild(ctx.guild).announced_today.set(announced_today)
+
+            if sent_count == 1:
+                await ctx.send(f"✅ Sent 1 birthday announcement to {channel.mention}.")
+            else:
+                await ctx.send(f"✅ Sent {sent_count} birthday announcements to {channel.mention}.")
+
+    @bdset.command()
     async def stop(self, ctx: commands.Context):
         """
         Stop the cog from sending birthday messages and giving roles in the server.
