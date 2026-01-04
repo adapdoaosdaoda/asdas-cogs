@@ -188,7 +188,22 @@ class BirthdayLoop(MixinMeta):
             start = today_dt + hour_td
             end = start + datetime.timedelta(days=1)
 
-            required_role = guild.get_role(all_settings[guild.id].get("required_role"))
+            # Get required roles (migrate from old config if needed)
+            old_required_role = all_settings[guild.id].get("required_role")
+            required_role_ids = all_settings[guild.id].get("required_roles", [])
+
+            if old_required_role and not required_role_ids:
+                # Migrate from old single role to new list format
+                required_role_ids = [old_required_role]
+                await self.config.guild(guild).required_roles.set(required_role_ids)
+                await self.config.guild(guild).require_role.clear()
+
+            # Get role objects
+            required_roles = []
+            for role_id in required_role_ids:
+                role = guild.get_role(role_id)
+                if role:
+                    required_roles.append(role)
 
             async for member_id, data in AsyncIter(guild_data.items(), steps=50):
                 birthday = data["birthday"]
@@ -206,7 +221,8 @@ class BirthdayLoop(MixinMeta):
                 )
                 this_year_bday_dt = proper_bday_dt.replace(year=today_dt.year) + hour_td
 
-                if required_role and required_role not in member.roles:
+                # Check if member has at least one required role (if any are set)
+                if required_roles and not any(role in member.roles for role in required_roles):
                     log.trace(
                         "Member %s for guild %s does not have required role, skipping",
                         member_id,

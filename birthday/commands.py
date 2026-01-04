@@ -300,13 +300,39 @@ class BirthdayAdminCommands(MixinMeta):
 
             table.add_row("Allow role mentions", str(conf["allow_role_mention"]))
 
-            req_role = ctx.guild.get_role(conf["require_role"])
-            if req_role:
-                table.add_row(
-                    "Required role",
-                    req_role.name
-                    + ". Only users with this role can set their birthday and have it announced.",
-                )
+            # Migrate old config if needed
+            old_require_role = conf.get("require_role")
+            required_roles = conf.get("required_roles", [])
+
+            if old_require_role and not required_roles:
+                # Migrate from old single role to new list format
+                required_roles = [old_require_role]
+                await self.config.guild(ctx.guild).required_roles.set(required_roles)
+                await self.config.guild(ctx.guild).require_role.clear()
+
+            if required_roles:
+                role_names = []
+                for role_id in required_roles:
+                    role = ctx.guild.get_role(role_id)
+                    if role:
+                        role_names.append(role.name)
+
+                if role_names:
+                    if len(role_names) == 1:
+                        table.add_row(
+                            "Required role",
+                            f"{role_names[0]}. Only users with this role can set their birthday and have it announced.",
+                        )
+                    else:
+                        table.add_row(
+                            "Required roles",
+                            f"{', '.join(role_names)}. Users must have at least one of these roles to set their birthday and have it announced.",
+                        )
+                else:
+                    table.add_row(
+                        "Required role",
+                        "Set, but all roles have been deleted. All users can set their birthday and have it announced.",
+                    )
             else:
                 table.add_row(
                     "Required role",
@@ -727,76 +753,124 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send("Role mentions have been disabled.")
 
     @bdset.command()
-    async def requiredrole(self, ctx: commands.Context, *, role: Union[discord.Role, None] = None):
+    async def requiredrole(self, ctx: commands.Context, role1: Union[discord.Role, None] = None, role2: Union[discord.Role, None] = None):
         """
-        Set a role that users must have to set their birthday.
+        Set up to 2 roles that users must have to set their birthday.
 
-        If users don't have this role then they can't set their
-        birthday and they won't get a role or message on their birthday.
+        Users must have at least one of the specified roles to set their
+        birthday and have it announced.
 
-        If they set their birthday and then lose the role, their birthday
-        will be stored but will be ignored until they regain the role.
+        If they set their birthday and then lose all required roles, their birthday
+        will be stored but will be ignored until they regain at least one role.
 
-        You can purge birthdays of users who no longer have the role
+        You can purge birthdays of users who no longer have any required role
         with `[p]bdset requiredrolepurge`.
 
-        If no role is provided, the requirement is removed.
+        If no roles are provided, the requirement is removed.
 
-        View the current role with `[p]bdset settings`.
+        View the current roles with `[p]bdset settings`.
 
         **Example:**
-        - `[p]bdset requiredrole @Subscribers` - set the required role to @Subscribers
-        - `[p]bdset requiredrole Subscribers` - set the required role to @Subscribers
-        - `[p]bdset requiredrole` - remove the required role
-        """
-        if role is None:
-            current_role = await self.config.guild(ctx.guild).require_role()
-            if current_role:
-                await self.config.guild(ctx.guild).require_role.clear()
-                await ctx.send(
-                    "The required role has been removed. Birthdays can be set by anyone and will "
-                    "always be announced."
-                )
-            else:
-                await ctx.send(
-                    "No role is current set. Birthdays can be set by anyone and will always be "
-                    "announced."
-                )
-                await ctx.send_help()
-        else:
-            await self.config.guild(ctx.guild).require_role.set(role.id)
-            await ctx.send(
-                f"The required role has been set to {role.name}. Users without this role no longer"
-                " have their birthday announced."
-            )
-
-    @bdset.command(name="requiredrolepurge")
-    async def requiredrole_purge(self, ctx: commands.Context):
-        """Remove birthdays from the database for users who no longer have the required role.
-
-        If you have a required role set, this will remove birthdays for users who no longer have it
-
-        Uses without the role are temporarily ignored until they regain the role.
-
-        This command allows you to presently remove their birthday data from the database.
+        - `[p]bdset requiredrole @Subscribers` - set one required role
+        - `[p]bdset requiredrole @Subscribers @Members` - set two required roles
+        - `[p]bdset requiredrole` - remove all required roles
         """
         # group has guild check
         if TYPE_CHECKING:
             assert ctx.guild is not None
 
-        required_role: int | Literal[False] = await self.config.guild(ctx.guild).require_role()
-        if not required_role:
+        # Migrate old config if needed
+        old_require_role = await self.config.guild(ctx.guild).require_role()
+        current_required_roles = await self.config.guild(ctx.guild).required_roles()
+
+        if old_require_role and not current_required_roles:
+            # Migrate from old single role to new list format
+            current_required_roles = [old_require_role]
+            await self.config.guild(ctx.guild).required_roles.set(current_required_roles)
+            await self.config.guild(ctx.guild).require_role.clear()
+
+        if role1 is None and role2 is None:
+            # Clear all required roles
+            if current_required_roles:
+                await self.config.guild(ctx.guild).required_roles.set([])
+                await ctx.send(
+                    "All required roles have been removed. Birthdays can be set by anyone and will "
+                    "always be announced."
+                )
+            else:
+                await ctx.send(
+                    "No roles are currently set. Birthdays can be set by anyone and will always be "
+                    "announced."
+                )
+                await ctx.send_help()
+        else:
+            # Build list of role IDs
+            role_ids = []
+            role_names = []
+
+            if role1:
+                role_ids.append(role1.id)
+                role_names.append(role1.name)
+
+            if role2:
+                role_ids.append(role2.id)
+                role_names.append(role2.name)
+
+            await self.config.guild(ctx.guild).required_roles.set(role_ids)
+
+            if len(role_ids) == 1:
+                await ctx.send(
+                    f"The required role has been set to {role_names[0]}. Users without this role "
+                    "will not have their birthday announced."
+                )
+            else:
+                await ctx.send(
+                    f"Required roles have been set to {' and '.join(role_names)}. Users must have "
+                    "at least one of these roles to have their birthday announced."
+                )
+
+    @bdset.command(name="requiredrolepurge")
+    async def requiredrole_purge(self, ctx: commands.Context):
+        """Remove birthdays from the database for users who no longer have any required role.
+
+        If you have required roles set, this will remove birthdays for users who don't have any of them.
+
+        Users without any required role are temporarily ignored until they regain at least one role.
+
+        This command allows you to permanently remove their birthday data from the database.
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        # Migrate old config if needed
+        old_require_role = await self.config.guild(ctx.guild).require_role()
+        required_roles = await self.config.guild(ctx.guild).required_roles()
+
+        if old_require_role and not required_roles:
+            # Migrate from old single role to new list format
+            required_roles = [old_require_role]
+            await self.config.guild(ctx.guild).required_roles.set(required_roles)
+            await self.config.guild(ctx.guild).require_role.clear()
+
+        if not required_roles:
             await ctx.send(
-                "You don't have a required role set. This command is only useful if you have a"
-                " required role set."
+                "You don't have any required roles set. This command is only useful if you have "
+                "required roles set."
             )
             return
 
-        role = ctx.guild.get_role(required_role)
-        if role is None:
+        # Get all the role objects
+        roles = []
+        for role_id in required_roles:
+            role = ctx.guild.get_role(role_id)
+            if role:
+                roles.append(role)
+
+        if not roles:
             await ctx.send(
-                "The required role has been deleted. This command is only useful if you have a"
-                " required role set."
+                "All required roles have been deleted. This command is only useful if you have "
+                "valid required roles set."
             )
             return
 
@@ -807,7 +881,10 @@ class BirthdayAdminCommands(MixinMeta):
             if member is None:
                 continue
 
-            if role not in member.roles:
+            # Check if member has at least one of the required roles
+            has_required_role = any(role in member.roles for role in roles)
+
+            if not has_required_role:
                 await self.config.member_from_ids(ctx.guild.id, member_id).birthday.clear()
                 purged += 1
 
