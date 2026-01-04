@@ -1026,15 +1026,12 @@ class EventChannels(commands.Cog):
     async def testeventroles(self, ctx, role: discord.Role = None):
         """Test command to see how many users have a given role for current events.
 
-        If no role is specified, shows member counts for all active event roles.
+        If no role is specified, shows member counts for all scheduled event roles.
         If a role is specified, shows the count for that specific role.
         """
-        guild = ctx.guild
-        stored = await self.config.guild(guild).event_channels()
+        from zoneinfo import ZoneInfo
 
-        if not stored:
-            await ctx.send("❌ No active event channels found.")
-            return
+        guild = ctx.guild
 
         # Fetch all scheduled events
         try:
@@ -1043,18 +1040,49 @@ class EventChannels(commands.Cog):
             await ctx.send("❌ Bot lacks permission to fetch scheduled events.")
             return
 
-        # Create a mapping of event IDs to event objects
-        event_map = {str(event.id): event for event in events if event.status == discord.EventStatus.scheduled}
+        # Filter to only scheduled events
+        scheduled_events = [e for e in events if e.status == discord.EventStatus.scheduled]
+
+        if not scheduled_events:
+            await ctx.send("❌ No scheduled events found.")
+            return
+
+        # Get timezone and role format settings
+        tz_name = await self.config.guild(guild).timezone()
+        role_format = await self.config.guild(guild).role_format()
+        server_tz = ZoneInfo(tz_name)
+
+        # Build mapping of event -> expected role name -> actual role
+        event_role_map = {}
+        for event in scheduled_events:
+            event_local_time = event.start_time.astimezone(server_tz)
+
+            day_abbrev = event_local_time.strftime("%a")
+            day = event_local_time.strftime("%d").lstrip("0")
+            month_abbrev = event_local_time.strftime("%b")
+            time_str = event_local_time.strftime("%H:%M")
+
+            expected_role_name = role_format.format(
+                name=event.name,
+                day_abbrev=day_abbrev,
+                day=day,
+                month_abbrev=month_abbrev,
+                time=time_str
+            )
+
+            # Find the role with this name
+            event_role = discord.utils.get(guild.roles, name=expected_role_name)
+            event_role_map[event] = (expected_role_name, event_role)
 
         if role:
-            # Check if the specified role is associated with any event
-            found_events = []
-            for event_id, event_data in stored.items():
-                if event_data.get("role") == role.id:
-                    found_events.append((event_id, event_data))
+            # Find which event(s) this role belongs to
+            matching_events = []
+            for event, (expected_name, event_role) in event_role_map.items():
+                if event_role and event_role.id == role.id:
+                    matching_events.append(event)
 
-            if not found_events:
-                await ctx.send(f"❌ Role {role.mention} is not associated with any current events.")
+            if not matching_events:
+                await ctx.send(f"❌ Role {role.mention} does not match any scheduled event roles.")
                 return
 
             # Show member count for this role
@@ -1079,51 +1107,30 @@ class EventChannels(commands.Cog):
                 )
 
             # List associated events
-            event_names = []
-            for event_id, _ in found_events:
-                if event_id in event_map:
-                    event_names.append(event_map[event_id].name)
-
-            if event_names:
-                embed.add_field(
-                    name="Associated Events",
-                    value="\n".join(f"• {name}" for name in event_names),
-                    inline=False
-                )
+            embed.add_field(
+                name="Associated Events",
+                value="\n".join(f"• {event.name}" for event in matching_events),
+                inline=False
+            )
 
             await ctx.send(embed=embed)
 
         else:
             # Show all event roles and their member counts
-            if not event_map:
-                await ctx.send("❌ No active scheduled events found.")
-                return
-
             embed = discord.Embed(
                 title="Event Role Member Counts",
-                description="Member counts for all active event roles",
+                description="Member counts for all scheduled event roles",
                 color=discord.Color.blue()
             )
 
             total_events = 0
             unreliable_counts = 0
 
-            for event_id, event_data in stored.items():
-                # Only show events that are still scheduled
-                if event_id not in event_map:
-                    continue
-
-                event = event_map[event_id]
-                role_id = event_data.get("role")
-
-                if not role_id:
-                    continue
-
-                event_role = guild.get_role(role_id)
+            for event, (expected_name, event_role) in event_role_map.items():
                 if not event_role:
                     embed.add_field(
                         name=f"⚠️ {event.name}",
-                        value="Role not found (may have been deleted)",
+                        value=f"Expected role `{expected_name}` not found",
                         inline=False
                     )
                     total_events += 1
@@ -1143,10 +1150,6 @@ class EventChannels(commands.Cog):
                 total_events += 1
                 if not is_reliable:
                     unreliable_counts += 1
-
-            if total_events == 0:
-                await ctx.send("❌ No active event roles found for current scheduled events.")
-                return
 
             if unreliable_counts > 0:
                 embed.set_footer(
