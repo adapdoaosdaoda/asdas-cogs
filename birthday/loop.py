@@ -83,22 +83,17 @@ class BirthdayLoop(MixinMeta):
         log.trace("Message: %s", message)
 
         async def send_and_react():
+            # Build the message content
+            content = message
             if image_url:
-                embed = discord.Embed(description=message)
-                embed.set_image(url=image_url)
-                sent_message = await channel.send(
-                    embed=embed,
-                    allowed_mentions=discord.AllowedMentions(
-                        everyone=False, roles=role_mention, users=True
-                    ),
-                )
-            else:
-                sent_message = await channel.send(
-                    message,
-                    allowed_mentions=discord.AllowedMentions(
-                        everyone=False, roles=role_mention, users=True
-                    ),
-                )
+                content = f"{message}\n{image_url}"
+
+            sent_message = await channel.send(
+                content,
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, roles=role_mention, users=True
+                ),
+            )
 
             if reaction:
                 try:
