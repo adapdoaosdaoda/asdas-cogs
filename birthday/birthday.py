@@ -39,7 +39,9 @@ class Birthday(
         self.config: Config = Config.get_conf(self, 418078199982063626, force_registration=True)
         self.config.register_global(version=0)
         self.config.register_guild(
-            time_utc_s=None,
+            time_utc_s=None,  # deprecated, kept for migration
+            role_time_utc_s=None,
+            message_time_utc_s=None,
             message_w_year=None,
             message_wo_year=None,
             channel_id=None,
@@ -55,6 +57,7 @@ class Birthday(
             image_path=None,  # local path to birthday image
             announcement_reaction=None,  # deprecated, kept for migration
             announcement_reactions=[],  # list of emojis to react to announcement messages with
+            announced_today=[],  # list of user IDs who received messages today
         )
         self.config.register_member(birthday={"year": 1, "month": 1, "day": 1})  # deprecated, kept for migration
         self.config.register_user(birthday={"year": 1, "month": 1, "day": 1})
@@ -104,7 +107,7 @@ class Birthday(
     async def cog_load(self) -> None:
         version = await self.config.version()
         if version == 0:  # first load so no need to update
-            await self.config.version.set(2)
+            await self.config.version.set(3)
         elif version == 1:
             # Migrate from member-based to user-based storage
             log.info("Migrating birthday data from member-based to user-based storage...")
@@ -120,8 +123,27 @@ class Birthday(
                             await self.config.user_from_id(user_id).birthday.set(data["birthday"])
                         migrated_users.add(user_id)
 
-            await self.config.version.set(2)
+            await self.config.version.set(3)
             log.info(f"Migrated {len(migrated_users)} user birthdays to global storage")
+        elif version == 2:
+            # Migrate from single time to separate role and message times
+            log.info("Migrating from single time to separate role and message times...")
+            all_guilds = await self.config.all_guilds()
+            migrated_guilds = 0
+
+            for guild_id, guild_data in all_guilds.items():
+                old_time = guild_data.get("time_utc_s")
+                if old_time is not None:
+                    # Set both role and message times to the old time
+                    await self.config.guild_from_id(guild_id).role_time_utc_s.set(old_time)
+                    await self.config.guild_from_id(guild_id).message_time_utc_s.set(old_time)
+                    # Update setup state from 5 to 7
+                    if guild_data.get("setup_state") == 5:
+                        await self.config.guild_from_id(guild_id).setup_state.set(7)
+                    migrated_guilds += 1
+
+            await self.config.version.set(3)
+            log.info(f"Migrated {migrated_guilds} guilds to separate time configuration")
 
         self.ready.set()
 
@@ -147,19 +169,20 @@ class Birthday(
     async def check_if_setup(self, guild: discord.Guild) -> bool:
         state = await self.config.guild(guild).setup_state()
         log.trace("setup state: %s", state)
-        return state == 5
+        return state == 7  # Updated from 5 to 7 to account for two separate time settings
 
     async def setup_check_detail(
         self, guild: discord.Guild, ctx: commands.Context | None = None
     ) -> tuple[dict[str, str], str]:
         state = await self.config.guild(guild).setup_state()
-        if state == 5:
+        if state == 7:
             return {
                 "Message with year": "Set",
                 "Message without year": "Set",
                 "Message channel": "Set",
                 "Role ID": "Set",
-                "Time": "Set",
+                "Role time": "Set",
+                "Message time": "Set",
             }, "Initial setup has been completed"
         else:
             if ctx:
@@ -171,10 +194,13 @@ class Birthday(
                 "Message without year": "Set",
                 "Message channel": "Set",
                 "Role ID": "Set",
-                "Time": "Set",
+                "Role time": "Set",
+                "Message time": "Set",
             }
-            if await self.config.guild(guild).time_utc_s() is None:
-                state["Time"] = f"Not set. Use `{p}bdset time`"
+            if await self.config.guild(guild).role_time_utc_s() is None:
+                state["Role time"] = f"Not set. Use `{p}bdset roletime`"
+            if await self.config.guild(guild).message_time_utc_s() is None:
+                state["Message time"] = f"Not set. Use `{p}bdset messagetime`"
             if await self.config.guild(guild).message_w_year() is None:
                 state["Message with year"] = f"Not set. Use `{p}bdset msgwithyear`"
             if await self.config.guild(guild).message_wo_year() is None:

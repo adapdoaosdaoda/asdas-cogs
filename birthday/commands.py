@@ -289,11 +289,31 @@ class BirthdayAdminCommands(MixinMeta):
             role = ctx.guild.get_role(conf["role_id"])
             table.add_row("Role", role.name if role else "Role deleted")
 
-            if conf["time_utc_s"] is None:
-                time = "Invalid. You must set this before getting notifications."
+            # Display role time
+            role_time_s = conf.get("role_time_utc_s")
+            if role_time_s is None:
+                # Try old time field for migration
+                old_time = conf.get("time_utc_s")
+                if old_time is not None:
+                    role_time = datetime.datetime.utcfromtimestamp(old_time).strftime("%H:%M UTC")
+                else:
+                    role_time = "Not set. Use `[p]bdset roletime`"
             else:
-                time = datetime.datetime.utcfromtimestamp(conf["time_utc_s"]).strftime("%H:%M UTC")
-                table.add_row("Time", time)
+                role_time = datetime.datetime.utcfromtimestamp(role_time_s).strftime("%H:%M UTC")
+            table.add_row("Role time", role_time)
+
+            # Display message time
+            message_time_s = conf.get("message_time_utc_s")
+            if message_time_s is None:
+                # Try old time field for migration
+                old_time = conf.get("time_utc_s")
+                if old_time is not None:
+                    message_time = datetime.datetime.utcfromtimestamp(old_time).strftime("%H:%M UTC")
+                else:
+                    message_time = "Not set. Use `[p]bdset messagetime`"
+            else:
+                message_time = datetime.datetime.utcfromtimestamp(message_time_s).strftime("%H:%M UTC")
+            table.add_row("Message time", message_time)
 
             table.add_row("Allow role mentions", str(conf["allow_role_mention"]))
 
@@ -466,14 +486,17 @@ class BirthdayAdminCommands(MixinMeta):
     @bdset.command()
     async def time(self, ctx: commands.Context, *, time: TimeConverter):
         """
-        Set the time of day for the birthday message.
+        Set the time of day for both birthday messages and role updates.
+
+        This sets both the role time and message time to the same value.
+        To set them separately, use `[p]bdset roletime` and `[p]bdset messagetime`.
 
         Minutes are ignored.
 
         **Examples:**
-        - `[p]bdset time 7:00` - set the time to 7:00AM UTC
-        - `[p]bdset time 12AM` - set the time to midnight UTC
-        - `[p]bdset time 3PM` - set the time to 3:00PM UTC
+        - `[p]bdset time 7:00` - set both times to 7:00AM UTC
+        - `[p]bdset time 12AM` - set both times to midnight UTC
+        - `[p]bdset time 3PM` - set both times to 3:00PM UTC
         """
         # group has guild check
         if TYPE_CHECKING:
@@ -486,26 +509,94 @@ class BirthdayAdminCommands(MixinMeta):
         time_utc_s = int((time - midnight).total_seconds())
 
         async with self.config.guild(ctx.guild).all() as conf:
-            old = conf["time_utc_s"]
-            conf["time_utc_s"] = time_utc_s
+            old_role = conf.get("role_time_utc_s")
+            old_message = conf.get("message_time_utc_s")
+
+            conf["role_time_utc_s"] = time_utc_s
+            conf["message_time_utc_s"] = time_utc_s
+
+            # Increment setup state if either was None
+            if old_role is None:
+                conf["setup_state"] += 1
+            if old_message is None:
+                conf["setup_state"] += 1
+
+        await ctx.send(
+            f"Time set! I'll send birthday messages and update birthday roles at"
+            f" {time.strftime('%H:%M')} UTC.\n\n"
+            f"To set different times for roles and messages, use `{ctx.clean_prefix}bdset roletime` "
+            f"and `{ctx.clean_prefix}bdset messagetime`."
+        )
+
+    @bdset.command()
+    async def roletime(self, ctx: commands.Context, *, time: TimeConverter):
+        """
+        Set the time of day for birthday role updates.
+
+        The birthday role will be assigned/removed at this time.
+
+        Minutes are ignored.
+
+        **Examples:**
+        - `[p]bdset roletime 0:00` - set role time to midnight UTC
+        - `[p]bdset roletime 6AM` - set role time to 6:00AM UTC
+        - `[p]bdset roletime 12PM` - set role time to noon UTC
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        midnight = datetime.datetime.utcnow().replace(
+            year=1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+
+        time_utc_s = int((time - midnight).total_seconds())
+
+        async with self.config.guild(ctx.guild).all() as conf:
+            old = conf.get("role_time_utc_s")
+            conf["role_time_utc_s"] = time_utc_s
 
             if old is None:
                 conf["setup_state"] += 1
 
-        m = (
-            "Time set! I'll send the birthday message and update the birthday role at"
-            f" {time.strftime('%H:%M')} UTC."
+        await ctx.send(
+            f"Role time set! I'll update birthday roles at {time.strftime('%H:%M')} UTC."
         )
 
-        if old is not None:
-            old_dt = datetime.datetime.utcfromtimestamp(old)
-            if time > old_dt and time > datetime.datetime.utcnow():
-                m += (
-                    "\n\nThe time you set is after the time I currently send the birthday message,"
-                    " so the birthday message will be sent for a second time."
-                )
+    @bdset.command()
+    async def messagetime(self, ctx: commands.Context, *, time: TimeConverter):
+        """
+        Set the time of day for birthday message announcements.
 
-        await ctx.send(m)
+        Birthday messages will be sent at this time.
+
+        Minutes are ignored.
+
+        **Examples:**
+        - `[p]bdset messagetime 9:00` - set message time to 9:00AM UTC
+        - `[p]bdset messagetime 12PM` - set message time to noon UTC
+        - `[p]bdset messagetime 6PM` - set message time to 6:00PM UTC
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        midnight = datetime.datetime.utcnow().replace(
+            year=1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+
+        time_utc_s = int((time - midnight).total_seconds())
+
+        async with self.config.guild(ctx.guild).all() as conf:
+            old = conf.get("message_time_utc_s")
+            conf["message_time_utc_s"] = time_utc_s
+
+            if old is None:
+                conf["setup_state"] += 1
+
+        await ctx.send(
+            f"Message time set! I'll send birthday announcements at {time.strftime('%H:%M')} UTC."
+        )
 
     @bdset.command()
     async def msgwithoutyear(self, ctx: commands.Context, *, message: str):
@@ -773,8 +864,9 @@ class BirthdayAdminCommands(MixinMeta):
                 "role_id": guild_data.get("role", None),
                 "message_w_year": "{mention} is now **{new_age} years old**. :tada:",
                 "message_wo_year": "It's {mention}'s birthday today! :tada:",
-                "time_utc_s": 0,  # UTC midnight
-                "setup_state": 5,
+                "role_time_utc_s": 0,  # UTC midnight
+                "message_time_utc_s": 0,  # UTC midnight
+                "setup_state": 7,  # Updated from 5 to 7 for separate times
             }
             await self.config.guild(guild).set_raw(value=new_data)
 
