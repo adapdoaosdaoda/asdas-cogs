@@ -159,7 +159,7 @@ class BirthdayLoop(MixinMeta):
             await self.loop_meta.sleep_until_next()
 
     async def _update_birthdays(self):
-        """Update birthdays"""
+        """Update birthdays - handle roles and messages at different times"""
         all_birthdays: dict[int, dict[str, Any]] = await self.config.all_users()
         all_settings: dict[int, dict[str, Any]] = await self.config.all_guilds()
 
@@ -173,23 +173,43 @@ class BirthdayLoop(MixinMeta):
                 log.trace("Guild %s is not setup, skipping", guild_id)
                 continue
 
-            birthday_members: dict[discord.Member, datetime.datetime] = {}
+            # Get the separate times for roles and messages
+            role_time_utc_s = guild_settings.get("role_time_utc_s")
+            message_time_utc_s = guild_settings.get("message_time_utc_s")
 
-            hour_td = datetime.timedelta(seconds=guild_settings["time_utc_s"])
+            # Migrate old time_utc_s if needed
+            old_time = guild_settings.get("time_utc_s")
+            if old_time is not None and (role_time_utc_s is None or message_time_utc_s is None):
+                role_time_utc_s = old_time
+                message_time_utc_s = old_time
+                await self.config.guild(guild).role_time_utc_s.set(old_time)
+                await self.config.guild(guild).message_time_utc_s.set(old_time)
+
+            if role_time_utc_s is None or message_time_utc_s is None:
+                log.trace("Guild %s doesn't have times configured, skipping", guild_id)
+                continue
+
+            role_hour_td = datetime.timedelta(seconds=role_time_utc_s)
+            message_hour_td = datetime.timedelta(seconds=message_time_utc_s)
 
             since_midnight = datetime.datetime.utcnow().replace(
                 minute=0, second=0, microsecond=0
             ) - datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-            if since_midnight.total_seconds() != hour_td.total_seconds():
-                log.trace("Not correct time for update for guild %s, skipping", guild_id)
+            is_role_time = since_midnight.total_seconds() == role_hour_td.total_seconds()
+            is_message_time = since_midnight.total_seconds() == message_hour_td.total_seconds()
+
+            # Skip if it's neither role time nor message time
+            if not is_role_time and not is_message_time:
+                log.trace("Not role time or message time for guild %s, skipping", guild_id)
                 continue
 
-            today_dt = (datetime.datetime.utcnow() - hour_td).replace(
+            # Use role time for determining "today"
+            today_dt = (datetime.datetime.utcnow() - role_hour_td).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
 
-            start = today_dt + hour_td
+            start = today_dt + role_hour_td
             end = start + datetime.timedelta(days=1)
 
             # Get required roles (migrate from old config if needed)
@@ -209,6 +229,8 @@ class BirthdayLoop(MixinMeta):
                 if role:
                     required_roles.append(role)
 
+            birthday_members: dict[discord.Member, datetime.datetime] = {}
+
             # Iterate through all users and check if they're in this guild
             async for user_id, user_data in AsyncIter(all_birthdays.items(), steps=50):
                 birthday = user_data.get("birthday")
@@ -222,7 +244,7 @@ class BirthdayLoop(MixinMeta):
                 proper_bday_dt = datetime.datetime(
                     year=birthday["year"] or 1, month=birthday["month"], day=birthday["day"]
                 )
-                this_year_bday_dt = proper_bday_dt.replace(year=today_dt.year) + hour_td
+                this_year_bday_dt = proper_bday_dt.replace(year=today_dt.year) + role_hour_td
 
                 # Check if member has at least one required role (if any are set)
                 if required_roles and not any(role in member.roles for role in required_roles):
@@ -246,33 +268,59 @@ class BirthdayLoop(MixinMeta):
                 )
                 continue
 
-            channel = guild.get_channel(guild_settings["channel_id"])
-            if channel is None or not isinstance(channel, discord.TextChannel):
-                log.warning(
-                    "Channel %s for guild %s (%s) was not found",
-                    guild_settings["channel_id"],
-                    guild_id,
-                    guild.name,
-                )
-                continue
-
             log.trace("Members with birthdays in guild %s: %s", guild_id, birthday_members)
 
-            # Get image path and announcement reactions for announcements
-            image_path = guild_settings.get("image_path")
+            # Handle role assignments/removals at role time
+            if is_role_time:
+                log.trace("Processing role updates for guild %s", guild_id)
+                for member, dt in birthday_members.items():
+                    if member not in role.members:
+                        await self.add_role(guild.me, member, role)
 
-            # Migrate from old single reaction to new list format
-            old_reaction = guild_settings.get("announcement_reaction")
-            announcement_reactions = guild_settings.get("announcement_reactions", [])
+                for member in role.members:
+                    if member not in birthday_members:
+                        await self.remove_role(guild.me, member, role)
 
-            if old_reaction and not announcement_reactions:
-                announcement_reactions = [old_reaction]
-                await self.config.guild(guild).announcement_reactions.set(announcement_reactions)
-                await self.config.guild(guild).announcement_reaction.clear()
+            # Handle message sending at message time
+            if is_message_time:
+                log.trace("Processing message updates for guild %s", guild_id)
 
-            for member, dt in birthday_members.items():
-                if member not in role.members:
-                    await self.add_role(guild.me, member, role)
+                channel = guild.get_channel(guild_settings["channel_id"])
+                if channel is None or not isinstance(channel, discord.TextChannel):
+                    log.warning(
+                        "Channel %s for guild %s (%s) was not found",
+                        guild_settings["channel_id"],
+                        guild_id,
+                        guild.name,
+                    )
+                    continue
+
+                # Get image path and announcement reactions for announcements
+                image_path = guild_settings.get("image_path")
+
+                # Migrate from old single reaction to new list format
+                old_reaction = guild_settings.get("announcement_reaction")
+                announcement_reactions = guild_settings.get("announcement_reactions", [])
+
+                if old_reaction and not announcement_reactions:
+                    announcement_reactions = [old_reaction]
+                    await self.config.guild(guild).announcement_reactions.set(announcement_reactions)
+                    await self.config.guild(guild).announcement_reaction.clear()
+
+                # Get list of users who already received messages today
+                announced_today = guild_settings.get("announced_today", [])
+
+                # Clear announced_today list if it's midnight UTC (start of new day)
+                current_hour = datetime.datetime.utcnow().hour
+                if current_hour == 0:
+                    announced_today = []
+                    await self.config.guild(guild).announced_today.set([])
+
+                for member, dt in birthday_members.items():
+                    # Skip if already announced today
+                    if member.id in announced_today:
+                        log.trace("Member %s already announced today in guild %s, skipping", member.id, guild_id)
+                        continue
 
                     if dt.year == 1:
                         await self.send_announcement(
@@ -282,7 +330,6 @@ class BirthdayLoop(MixinMeta):
                             image_path,
                             announcement_reactions,
                         )
-
                     else:
                         age = today_dt.year - dt.year
                         await self.send_announcement(
@@ -295,8 +342,10 @@ class BirthdayLoop(MixinMeta):
                             announcement_reactions,
                         )
 
-            for member in role.members:
-                if member not in birthday_members:
-                    await self.remove_role(guild.me, member, role)
+                    # Mark this member as announced today
+                    announced_today.append(member.id)
+
+                # Save the updated announced_today list
+                await self.config.guild(guild).announced_today.set(announced_today)
 
             log.trace("Potential updates for %s have been queued", guild_id)
