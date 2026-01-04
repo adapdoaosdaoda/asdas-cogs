@@ -352,6 +352,12 @@ class BirthdayAdminCommands(MixinMeta):
             else:
                 table.add_row("Announcement image", "Not set")
 
+            announcement_reaction = conf.get("announcement_reaction")
+            if announcement_reaction:
+                table.add_row("Announcement reaction", announcement_reaction)
+            else:
+                table.add_row("Announcement reaction", "Not set")
+
             message_w_year = conf["message_w_year"] or "No message set. You must set this before getting notifications."
             message_wo_year = conf["message_wo_year"] or "No message set. You must set this before getting notifications."
 
@@ -950,6 +956,45 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send(f"Birthday announcements will now include the image: {image_url}")
 
     @bdset.command()
+    async def reaction(self, ctx: commands.Context, emoji: Union[str, None] = None):
+        """
+        Set an emoji reaction to add to birthday announcement messages.
+
+        The bot will automatically react to birthday announcements with this emoji.
+
+        Provide a unicode emoji (like 🎉) or a custom server emoji.
+        If no emoji is provided, the reaction will be removed from birthday announcements.
+
+        **Example:**
+        - `[p]bdset reaction 🎉` - set the birthday reaction to 🎉
+        - `[p]bdset reaction 🎂` - set the birthday reaction to 🎂
+        - `[p]bdset reaction :custom_emoji:` - set the birthday reaction to a custom emoji
+        - `[p]bdset reaction` - remove the birthday reaction
+        """
+        # group has guild check
+        if TYPE_CHECKING:
+            assert ctx.guild is not None
+
+        if emoji is None:
+            await self.config.guild(ctx.guild).announcement_reaction.clear()
+            await ctx.send("The birthday announcement reaction has been removed.")
+        else:
+            # Validate emoji by testing if it can be added as a reaction
+            try:
+                await ctx.message.add_reaction(emoji)
+                await ctx.message.clear_reaction(emoji)
+            except discord.HTTPException:
+                await ctx.send(
+                    "Invalid emoji! Make sure the emoji is:\n"
+                    "- A valid unicode emoji (like 🎉)\n"
+                    "- A custom emoji from this server or a server the bot is in"
+                )
+                return
+
+            await self.config.guild(ctx.guild).announcement_reaction.set(emoji)
+            await ctx.send(f"Birthday announcements will now be reacted to with {emoji}")
+
+    @bdset.command()
     async def test(self, ctx: commands.Context, *, member: discord.Member = None):
         """
         Send a test birthday announcement message.
@@ -1009,6 +1054,9 @@ class BirthdayAdminCommands(MixinMeta):
         # Get role mention setting
         allow_role_mention = await self.config.guild(ctx.guild).allow_role_mention()
 
+        # Get announcement reaction
+        announcement_reaction = await self.config.guild(ctx.guild).announcement_reaction()
+
         # Send the test message
         await ctx.send(f"Sending test birthday announcement to {channel.mention}...")
 
@@ -1016,19 +1064,31 @@ class BirthdayAdminCommands(MixinMeta):
             if image_url:
                 embed = discord.Embed(description=formatted_message)
                 embed.set_image(url=image_url)
-                await channel.send(
+                sent_message = await channel.send(
                     embed=embed,
                     allowed_mentions=discord.AllowedMentions(
                         everyone=False, roles=allow_role_mention, users=True
                     ),
                 )
             else:
-                await channel.send(
+                sent_message = await channel.send(
                     formatted_message,
                     allowed_mentions=discord.AllowedMentions(
                         everyone=False, roles=allow_role_mention, users=True
                     ),
                 )
+
+            # Add reaction if configured
+            if announcement_reaction:
+                try:
+                    await sent_message.add_reaction(announcement_reaction)
+                except discord.HTTPException:
+                    await ctx.send(
+                        f"Test announcement sent, but failed to add reaction {announcement_reaction}. "
+                        "The emoji may no longer be valid."
+                    )
+                    return
+
             await ctx.send("Test announcement sent successfully!")
         except discord.HTTPException as e:
             await ctx.send(f"Failed to send test announcement: {e}")
