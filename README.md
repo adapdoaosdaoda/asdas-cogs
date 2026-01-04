@@ -95,12 +95,14 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 ## 📝 Credits
 
 - **Claude** - Everything 🎉🎊
+- **Birthday** - Cloned from [Vexed01's Birthday cog](https://github.com/Vexed01/Vex-Cogs), enhanced with channel locking and the ability to add an image the messages
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
 - **TradeCommission** - Custom development for Red-Discord Bot
 
 ## 📄 License
-- **Reminders** - Cloned from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
+- **Birthday** - Identical to original from [Vex-cogs](https://github.com/Vexed01/Vex-Cogs), [GNU General Public License v3.0](https://github.com/Vexed01/Vex-Cogs/blob/master/LICENSE)
+- **Reminders** - Identical to original from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
 
 Unless otherwise stated, do whatever you want.
