@@ -51,7 +51,8 @@ class Birthday(
             allow_role_mention=False,
             set_channel_id=None,  # channel where users can set their birthday
             image_url=None,  # URL of image to include in birthday announcements
-            announcement_reaction=None,  # emoji to react to announcement messages with
+            announcement_reaction=None,  # deprecated, kept for migration
+            announcement_reactions=[],  # list of emojis to react to announcement messages with
         )
         self.config.register_member(birthday={"year": 1, "month": 1, "day": 1})
 
