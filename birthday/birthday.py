@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import discord
-from redbot.core import commands
+from redbot.core import commands, data_manager
 from redbot.core.bot import Red
 from redbot.core.config import Config
 
@@ -50,11 +51,17 @@ class Birthday(
             required_roles=[],  # list of role IDs, user needs at least one
             allow_role_mention=False,
             set_channel_id=None,  # channel where users can set their birthday
-            image_url=None,  # URL of image to include in birthday announcements
+            image_url=None,  # deprecated, kept for migration
+            image_path=None,  # local path to birthday image
             announcement_reaction=None,  # deprecated, kept for migration
             announcement_reactions=[],  # list of emojis to react to announcement messages with
         )
         self.config.register_member(birthday={"year": 1, "month": 1, "day": 1})
+
+        # Set up data directory for storing images
+        self.data_path = data_manager.cog_data_path(self)
+        self.images_path = self.data_path / "images"
+        self.images_path.mkdir(parents=True, exist_ok=True)
 
         self.loop_meta = VexLoop("Birthday loop", 60 * 60)
         self.loop = self.bot.loop.create_task(self.birthday_loop())

@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import datetime
 from collections import defaultdict
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Union
 
+import aiohttp
 import discord
 from redbot.core import Config, commands
 from redbot.core.commands import CheckFailure
@@ -346,8 +348,8 @@ class BirthdayAdminCommands(MixinMeta):
                     "Not set. Users can set their birthday in any channel.",
                 )
 
-            image_url = conf.get("image_url")
-            if image_url:
+            image_path = conf.get("image_path")
+            if image_path and Path(image_path).exists():
                 table.add_row("Announcement image", "Set")
             else:
                 table.add_row("Announcement image", "Not set")
@@ -934,7 +936,7 @@ class BirthdayAdminCommands(MixinMeta):
     @bdset.command()
     async def image(self, ctx: commands.Context, image_url: Union[str, None] = None):
         """
-        Set an image URL to include in birthday announcements.
+        Set an image to include in birthday announcements.
 
         You can either provide a direct link to an image or upload an image file directly.
 
@@ -958,14 +960,71 @@ class BirthdayAdminCommands(MixinMeta):
                 return
 
             image_url = attachment.url
-            await self.config.guild(ctx.guild).image_url.set(image_url)
-            await ctx.send(f"Birthday announcements will now include the uploaded image.")
-        elif image_url is None:
+
+        # Remove image if no URL and no attachment
+        if image_url is None:
+            # Delete old image file if it exists
+            old_image_path = await self.config.guild(ctx.guild).image_path()
+            if old_image_path:
+                old_path = Path(old_image_path)
+                if old_path.exists():
+                    old_path.unlink()
+
+            await self.config.guild(ctx.guild).image_path.clear()
             await self.config.guild(ctx.guild).image_url.clear()
             await ctx.send("The birthday announcement image has been removed.")
-        else:
-            await self.config.guild(ctx.guild).image_url.set(image_url)
-            await ctx.send(f"Birthday announcements will now include the image: {image_url}")
+            return
+
+        # Download and save the image
+        async with ctx.typing():
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url) as resp:
+                        if resp.status != 200:
+                            await ctx.send(f"Failed to download image. Status code: {resp.status}")
+                            return
+
+                        # Get file extension from content type
+                        content_type = resp.headers.get('Content-Type', '')
+                        if not content_type.startswith('image/'):
+                            await ctx.send("The URL doesn't appear to point to an image.")
+                            return
+
+                        # Determine file extension
+                        ext_map = {
+                            'image/png': '.png',
+                            'image/jpeg': '.jpg',
+                            'image/jpg': '.jpg',
+                            'image/gif': '.gif',
+                            'image/webp': '.webp',
+                        }
+                        ext = ext_map.get(content_type, '.png')
+
+                        # Delete old image if it exists
+                        old_image_path = await self.config.guild(ctx.guild).image_path()
+                        if old_image_path:
+                            old_path = Path(old_image_path)
+                            if old_path.exists():
+                                old_path.unlink()
+
+                        # Save new image
+                        image_filename = f"{ctx.guild.id}_birthday{ext}"
+                        image_path = self.images_path / image_filename
+
+                        image_data = await resp.read()
+                        image_path.write_bytes(image_data)
+
+                        # Store the path in config
+                        await self.config.guild(ctx.guild).image_path.set(str(image_path))
+                        await self.config.guild(ctx.guild).image_url.clear()
+
+                        await ctx.send(f"Birthday announcements will now include this image.")
+
+            except aiohttp.ClientError as e:
+                await ctx.send(f"Failed to download image: {e}")
+            except Exception as e:
+                log.exception("Error downloading birthday image", exc_info=e)
+                await ctx.send(f"An error occurred while downloading the image.")
 
     @bdset.command()
     async def reaction(self, ctx: commands.Context, *emojis: str):
@@ -1086,8 +1145,8 @@ class BirthdayAdminCommands(MixinMeta):
             message = await self.config.guild(ctx.guild).message_wo_year()
             formatted_message = format_bday_message(message, member)
 
-        # Get image URL
-        image_url = await self.config.guild(ctx.guild).image_url()
+        # Get image path
+        image_path = await self.config.guild(ctx.guild).image_path()
 
         # Get role mention setting
         allow_role_mention = await self.config.guild(ctx.guild).allow_role_mention()
@@ -1106,15 +1165,14 @@ class BirthdayAdminCommands(MixinMeta):
         await ctx.send(f"Sending test birthday announcement to {channel.mention}...")
 
         try:
-            # Build the message content and optional embed for image
-            embed = None
-            if image_url:
-                embed = discord.Embed()
-                embed.set_image(url=image_url)
+            # Prepare image file if exists
+            file = None
+            if image_path and Path(image_path).exists():
+                file = discord.File(image_path, filename=Path(image_path).name)
 
             sent_message = await channel.send(
                 formatted_message,
-                embed=embed,
+                file=file,
                 allowed_mentions=discord.AllowedMentions(
                     everyone=False, roles=allow_role_mention, users=True
                 ),

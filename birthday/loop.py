@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from pathlib import Path
 from typing import Any, NoReturn
 
 import discord
@@ -68,7 +69,7 @@ class BirthdayLoop(MixinMeta):
         )
 
     async def send_announcement(
-        self, channel: discord.TextChannel, message: str, role_mention: bool, image_url: str | None = None, reactions: list[str] | None = None
+        self, channel: discord.TextChannel, message: str, role_mention: bool, image_path: str | None = None, reactions: list[str] | None = None
     ):
         if error := channel_perm_check(channel.guild.me, channel):
             log.warning(
@@ -83,15 +84,14 @@ class BirthdayLoop(MixinMeta):
         log.trace("Message: %s", message)
 
         async def send_and_react():
-            # Build the message content and optional embed for image
-            embed = None
-            if image_url:
-                embed = discord.Embed()
-                embed.set_image(url=image_url)
+            # Prepare image file if exists
+            file = None
+            if image_path and Path(image_path).exists():
+                file = discord.File(image_path, filename=Path(image_path).name)
 
             sent_message = await channel.send(
                 message,
-                embed=embed,
+                file=file,
                 allowed_mentions=discord.AllowedMentions(
                     everyone=False, roles=role_mention, users=True
                 ),
@@ -263,8 +263,8 @@ class BirthdayLoop(MixinMeta):
 
             log.trace("Members with birthdays in guild %s: %s", guild_id, birthday_members)
 
-            # Get image URL and announcement reactions for announcements
-            image_url = all_settings[guild.id].get("image_url")
+            # Get image path and announcement reactions for announcements
+            image_path = all_settings[guild.id].get("image_path")
 
             # Migrate from old single reaction to new list format
             old_reaction = all_settings[guild.id].get("announcement_reaction")
@@ -284,7 +284,7 @@ class BirthdayLoop(MixinMeta):
                             channel,
                             format_bday_message(all_settings[guild.id]["message_wo_year"], member),
                             all_settings[guild.id]["allow_role_mention"],
-                            image_url,
+                            image_path,
                             announcement_reactions,
                         )
 
@@ -296,7 +296,7 @@ class BirthdayLoop(MixinMeta):
                                 all_settings[guild.id]["message_w_year"], member, age
                             ),
                             all_settings[guild.id]["allow_role_mention"],
-                            image_url,
+                            image_path,
                             announcement_reactions,
                         )
 
