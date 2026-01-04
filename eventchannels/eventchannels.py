@@ -103,6 +103,7 @@ class EventChannels(commands.Cog):
         # Testing
         test_commands = (
             f"`{prefix}eventchannels testchannellock` - Test channel locking permissions\n"
+            f"`{prefix}eventchannels testeventroles [role]` - Show event role member counts\n"
             f"`{prefix}eventchannels stresstest` - Comprehensive stress test of all features\n"
         )
         embed.add_field(name="Testing", value=test_commands, inline=False)
@@ -1018,6 +1019,141 @@ class EventChannels(commands.Cog):
                 except:
                     pass
             await ctx.send("✅ Test complete and cleanup finished.")
+
+    @commands.guild_only()
+    @commands.has_permissions(manage_guild=True)
+    @eventchannels.command(name="testeventroles")
+    async def testeventroles(self, ctx, role: discord.Role = None):
+        """Test command to see how many users have a given role for current events.
+
+        If no role is specified, shows member counts for all active event roles.
+        If a role is specified, shows the count for that specific role.
+        """
+        guild = ctx.guild
+        stored = await self.config.guild(guild).event_channels()
+
+        if not stored:
+            await ctx.send("❌ No active event channels found.")
+            return
+
+        # Fetch all scheduled events
+        try:
+            events = await guild.fetch_scheduled_events()
+        except discord.Forbidden:
+            await ctx.send("❌ Bot lacks permission to fetch scheduled events.")
+            return
+
+        # Create a mapping of event IDs to event objects
+        event_map = {str(event.id): event for event in events if event.status == discord.EventStatus.scheduled}
+
+        if role:
+            # Check if the specified role is associated with any event
+            found_events = []
+            for event_id, event_data in stored.items():
+                if event_data.get("role") == role.id:
+                    found_events.append((event_id, event_data))
+
+            if not found_events:
+                await ctx.send(f"❌ Role {role.mention} is not associated with any current events.")
+                return
+
+            # Show member count for this role
+            member_count, is_reliable = await self._get_role_member_count(guild, role)
+
+            embed = discord.Embed(
+                title=f"Event Role Member Count: {role.name}",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="Member Count",
+                value=f"{member_count} members",
+                inline=False
+            )
+
+            if not is_reliable:
+                embed.add_field(
+                    name="⚠️ Warning",
+                    value="Member count may be incomplete. Enable GUILD_MEMBERS intent for accurate counts.",
+                    inline=False
+                )
+
+            # List associated events
+            event_names = []
+            for event_id, _ in found_events:
+                if event_id in event_map:
+                    event_names.append(event_map[event_id].name)
+
+            if event_names:
+                embed.add_field(
+                    name="Associated Events",
+                    value="\n".join(f"• {name}" for name in event_names),
+                    inline=False
+                )
+
+            await ctx.send(embed=embed)
+
+        else:
+            # Show all event roles and their member counts
+            if not event_map:
+                await ctx.send("❌ No active scheduled events found.")
+                return
+
+            embed = discord.Embed(
+                title="Event Role Member Counts",
+                description="Member counts for all active event roles",
+                color=discord.Color.blue()
+            )
+
+            total_events = 0
+            unreliable_counts = 0
+
+            for event_id, event_data in stored.items():
+                # Only show events that are still scheduled
+                if event_id not in event_map:
+                    continue
+
+                event = event_map[event_id]
+                role_id = event_data.get("role")
+
+                if not role_id:
+                    continue
+
+                event_role = guild.get_role(role_id)
+                if not event_role:
+                    embed.add_field(
+                        name=f"⚠️ {event.name}",
+                        value="Role not found (may have been deleted)",
+                        inline=False
+                    )
+                    total_events += 1
+                    continue
+
+                member_count, is_reliable = await self._get_role_member_count(guild, event_role, event.name)
+
+                status_emoji = "⚠️" if not is_reliable else "✅"
+                reliability_note = " (may be incomplete)" if not is_reliable else ""
+
+                embed.add_field(
+                    name=f"{status_emoji} {event.name}",
+                    value=f"Role: {event_role.mention}\nMembers: **{member_count}**{reliability_note}",
+                    inline=False
+                )
+
+                total_events += 1
+                if not is_reliable:
+                    unreliable_counts += 1
+
+            if total_events == 0:
+                await ctx.send("❌ No active event roles found for current scheduled events.")
+                return
+
+            if unreliable_counts > 0:
+                embed.set_footer(
+                    text=f"⚠️ {unreliable_counts} count(s) may be incomplete. Enable GUILD_MEMBERS intent for accuracy."
+                )
+
+            await ctx.send(embed=embed)
 
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)

@@ -151,6 +151,24 @@ Test the channel locking mechanism to verify bot permissions.
 !eventchannels testchannellock
 ```
 
+#### `[p]eventchannels testeventroles [role]`
+Test command to see how many users have a given role for current events.
+
+**Usage:**
+- Without arguments: Shows member counts for all active event roles
+- With role: Shows member count for a specific role if it's associated with an event
+
+**Examples:**
+```
+!eventchannels testeventroles
+!eventchannels testeventroles @Event Role
+```
+
+**What It Shows:**
+- Number of members with each event role
+- Associated event names
+- Warning if member counts may be incomplete (missing GUILD_MEMBERS intent)
+
 #### `[p]eventchannels stresstest`
 Comprehensive stress test of all EventChannels features.
 
