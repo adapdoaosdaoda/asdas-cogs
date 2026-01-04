@@ -68,7 +68,7 @@ class BirthdayLoop(MixinMeta):
         )
 
     async def send_announcement(
-        self, channel: discord.TextChannel, message: str, role_mention: bool, image_url: str | None = None, reaction: str | None = None
+        self, channel: discord.TextChannel, message: str, role_mention: bool, image_url: str | None = None, reactions: list[str] | None = None
     ):
         if error := channel_perm_check(channel.guild.me, channel):
             log.warning(
@@ -83,33 +83,29 @@ class BirthdayLoop(MixinMeta):
         log.trace("Message: %s", message)
 
         async def send_and_react():
+            # Build the message content
+            content = message
             if image_url:
-                embed = discord.Embed(description=message)
-                embed.set_image(url=image_url)
-                sent_message = await channel.send(
-                    embed=embed,
-                    allowed_mentions=discord.AllowedMentions(
-                        everyone=False, roles=role_mention, users=True
-                    ),
-                )
-            else:
-                sent_message = await channel.send(
-                    message,
-                    allowed_mentions=discord.AllowedMentions(
-                        everyone=False, roles=role_mention, users=True
-                    ),
-                )
+                content = f"{message}\n{image_url}"
 
-            if reaction:
-                try:
-                    await sent_message.add_reaction(reaction)
-                except discord.HTTPException as e:
-                    log.warning(
-                        "Failed to add reaction %s to announcement in guild %s: %s",
-                        reaction,
-                        channel.guild.id,
-                        e,
-                    )
+            sent_message = await channel.send(
+                content,
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, roles=role_mention, users=True
+                ),
+            )
+
+            if reactions:
+                for reaction in reactions:
+                    try:
+                        await sent_message.add_reaction(reaction)
+                    except discord.HTTPException as e:
+                        log.warning(
+                            "Failed to add reaction %s to announcement in guild %s: %s",
+                            reaction,
+                            channel.guild.id,
+                            e,
+                        )
 
         self.coro_queue.put_nowait(send_and_react())
 
@@ -265,9 +261,17 @@ class BirthdayLoop(MixinMeta):
 
             log.trace("Members with birthdays in guild %s: %s", guild_id, birthday_members)
 
-            # Get image URL and announcement reaction for announcements
+            # Get image URL and announcement reactions for announcements
             image_url = all_settings[guild.id].get("image_url")
-            announcement_reaction = all_settings[guild.id].get("announcement_reaction")
+
+            # Migrate from old single reaction to new list format
+            old_reaction = all_settings[guild.id].get("announcement_reaction")
+            announcement_reactions = all_settings[guild.id].get("announcement_reactions", [])
+
+            if old_reaction and not announcement_reactions:
+                announcement_reactions = [old_reaction]
+                await self.config.guild(guild).announcement_reactions.set(announcement_reactions)
+                await self.config.guild(guild).announcement_reaction.clear()
 
             for member, dt in birthday_members.items():
                 if member not in role.members:
@@ -279,7 +283,7 @@ class BirthdayLoop(MixinMeta):
                             format_bday_message(all_settings[guild.id]["message_wo_year"], member),
                             all_settings[guild.id]["allow_role_mention"],
                             image_url,
-                            announcement_reaction,
+                            announcement_reactions,
                         )
 
                     else:
@@ -291,7 +295,7 @@ class BirthdayLoop(MixinMeta):
                             ),
                             all_settings[guild.id]["allow_role_mention"],
                             image_url,
-                            announcement_reaction,
+                            announcement_reactions,
                         )
 
             for member in role.members:
