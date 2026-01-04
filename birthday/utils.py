@@ -68,6 +68,11 @@ def channel_perm_check(me: Member, channel: GuildChannel) -> str:
     str
         Error message or empty string
     """
-    if channel.permissions_for(me).send_messages is False:
+    perms = channel.permissions_for(me)
+    if perms.send_messages is False:
         return "I don't have the Send Messages permission."
+    if perms.attach_files is False:
+        return "I don't have the Attach Files permission."
+    if perms.add_reactions is False:
+        return "I don't have the Add Reactions permission."
     return ""
