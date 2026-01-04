@@ -1,0 +1,25 @@
+{
+  "name": "TC",
+  "short": "Turnip Calculator notifications for Animal Crossing",
+  "description": "Schedule customizable notifications for Animal Crossing turnip market events. Includes Sunday pre-shop restock reminders and Wednesday sell recommendations with full timezone support.",
+  "end_user_data_statement": "This cog stores guild-specific configuration including channel IDs, role IDs, notification schedules, and custom messages.",
+  "install_msg": "Thank you for installing TC! Use `[p]tc channel` to set up your notification channel, then `[p]tc enable` to start receiving turnip notifications.",
+  "author": [
+    "asdas-cogs"
+  ],
+  "required_cogs": {},
+  "requirements": [
+    "pytz"
+  ],
+  "tags": [
+    "notifications",
+    "animal crossing",
+    "turnips",
+    "schedule",
+    "reminders"
+  ],
+  "min_bot_version": "3.4.0",
+  "hidden": false,
+  "disabled": false,
+  "type": "COG"
+}
