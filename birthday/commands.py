@@ -98,9 +98,11 @@ class BirthdayCommands(MixinMeta):
             bday["month"] = birthday.month
             bday["day"] = birthday.day
 
-        await ctx.send("✅ Your birthday has been set!")
-        if not ctx.guild:
-            await ctx.send("Your birthday will be announced in all servers where this bot is configured.")
+        try:
+            await ctx.message.add_reaction("✅")
+        except discord.HTTPException:
+            # Fallback to text message if reaction fails
+            await ctx.send("✅ Your birthday has been set!")
 
     @birthday.command(aliases=["delete", "del"])
     async def remove(self, ctx: commands.Context):
