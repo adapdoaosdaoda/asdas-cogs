@@ -414,7 +414,12 @@ class BirthdayAdminCommands(MixinMeta):
             + box(message_wo_year)
             + warnings
         )
-        await ctx.send(message)
+
+        # Send message with pagination if it exceeds Discord's limit
+        if len(message) > 2000:
+            await ctx.send_interactive(pagify(message, page_length=1900))
+        else:
+            await ctx.send(message)
 
     @bdset.command()
     async def listall(self, ctx: commands.Context):
