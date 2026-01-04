@@ -58,6 +58,11 @@ A Discord cog for Where Winds Meet that sends weekly Trade Commission informatio
 - Customizable emotes and messages
 - Image support for Trade Commission updates
 - Role-based access control
+- **Scheduled notifications:**
+  - Sunday pre-shop restock notification (customizable time and message)
+  - Wednesday sell recommendation notification (customizable time and message)
+  - Independent timezone support for all notifications
+  - Optional role pinging for notifications
 
 
 ## 📚 Documentation

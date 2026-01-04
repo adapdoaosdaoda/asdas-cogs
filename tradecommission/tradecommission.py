@@ -309,6 +309,20 @@ class TradeCommission(commands.Cog):
             "previous_message_id": None,  # Previous week's message to delete
             "notification_message": "📢 All 3 trade commission options have been selected! Check them out above!",  # Message sent when 3 options selected
             "notification_message_id": None,  # ID of notification message to delete after 3 hours
+
+            # Sunday pre-shop restock notification
+            "sunday_enabled": False,
+            "sunday_hour": 19,
+            "sunday_minute": 0,
+            "sunday_message": "🔔 **Pre-Shop Restock Reminder!**\n\nThe shop will be restocking soon! Get ready!",
+            "sunday_ping_role_id": None,
+
+            # Wednesday sell recommendation notification
+            "wednesday_enabled": False,
+            "wednesday_hour": 19,
+            "wednesday_minute": 0,
+            "wednesday_message": "📈 **Recommended to Sell Now!**\n\nIt's Wednesday! Check your prices and consider selling!",
+            "wednesday_ping_role_id": None,
         }
 
         self.config.register_global(**default_global)
@@ -478,10 +492,10 @@ class TradeCommission(commands.Cog):
                 await asyncio.sleep(3600)
 
     async def _check_guild_schedule(self, guild: discord.Guild):
-        """Check if it's time to send the weekly message for a guild."""
+        """Check if it's time to send the weekly message or scheduled notifications for a guild."""
         config = await self.config.guild(guild).all()
 
-        if not config["enabled"] or not config["channel_id"]:
+        if not config["channel_id"]:
             return
 
         channel = guild.get_channel(config["channel_id"])
@@ -492,22 +506,88 @@ class TradeCommission(commands.Cog):
         tz = pytz.timezone(config["timezone"])
         now = datetime.now(tz)
 
-        # Check if it's the right day and hour
-        if (now.weekday() == config["schedule_day"] and
-            now.hour == config["schedule_hour"] and
-            now.minute >= config["schedule_minute"] and
-            now.minute < config["schedule_minute"] + 60):
+        # Check weekly message (only if enabled)
+        if config["enabled"]:
+            # Check if it's the right day and hour
+            if (now.weekday() == config["schedule_day"] and
+                now.hour == config["schedule_hour"] and
+                now.minute >= config["schedule_minute"] and
+                now.minute < config["schedule_minute"] + 60):
 
-            # Check if we already sent a message this week
-            last_sent = await self.config.guild(guild).get_raw("last_sent", default=None)
-            if last_sent:
-                last_sent_dt = datetime.fromisoformat(last_sent)
-                if (now - last_sent_dt).days < 7:
-                    return
+                # Check if we already sent a message this week
+                last_sent = await self.config.guild(guild).get_raw("last_sent", default=None)
+                if last_sent:
+                    last_sent_dt = datetime.fromisoformat(last_sent)
+                    if (now - last_sent_dt).days < 7:
+                        pass  # Don't return, check other notifications
+                    else:
+                        # Send the weekly message
+                        await self._send_weekly_message(guild, channel)
+                        await self.config.guild(guild).last_sent.set(now.isoformat())
+                else:
+                    # Send the weekly message
+                    await self._send_weekly_message(guild, channel)
+                    await self.config.guild(guild).last_sent.set(now.isoformat())
 
-            # Send the weekly message
-            await self._send_weekly_message(guild, channel)
-            await self.config.guild(guild).last_sent.set(now.isoformat())
+        # Check Sunday pre-shop restock notification (weekday 6 = Sunday)
+        if (config["sunday_enabled"] and
+            now.weekday() == 6 and
+            now.hour == config["sunday_hour"] and
+            now.minute >= config["sunday_minute"] and
+            now.minute < config["sunday_minute"] + 60):
+
+            # Check if we already sent this notification today
+            last_sunday = await self.config.guild(guild).get_raw("last_sunday_notification", default=None)
+            if last_sunday:
+                last_sunday_dt = datetime.fromisoformat(last_sunday)
+                if (now - last_sunday_dt).days < 1:
+                    pass  # Already sent today
+                else:
+                    await self._send_scheduled_notification(
+                        channel,
+                        config["sunday_message"],
+                        config["sunday_ping_role_id"],
+                        guild
+                    )
+                    await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
+            else:
+                await self._send_scheduled_notification(
+                    channel,
+                    config["sunday_message"],
+                    config["sunday_ping_role_id"],
+                    guild
+                )
+                await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
+
+        # Check Wednesday sell recommendation notification (weekday 2 = Wednesday)
+        if (config["wednesday_enabled"] and
+            now.weekday() == 2 and
+            now.hour == config["wednesday_hour"] and
+            now.minute >= config["wednesday_minute"] and
+            now.minute < config["wednesday_minute"] + 60):
+
+            # Check if we already sent this notification today
+            last_wednesday = await self.config.guild(guild).get_raw("last_wednesday_notification", default=None)
+            if last_wednesday:
+                last_wednesday_dt = datetime.fromisoformat(last_wednesday)
+                if (now - last_wednesday_dt).days < 1:
+                    pass  # Already sent today
+                else:
+                    await self._send_scheduled_notification(
+                        channel,
+                        config["wednesday_message"],
+                        config["wednesday_ping_role_id"],
+                        guild
+                    )
+                    await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
+            else:
+                await self._send_scheduled_notification(
+                    channel,
+                    config["wednesday_message"],
+                    config["wednesday_ping_role_id"],
+                    guild
+                )
+                await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
 
     async def _send_weekly_message(self, guild: discord.Guild, channel: discord.TextChannel):
         """Send the weekly Trade Commission message."""
@@ -559,6 +639,29 @@ class TradeCommission(commands.Cog):
             await self.config.guild(guild).current_channel_id.set(channel.id)
         except discord.Forbidden:
             pass
+
+    async def _send_scheduled_notification(
+        self,
+        channel: discord.TextChannel,
+        message: str,
+        ping_role_id: Optional[int],
+        guild: discord.Guild
+    ):
+        """Send a scheduled notification message to the channel."""
+        try:
+            content = message
+
+            # Add role ping if configured
+            if ping_role_id:
+                role = guild.get_role(ping_role_id)
+                if role:
+                    content = f"{role.mention}\n\n{content}"
+
+            await channel.send(content)
+        except discord.Forbidden:
+            print(f"Missing permissions to send notification in {channel.name}")
+        except discord.HTTPException as e:
+            print(f"Error sending notification: {e}")
 
     @commands.group(name="tradecommission", aliases=["tc"])
     async def tradecommission(self, ctx: commands.Context):
@@ -1438,6 +1541,28 @@ class TradeCommission(commands.Cog):
         )
         embed.add_field(name="🔔 Notification (when 3 options selected)", value=notification_text, inline=False)
 
+        # Sunday pre-shop restock notification
+        sunday_role = ctx.guild.get_role(guild_config["sunday_ping_role_id"]) if guild_config["sunday_ping_role_id"] else None
+        sunday_role_text = sunday_role.mention if sunday_role else "None"
+        sunday_text = (
+            f"**Enabled:** {'✅ Yes' if guild_config['sunday_enabled'] else '❌ No'}\n"
+            f"**Time:** {guild_config['sunday_hour']:02d}:{guild_config['sunday_minute']:02d}\n"
+            f"**Ping Role:** {sunday_role_text}\n"
+            f"**Message:** {guild_config['sunday_message'][:80]}{'...' if len(guild_config['sunday_message']) > 80 else ''}"
+        )
+        embed.add_field(name="📅 Sunday Pre-Shop Restock", value=sunday_text, inline=False)
+
+        # Wednesday sell recommendation notification
+        wednesday_role = ctx.guild.get_role(guild_config["wednesday_ping_role_id"]) if guild_config["wednesday_ping_role_id"] else None
+        wednesday_role_text = wednesday_role.mention if wednesday_role else "None"
+        wednesday_text = (
+            f"**Enabled:** {'✅ Yes' if guild_config['wednesday_enabled'] else '❌ No'}\n"
+            f"**Time:** {guild_config['wednesday_hour']:02d}:{guild_config['wednesday_minute']:02d}\n"
+            f"**Ping Role:** {wednesday_role_text}\n"
+            f"**Message:** {guild_config['wednesday_message'][:80]}{'...' if len(guild_config['wednesday_message']) > 80 else ''}"
+        )
+        embed.add_field(name="📅 Wednesday Sell Recommendation", value=wednesday_text, inline=False)
+
         # Image info (from global config)
         if global_config["image_url"]:
             embed.add_field(
@@ -1518,6 +1643,190 @@ class TradeCommission(commands.Cog):
 
         await self._send_weekly_message(ctx.guild, channel)
         await ctx.send(f"✅ Test message sent to {channel.mention}")
+
+    @tradecommission.group(name="sunday")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_sunday(self, ctx: commands.Context):
+        """Configure Sunday pre-shop restock notifications."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @tc_sunday.command(name="enable")
+    async def sunday_enable(self, ctx: commands.Context):
+        """Enable Sunday pre-shop restock notifications."""
+        await self.config.guild(ctx.guild).sunday_enabled.set(True)
+        await ctx.send("✅ Sunday pre-shop restock notifications enabled!")
+
+    @tc_sunday.command(name="disable")
+    async def sunday_disable(self, ctx: commands.Context):
+        """Disable Sunday pre-shop restock notifications."""
+        await self.config.guild(ctx.guild).sunday_enabled.set(False)
+        await ctx.send("✅ Sunday pre-shop restock notifications disabled.")
+
+    @tc_sunday.command(name="time")
+    async def sunday_time(self, ctx: commands.Context, hour: int, minute: int = 0):
+        """Set the time for Sunday notifications.
+
+        **Arguments:**
+        - `hour` - Hour in 24-hour format (0-23)
+        - `minute` - Minute (0-59), defaults to 0
+
+        **Example:**
+        - `[p]tradecommission sunday time 19 0` - Set to 19:00
+        """
+        if not 0 <= hour <= 23:
+            await ctx.send("❌ Hour must be between 0 and 23")
+            return
+        if not 0 <= minute <= 59:
+            await ctx.send("❌ Minute must be between 0 and 59")
+            return
+
+        await self.config.guild(ctx.guild).sunday_hour.set(hour)
+        await self.config.guild(ctx.guild).sunday_minute.set(minute)
+        await ctx.send(f"✅ Sunday notification time set to {hour:02d}:{minute:02d}")
+
+    @tc_sunday.command(name="message")
+    async def sunday_message(self, ctx: commands.Context, *, message: str):
+        """Set the message for Sunday notifications.
+
+        **Arguments:**
+        - `message` - The message to send
+
+        **Example:**
+        - `[p]tradecommission sunday message Pre-shop restock happening soon!`
+        """
+        await self.config.guild(ctx.guild).sunday_message.set(message)
+        await ctx.send("✅ Sunday notification message updated!")
+
+    @tc_sunday.command(name="pingrole")
+    async def sunday_pingrole(self, ctx: commands.Context, role: Optional[discord.Role] = None):
+        """Set a role to ping with Sunday notifications.
+
+        **Arguments:**
+        - `role` - The role to ping (leave empty to remove)
+        """
+        if role:
+            await self.config.guild(ctx.guild).sunday_ping_role_id.set(role.id)
+            await ctx.send(f"✅ Sunday notifications will ping {role.mention}")
+        else:
+            await self.config.guild(ctx.guild).sunday_ping_role_id.set(None)
+            await ctx.send("✅ Sunday notifications will not ping any role")
+
+    @tc_sunday.command(name="test")
+    async def sunday_test(self, ctx: commands.Context):
+        """Test the Sunday notification by sending it immediately."""
+        guild_config = await self.config.guild(ctx.guild).all()
+
+        channel_id = guild_config["channel_id"]
+        if not channel_id:
+            await ctx.send("❌ No channel configured. Use `[p]tradecommission schedule` first.")
+            return
+
+        channel = ctx.guild.get_channel(channel_id)
+        if not channel:
+            await ctx.send("❌ Configured channel not found.")
+            return
+
+        await self._send_scheduled_notification(
+            channel,
+            guild_config["sunday_message"],
+            guild_config["sunday_ping_role_id"],
+            ctx.guild
+        )
+        await ctx.send(f"✅ Test Sunday notification sent to {channel.mention}")
+
+    @tradecommission.group(name="wednesday")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_wednesday(self, ctx: commands.Context):
+        """Configure Wednesday sell recommendation notifications."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @tc_wednesday.command(name="enable")
+    async def wednesday_enable(self, ctx: commands.Context):
+        """Enable Wednesday sell recommendation notifications."""
+        await self.config.guild(ctx.guild).wednesday_enabled.set(True)
+        await ctx.send("✅ Wednesday sell recommendation notifications enabled!")
+
+    @tc_wednesday.command(name="disable")
+    async def wednesday_disable(self, ctx: commands.Context):
+        """Disable Wednesday sell recommendation notifications."""
+        await self.config.guild(ctx.guild).wednesday_enabled.set(False)
+        await ctx.send("✅ Wednesday sell recommendation notifications disabled.")
+
+    @tc_wednesday.command(name="time")
+    async def wednesday_time(self, ctx: commands.Context, hour: int, minute: int = 0):
+        """Set the time for Wednesday notifications.
+
+        **Arguments:**
+        - `hour` - Hour in 24-hour format (0-23)
+        - `minute` - Minute (0-59), defaults to 0
+
+        **Example:**
+        - `[p]tradecommission wednesday time 19 0` - Set to 19:00
+        """
+        if not 0 <= hour <= 23:
+            await ctx.send("❌ Hour must be between 0 and 23")
+            return
+        if not 0 <= minute <= 59:
+            await ctx.send("❌ Minute must be between 0 and 59")
+            return
+
+        await self.config.guild(ctx.guild).wednesday_hour.set(hour)
+        await self.config.guild(ctx.guild).wednesday_minute.set(minute)
+        await ctx.send(f"✅ Wednesday notification time set to {hour:02d}:{minute:02d}")
+
+    @tc_wednesday.command(name="message")
+    async def wednesday_message(self, ctx: commands.Context, *, message: str):
+        """Set the message for Wednesday notifications.
+
+        **Arguments:**
+        - `message` - The message to send
+
+        **Example:**
+        - `[p]tradecommission wednesday message Time to sell! Check your prices!`
+        """
+        await self.config.guild(ctx.guild).wednesday_message.set(message)
+        await ctx.send("✅ Wednesday notification message updated!")
+
+    @tc_wednesday.command(name="pingrole")
+    async def wednesday_pingrole(self, ctx: commands.Context, role: Optional[discord.Role] = None):
+        """Set a role to ping with Wednesday notifications.
+
+        **Arguments:**
+        - `role` - The role to ping (leave empty to remove)
+        """
+        if role:
+            await self.config.guild(ctx.guild).wednesday_ping_role_id.set(role.id)
+            await ctx.send(f"✅ Wednesday notifications will ping {role.mention}")
+        else:
+            await self.config.guild(ctx.guild).wednesday_ping_role_id.set(None)
+            await ctx.send("✅ Wednesday notifications will not ping any role")
+
+    @tc_wednesday.command(name="test")
+    async def wednesday_test(self, ctx: commands.Context):
+        """Test the Wednesday notification by sending it immediately."""
+        guild_config = await self.config.guild(ctx.guild).all()
+
+        channel_id = guild_config["channel_id"]
+        if not channel_id:
+            await ctx.send("❌ No channel configured. Use `[p]tradecommission schedule` first.")
+            return
+
+        channel = ctx.guild.get_channel(channel_id)
+        if not channel:
+            await ctx.send("❌ Configured channel not found.")
+            return
+
+        await self._send_scheduled_notification(
+            channel,
+            guild_config["wednesday_message"],
+            guild_config["wednesday_ping_role_id"],
+            ctx.guild
+        )
+        await ctx.send(f"✅ Test Wednesday notification sent to {channel.mention}")
 
     async def update_commission_message(self, guild: discord.Guild):
         """Update the current Trade Commission message with active options."""
