@@ -84,30 +84,45 @@ class BirthdayLoop(MixinMeta):
         log.trace("Message: %s", message)
 
         async def send_and_react():
-            # Prepare image file if exists
-            file = None
-            if image_path and Path(image_path).exists():
-                file = discord.File(image_path, filename=Path(image_path).name)
+            try:
+                # Prepare image file if exists
+                file = None
+                if image_path and Path(image_path).exists():
+                    file = discord.File(image_path, filename=Path(image_path).name)
 
-            sent_message = await channel.send(
-                message,
-                file=file,
-                allowed_mentions=discord.AllowedMentions(
-                    everyone=False, roles=role_mention, users=True
-                ),
-            )
+                sent_message = await channel.send(
+                    message,
+                    file=file,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=role_mention, users=True
+                    ),
+                )
 
-            if reactions:
-                for reaction in reactions:
-                    try:
-                        await sent_message.add_reaction(reaction)
-                    except discord.HTTPException as e:
-                        log.warning(
-                            "Failed to add reaction %s to announcement in guild %s: %s",
-                            reaction,
-                            channel.guild.id,
-                            e,
-                        )
+                if reactions:
+                    for reaction in reactions:
+                        try:
+                            await sent_message.add_reaction(reaction)
+                        except discord.HTTPException as e:
+                            log.warning(
+                                "Failed to add reaction %s to announcement in guild %s: %s",
+                                reaction,
+                                channel.guild.id,
+                                e,
+                            )
+            except discord.Forbidden as e:
+                log.warning(
+                    "Missing permissions to send birthday announcement in channel %s (guild %s). "
+                    "Please ensure the bot has Send Messages, Attach Files, and Add Reactions permissions.",
+                    channel.id,
+                    channel.guild.id,
+                )
+            except discord.HTTPException as e:
+                log.warning(
+                    "Failed to send birthday announcement in channel %s (guild %s): %s",
+                    channel.id,
+                    channel.guild.id,
+                    e,
+                )
 
         self.coro_queue.put_nowait(send_and_react())
 
