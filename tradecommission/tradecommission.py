@@ -1112,6 +1112,9 @@ class TradeCommission(commands.Cog):
         # Store the control message ID
         await self.config.guild(ctx.guild).addinfo_message_id.set(control_msg.id)
 
+        # React to the command with a checkmark
+        await ctx.message.add_reaction("✅")
+
     @tradecommission.command(name="setoption")
     async def tc_setoption(
         self,
