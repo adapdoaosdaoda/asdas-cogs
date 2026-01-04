@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from pathlib import Path
 from typing import Any, NoReturn
 
 import discord
@@ -68,7 +69,7 @@ class BirthdayLoop(MixinMeta):
         )
 
     async def send_announcement(
-        self, channel: discord.TextChannel, message: str, role_mention: bool, image_url: str | None = None, reactions: list[str] | None = None
+        self, channel: discord.TextChannel, message: str, role_mention: bool, image_path: str | None = None, reactions: list[str] | None = None
     ):
         if error := channel_perm_check(channel.guild.me, channel):
             log.warning(
@@ -83,13 +84,14 @@ class BirthdayLoop(MixinMeta):
         log.trace("Message: %s", message)
 
         async def send_and_react():
-            # Build the message content
-            content = message
-            if image_url:
-                content = f"{message}\n{image_url}"
+            # Prepare image file if exists
+            file = None
+            if image_path and Path(image_path).exists():
+                file = discord.File(image_path, filename=Path(image_path).name)
 
             sent_message = await channel.send(
-                content,
+                message,
+                file=file,
                 allowed_mentions=discord.AllowedMentions(
                     everyone=False, roles=role_mention, users=True
                 ),
@@ -158,17 +160,13 @@ class BirthdayLoop(MixinMeta):
 
     async def _update_birthdays(self):
         """Update birthdays"""
-        all_birthdays: dict[int, dict[int, dict[str, Any]]] = await self.config.all_members()
+        all_birthdays: dict[int, dict[str, Any]] = await self.config.all_users()
         all_settings: dict[int, dict[str, Any]] = await self.config.all_guilds()
 
-        async for guild_id, guild_data in AsyncIter(all_birthdays.items(), steps=5):
+        async for guild_id, guild_settings in AsyncIter(all_settings.items(), steps=5):
             guild: discord.Guild | None = self.bot.get_guild(int(guild_id))
             if guild is None:
                 log.trace("Guild %s is not in cache, skipping", guild_id)
-                continue
-
-            if all_settings.get(guild.id) is None:  # can happen with migration from ZeLarp's cog
-                log.trace("Guild %s is not setup, skipping", guild_id)
                 continue
 
             if await self.check_if_setup(guild) is False:
@@ -177,7 +175,7 @@ class BirthdayLoop(MixinMeta):
 
             birthday_members: dict[discord.Member, datetime.datetime] = {}
 
-            hour_td = datetime.timedelta(seconds=all_settings[guild.id]["time_utc_s"])
+            hour_td = datetime.timedelta(seconds=guild_settings["time_utc_s"])
 
             since_midnight = datetime.datetime.utcnow().replace(
                 minute=0, second=0, microsecond=0
@@ -195,8 +193,8 @@ class BirthdayLoop(MixinMeta):
             end = start + datetime.timedelta(days=1)
 
             # Get required roles (migrate from old config if needed)
-            old_required_role = all_settings[guild.id].get("required_role")
-            required_role_ids = all_settings[guild.id].get("required_roles", [])
+            old_required_role = guild_settings.get("required_role")
+            required_role_ids = guild_settings.get("required_roles", [])
 
             if old_required_role and not required_role_ids:
                 # Migrate from old single role to new list format
@@ -211,15 +209,14 @@ class BirthdayLoop(MixinMeta):
                 if role:
                     required_roles.append(role)
 
-            async for member_id, data in AsyncIter(guild_data.items(), steps=50):
-                birthday = data["birthday"]
-                if not birthday:  # birthday removed but user remains in config
+            # Iterate through all users and check if they're in this guild
+            async for user_id, user_data in AsyncIter(all_birthdays.items(), steps=50):
+                birthday = user_data.get("birthday")
+                if not birthday:  # birthday not set
                     continue
-                member = guild.get_member(int(member_id))
+                member = guild.get_member(int(user_id))
                 if member is None:
-                    log.trace(
-                        "Member %s for guild %s is not in cache, skipping", member_id, guild_id
-                    )
+                    # User not in this guild, skip
                     continue
 
                 proper_bday_dt = datetime.datetime(
@@ -231,7 +228,7 @@ class BirthdayLoop(MixinMeta):
                 if required_roles and not any(role in member.roles for role in required_roles):
                     log.trace(
                         "Member %s for guild %s does not have required role, skipping",
-                        member_id,
+                        user_id,
                         guild_id,
                     )
                     continue
@@ -239,21 +236,21 @@ class BirthdayLoop(MixinMeta):
                 if start <= this_year_bday_dt < end:  # birthday is today
                     birthday_members[member] = proper_bday_dt
 
-            role = guild.get_role(all_settings[guild.id]["role_id"])
+            role = guild.get_role(guild_settings["role_id"])
             if role is None:
                 log.warning(
                     "Role %s for guild %s (%s) was not found",
-                    all_settings[guild.id]["role_id"],
+                    guild_settings["role_id"],
                     guild_id,
                     guild.name,
                 )
                 continue
 
-            channel = guild.get_channel(all_settings[guild.id]["channel_id"])
+            channel = guild.get_channel(guild_settings["channel_id"])
             if channel is None or not isinstance(channel, discord.TextChannel):
                 log.warning(
                     "Channel %s for guild %s (%s) was not found",
-                    all_settings[guild.id]["channel_id"],
+                    guild_settings["channel_id"],
                     guild_id,
                     guild.name,
                 )
@@ -261,12 +258,12 @@ class BirthdayLoop(MixinMeta):
 
             log.trace("Members with birthdays in guild %s: %s", guild_id, birthday_members)
 
-            # Get image URL and announcement reactions for announcements
-            image_url = all_settings[guild.id].get("image_url")
+            # Get image path and announcement reactions for announcements
+            image_path = guild_settings.get("image_path")
 
             # Migrate from old single reaction to new list format
-            old_reaction = all_settings[guild.id].get("announcement_reaction")
-            announcement_reactions = all_settings[guild.id].get("announcement_reactions", [])
+            old_reaction = guild_settings.get("announcement_reaction")
+            announcement_reactions = guild_settings.get("announcement_reactions", [])
 
             if old_reaction and not announcement_reactions:
                 announcement_reactions = [old_reaction]
@@ -280,9 +277,9 @@ class BirthdayLoop(MixinMeta):
                     if dt.year == 1:
                         await self.send_announcement(
                             channel,
-                            format_bday_message(all_settings[guild.id]["message_wo_year"], member),
-                            all_settings[guild.id]["allow_role_mention"],
-                            image_url,
+                            format_bday_message(guild_settings["message_wo_year"], member),
+                            guild_settings["allow_role_mention"],
+                            image_path,
                             announcement_reactions,
                         )
 
@@ -291,10 +288,10 @@ class BirthdayLoop(MixinMeta):
                         await self.send_announcement(
                             channel,
                             format_bday_message(
-                                all_settings[guild.id]["message_w_year"], member, age
+                                guild_settings["message_w_year"], member, age
                             ),
-                            all_settings[guild.id]["allow_role_mention"],
-                            image_url,
+                            guild_settings["allow_role_mention"],
+                            image_path,
                             announcement_reactions,
                         )
 
