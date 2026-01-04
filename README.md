@@ -95,7 +95,7 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 ## 📝 Credits
 
 - **Claude** - Everything 🎉🎊
-- **Birthday** - Cloned from [Vexed01's Birthday cog](https://github.com/Vexed01/Vex-Cogs), enhanced with channel locking and the ability to add an image the messages
+- **Birthday** - Cloned from [Vexed01's Birthday cog](https://github.com/Vexed01/Vex-Cogs), added image upload to announcements, multi-role inclusion, and something else i forgot
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
