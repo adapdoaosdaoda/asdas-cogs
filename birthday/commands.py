@@ -1106,13 +1106,15 @@ class BirthdayAdminCommands(MixinMeta):
         await ctx.send(f"Sending test birthday announcement to {channel.mention}...")
 
         try:
-            # Build the message content
-            content = formatted_message
+            # Build the message content and optional embed for image
+            embed = None
             if image_url:
-                content = f"{formatted_message}\n{image_url}"
+                embed = discord.Embed()
+                embed.set_image(url=image_url)
 
             sent_message = await channel.send(
-                content,
+                formatted_message,
+                embed=embed,
                 allowed_mentions=discord.AllowedMentions(
                     everyone=False, roles=allow_role_mention, users=True
                 ),
