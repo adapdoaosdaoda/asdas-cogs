@@ -657,7 +657,14 @@ class TradeCommission(commands.Cog):
                 if role:
                     content = f"{role.mention}\n\n{content}"
 
-            await channel.send(content)
+            notification_msg = await channel.send(content)
+
+            # Schedule deletion after 3 hours
+            asyncio.create_task(
+                self._delete_notification_after_delay(
+                    guild, channel, notification_msg.id, 3
+                )
+            )
         except discord.Forbidden:
             print(f"Missing permissions to send notification in {channel.name}")
         except discord.HTTPException as e:
