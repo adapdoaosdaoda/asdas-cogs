@@ -24,6 +24,14 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 
 ## 📦 Available Cogs
 
+### Birthday
+[Vexed01's](https://github.com/Vexed01/Vex-Cogs) reminders with added time variable.
+
+**Added Features:**
+- Added the ability to upload and include an image to the birthday announcement messages
+- Increased the role requirerment from 1 to 2
+- Added the ability to limit the set subcommand to a single channel
+
 ### EventChannels
 Automatically creates and manages temporary channels for Discord scheduled events, created with [Raid-Helper](https://raid-helper.dev/) in mind.
 
