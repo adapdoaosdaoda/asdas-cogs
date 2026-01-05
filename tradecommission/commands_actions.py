@@ -12,6 +12,9 @@ log = logging.getLogger("red.tradecommission")
 class CommandsActionsMixin:
     """Mixin containing action commands for Trade Commission."""
 
+    @commands.command(name="post")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_post(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
         """
         Manually post a Trade Commission message now.
@@ -32,6 +35,9 @@ class CommandsActionsMixin:
         await self._send_weekly_message(ctx.guild, channel)
         await ctx.send(f"✅ Posted Trade Commission message to {channel.mention}")
 
+    @commands.command(name="addinfo")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_addinfo(self, ctx: commands.Context):
         """
         Add information to the current week's Trade Commission message via buttons.
@@ -88,6 +94,9 @@ class CommandsActionsMixin:
         # React to the command with a checkmark
         await ctx.message.add_reaction("✅")
 
+    @commands.command(name="info")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
     async def tc_info(self, ctx: commands.Context):
         """Show current Trade Commission configuration."""
         guild_config = await self.config.guild(ctx.guild).all()
@@ -218,6 +227,9 @@ class CommandsActionsMixin:
 
         await ctx.send(embed=embed)
 
+    @commands.command(name="testnow")
+    @commands.guild_only()
+    @commands.is_owner()
     async def tc_testnow(self, ctx: commands.Context):
         """[Owner only] Test sending the weekly message immediately."""
         channel_id = await self.config.guild(ctx.guild).channel_id()

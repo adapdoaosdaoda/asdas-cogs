@@ -10,6 +10,7 @@ log = logging.getLogger("red.tradecommission")
 class CommandsOptionsMixin:
     """Mixin containing option management commands for Trade Commission."""
 
+    @commands.command(name="setoption")
     async def tc_setoption(
         self,
         ctx: commands.Context,
@@ -95,6 +96,7 @@ class CommandsOptionsMixin:
                     f"**Total options:** {len(trade_options)}"
                 )
 
+    @commands.command(name="removeoption")
     async def tc_removeoption(self, ctx: commands.Context, *, title: str):
         """
         Remove an option by its title (Global Setting).
@@ -139,6 +141,7 @@ class CommandsOptionsMixin:
                 f"**Remaining options:** {len(trade_options)}"
             )
 
+    @commands.command(name="listoptions")
     async def tc_listoptions(self, ctx: commands.Context):
         """
         List all configured trade options (Global Setting).
@@ -171,6 +174,8 @@ class CommandsOptionsMixin:
 
         await ctx.send(embed=embed)
 
+    @commands.command(name="setimage")
+    @commands.is_owner()
     async def tc_setimage(self, ctx: commands.Context, image_url: Optional[str] = None):
         """
         Set the image to display in Trade Commission messages (Global Setting).
@@ -276,6 +281,7 @@ class CommandsOptionsMixin:
 
         await ctx.send(embed=embed)
 
+    @commands.command(name="setgrouptitle")
     async def tc_setgrouptitle(self, ctx: commands.Context, emoji: str, *, title: str):
         """
         Set a custom title for an emoji-grouped option category (Global Setting).
@@ -319,6 +325,7 @@ class CommandsOptionsMixin:
 
         await ctx.send(f"✅ Set emoji group title: {emoji} → **{title}**")
 
+    @commands.command(name="removegrouptitle")
     async def tc_removegrouptitle(self, ctx: commands.Context, emoji: str):
         """
         Remove a custom title for an emoji-grouped option category (Global Setting).
@@ -352,6 +359,7 @@ class CommandsOptionsMixin:
 
         await ctx.send(f"✅ Removed custom title for {emoji} (was: **{removed_title}**)")
 
+    @commands.command(name="listgrouptitles")
     async def tc_listgrouptitles(self, ctx: commands.Context):
         """
         List all custom emoji group titles (Global Setting).
