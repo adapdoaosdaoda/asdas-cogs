@@ -10,9 +10,6 @@ log = logging.getLogger("red.tradecommission")
 class CommandsScheduleMixin:
     """Mixin containing scheduling subcommand groups for Trade Commission."""
 
-    @commands.group(name="sunday")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_sunday(self, ctx: commands.Context):
         """Configure Sunday pre-shop restock notifications."""
         if ctx.invoked_subcommand is None:
@@ -102,9 +99,6 @@ class CommandsScheduleMixin:
         )
         await ctx.send(f"✅ Test Sunday notification sent to {channel.mention}")
 
-    @commands.group(name="wednesday")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_wednesday(self, ctx: commands.Context):
         """Configure Wednesday sell recommendation notifications."""
         if ctx.invoked_subcommand is None:
