@@ -10,12 +10,14 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]repo add asdas-cogs https://github.com/adapdoaosdaoda/asdas-cogs
 ```
 ```
+[p]cog install asdas-cogs birthday
 [p]cog install asdas-cogs eventchannels
 [p]cog install asdas-cogs eventrolereadd
 [p]cog install asdas-cogs reminders
 [p]cog install asdas-cogs tradecommission
 ```
 ```
+[p]load birthday
 [p]load eventchannels
 [p]load eventrolereadd
 [p]load reminders
@@ -25,7 +27,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 ## 📦 Available Cogs
 
 ### Birthday
-[Vexed01's](https://github.com/Vexed01/Vex-Cogs) reminders with added time variable.
+[Vexed01's](https://github.com/Vexed01/Vex-Cogs) birthday cog with some added junk.
 
 **Added Features:**
 - Added the ability to upload and include an image to the birthday announcement messages
