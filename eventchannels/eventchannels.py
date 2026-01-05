@@ -2386,24 +2386,46 @@ class EventChannels(commands.Cog):
             warning_time = delete_time - timedelta(minutes=15)
             await asyncio.sleep(max(0, (warning_time - datetime.now(timezone.utc)).total_seconds()))
 
-            # Send deletion warning and lock channels
+            # Send deletion warning and lock channels (only if there was recent activity)
             deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
             if deletion_warning_template:
+                # Check if there was a message sent in the last 15 minutes
                 try:
-                    deletion_warning_msg = deletion_warning_template.format(
-                        role=role.mention,
-                        event=event.name
-                    )
-                except KeyError as e:
-                    log.error(f"Invalid placeholder {e} in deletion warning message template. Valid placeholders: {{role}}, {{event}}")
-                    deletion_warning_msg = None
+                    last_message = None
+                    async for message in text_channel.history(limit=1):
+                        last_message = message
+                        break
 
-                if deletion_warning_msg:
-                    try:
-                        await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
-                        log.info(f"Sent deletion warning to {text_channel.name}")
-                    except discord.Forbidden:
-                        log.warning(f"Could not send deletion warning to {text_channel.name} - missing permissions")
+                    # Only send warning if there was a message in the last 15 minutes
+                    should_send_warning = False
+                    if last_message:
+                        time_since_last_message = datetime.now(timezone.utc) - last_message.created_at
+                        if time_since_last_message <= timedelta(minutes=15):
+                            should_send_warning = True
+                            log.info(f"Last message in {text_channel.name} was {time_since_last_message.total_seconds():.0f}s ago - sending deletion warning")
+                        else:
+                            log.info(f"Last message in {text_channel.name} was {time_since_last_message.total_seconds():.0f}s ago - skipping deletion warning")
+                    else:
+                        log.info(f"No messages found in {text_channel.name} - skipping deletion warning")
+
+                    if should_send_warning:
+                        try:
+                            deletion_warning_msg = deletion_warning_template.format(
+                                role=role.mention,
+                                event=event.name
+                            )
+                        except KeyError as e:
+                            log.error(f"Invalid placeholder {e} in deletion warning message template. Valid placeholders: {{role}}, {{event}}")
+                            deletion_warning_msg = None
+
+                        if deletion_warning_msg:
+                            try:
+                                await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+                                log.info(f"Sent deletion warning to {text_channel.name}")
+                            except discord.Forbidden:
+                                log.warning(f"Could not send deletion warning to {text_channel.name} - missing permissions")
+                except Exception as e:
+                    log.error(f"Error checking message history for deletion warning in {text_channel.name}: {e}")
 
             # Lock channels - remove send_messages permission for the role
             # Refetch channels and role to ensure we have current objects
