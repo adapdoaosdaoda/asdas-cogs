@@ -257,10 +257,10 @@ class TradeCommission(
         """Add information to the current week's Trade Commission message via buttons."""
         await self.tc_addinfo(ctx)
 
-    @tradecommission.command(name="info")
+    @tradecommission.command(name="showconfig")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
-    async def _info(self, ctx):
+    async def _showconfig(self, ctx):
         """Show current Trade Commission configuration."""
         await self.tc_info(ctx)
 
