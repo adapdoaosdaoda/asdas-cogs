@@ -34,6 +34,7 @@ class EventRoleReadd(commands.Cog):
             log_channel_id=None,  # Channel ID to monitor for log messages
             role_readd_keywords=[],  # Keywords to match in log messages for role re-adding
             report_channel_id=None,  # Channel ID to send role re-add reports
+            ping_user_id=None,  # User ID to ping when all retry attempts fail
         )
 
     @commands.group(invoke_without_command=True)
@@ -63,6 +64,29 @@ class EventRoleReadd(commands.Cog):
         """
         await self.config.guild(ctx.guild).report_channel_id.set(channel.id)
         await ctx.send(f"✅ Role re-add reports will be sent to {channel.mention}.")
+
+    @rolereadd.command(name="setpinguser")
+    async def set_ping_user(self, ctx, user: discord.User):
+        """Set the user to ping when all retry attempts fail.
+
+        When the bot fails to re-add a role after 5 retry attempts, it will ping
+        this user in the report channel to notify them of the failure.
+
+        Examples:
+        - `[p]rolereadd setpinguser @Admin` - Ping @Admin on failures
+        - `[p]rolereadd setpinguser 123456789012345678` - Set by user ID
+        """
+        await self.config.guild(ctx.guild).ping_user_id.set(user.id)
+        await ctx.send(f"✅ Will ping {user.mention} when role re-add fails after all retry attempts.")
+
+    @rolereadd.command(name="clearpinguser")
+    async def clear_ping_user(self, ctx):
+        """Clear the configured ping user.
+
+        After clearing, no user will be pinged on failures.
+        """
+        await self.config.guild(ctx.guild).ping_user_id.set(None)
+        await ctx.send("✅ Cleared ping user. No user will be pinged on failures.")
 
     @rolereadd.command(name="addkeyword")
     async def add_keyword(self, ctx, *, keyword: str):
@@ -142,16 +166,20 @@ class EventRoleReadd(commands.Cog):
         log_channel_id = await self.config.guild(ctx.guild).log_channel_id()
         report_channel_id = await self.config.guild(ctx.guild).report_channel_id()
         keywords = await self.config.guild(ctx.guild).role_readd_keywords()
+        ping_user_id = await self.config.guild(ctx.guild).ping_user_id()
 
         log_channel = ctx.guild.get_channel(log_channel_id) if log_channel_id else None
         report_channel = ctx.guild.get_channel(report_channel_id) if report_channel_id else None
+        ping_user = ctx.guild.get_member(ping_user_id) if ping_user_id else None
         log_channel_display = log_channel.mention if log_channel else "Not set"
         report_channel_display = report_channel.mention if report_channel else "Not set"
+        ping_user_display = ping_user.mention if ping_user else "Not set"
         keywords_display = ", ".join(f"`{k}`" for k in keywords) if keywords else "None"
 
         embed = discord.Embed(title="Event Role Re-add Settings", color=discord.Color.blue())
         embed.add_field(name="Log Channel", value=log_channel_display, inline=False)
         embed.add_field(name="Report Channel", value=report_channel_display, inline=False)
+        embed.add_field(name="Ping User (on failure)", value=ping_user_display, inline=False)
         embed.add_field(name="Keywords", value=keywords_display, inline=False)
         embed.add_field(
             name="Status",
@@ -339,9 +367,20 @@ class EventRoleReadd(commands.Cog):
         error_reason: str,
         source_message: discord.Message,
         user_id: Optional[int] = None,
-        user_name: Optional[str] = None
+        user_name: Optional[str] = None,
+        ping_on_failure: bool = False
     ):
-        """Send an error report to the configured report channel."""
+        """Send an error report to the configured report channel.
+
+        Args:
+            guild: The guild where the error occurred
+            matched_keyword: The keyword that triggered the role re-add attempt
+            error_reason: Description of why the role re-add failed
+            source_message: The message that triggered the role re-add
+            user_id: Optional user ID involved in the error
+            user_name: Optional username involved in the error
+            ping_on_failure: If True, will ping the configured ping user (used after all retries fail)
+        """
         report_channel_id = await self.config.guild(guild).report_channel_id()
         if not report_channel_id:
             return
@@ -365,8 +404,18 @@ class EventRoleReadd(commands.Cog):
         embed.add_field(name="Reason", value=error_reason, inline=False)
         embed.add_field(name="Source Message", value=f"[Jump to message]({source_message.jump_url})", inline=False)
 
+        # Build the message content with optional ping
+        message_content = None
+        if ping_on_failure:
+            ping_user_id = await self.config.guild(guild).ping_user_id()
+            if ping_user_id:
+                ping_user = guild.get_member(ping_user_id)
+                if ping_user:
+                    message_content = f"{ping_user.mention} - Role re-add failed after all retry attempts!"
+                    embed.set_footer(text="All retry attempts exhausted")
+
         try:
-            await report_channel.send(embed=embed)
+            await report_channel.send(content=message_content, embed=embed)
         except discord.Forbidden:
             log.warning(f"Failed to send error report to channel {report_channel.name} - insufficient permissions")
         except discord.HTTPException as e:
@@ -483,16 +532,47 @@ class EventRoleReadd(commands.Cog):
                 )
                 continue
 
-            # Re-add the role
-            try:
-                # Wait 2 seconds to ensure Discord has processed the role removal
-                await asyncio.sleep(2)
-                await member.add_roles(matching_role, reason=f"EventRoleReadd: Auto re-add (keyword: {matched_keyword})")
-                log.info(
-                    f"Re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
-                    f"due to keyword '{matched_keyword}' in log embed"
-                )
+            # Re-add the role with exponential backoff (up to 5 attempts)
+            max_attempts = 5
+            success = False
+            last_error = None
 
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    # Exponential backoff: 2s, 4s, 8s, 16s, 32s
+                    delay = 2 ** attempt
+                    log.debug(f"Attempt {attempt}/{max_attempts} to re-add role '{matching_role.name}' to {member.name}, waiting {delay}s")
+                    await asyncio.sleep(delay)
+
+                    await member.add_roles(matching_role, reason=f"EventRoleReadd: Auto re-add (keyword: {matched_keyword})")
+
+                    log.info(
+                        f"Successfully re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
+                        f"on attempt {attempt}/{max_attempts} due to keyword '{matched_keyword}' in log embed"
+                    )
+                    success = True
+                    break
+
+                except discord.Forbidden as e:
+                    last_error = e
+                    log.warning(
+                        f"Attempt {attempt}/{max_attempts} failed to re-add event role '{matching_role.name}' "
+                        f"to {member.name} - insufficient permissions"
+                    )
+                    # For permission errors, no point retrying
+                    break
+
+                except discord.HTTPException as e:
+                    last_error = e
+                    log.warning(
+                        f"Attempt {attempt}/{max_attempts} failed to re-add event role '{matching_role.name}' "
+                        f"to {member.name}: {e}"
+                    )
+                    # Continue retrying for HTTP errors
+                    if attempt == max_attempts:
+                        log.error(f"All {max_attempts} attempts failed to re-add role '{matching_role.name}' to {member.name}")
+
+            if success:
                 # Send success report to report channel if configured
                 report_channel_id = await self.config.guild(message.guild).report_channel_id()
                 if report_channel_id:
@@ -520,24 +600,19 @@ class EventRoleReadd(commands.Cog):
                         log.warning(f"Report channel ID {report_channel_id} configured but channel not found")
                 else:
                     log.debug(f"No report channel configured, skipping report for {member.name}")
+            else:
+                # All retry attempts failed, send error report with ping
+                if isinstance(last_error, discord.Forbidden):
+                    error_msg = f"Failed to re-add role {matching_role.mention} after {max_attempts} attempts - Bot lacks permissions"
+                else:
+                    error_msg = f"Failed to re-add role {matching_role.mention} after {max_attempts} attempts - Discord error: {str(last_error)}"
 
-            except discord.Forbidden:
-                log.warning(f"Failed to re-add event role '{matching_role.name}' to {member.name} - insufficient permissions")
                 await self._send_error_report(
                     message.guild,
                     matched_keyword,
-                    f"Failed to re-add role {matching_role.mention} - Bot lacks permissions",
+                    error_msg,
                     message,
                     user_id=member.id,
-                    user_name=member.name
-                )
-            except discord.HTTPException as e:
-                log.error(f"Failed to re-add event role '{matching_role.name}' to {member.name}: {e}")
-                await self._send_error_report(
-                    message.guild,
-                    matched_keyword,
-                    f"Failed to re-add role {matching_role.mention} - Discord error: {str(e)}",
-                    message,
-                    user_id=member.id,
-                    user_name=member.name
+                    user_name=member.name,
+                    ping_on_failure=True
                 )
