@@ -12,9 +12,6 @@ log = logging.getLogger("red.tradecommission")
 class CommandsConfigMixin:
     """Mixin containing configuration commands for Trade Commission."""
 
-    @commands.command(name="schedule")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_schedule(
         self,
         ctx: commands.Context,
@@ -76,17 +73,11 @@ class CommandsConfigMixin:
             f"**Schedule:** Every {day.title()} at {hour:02d}:{minute:02d} {timezone}"
         )
 
-    @commands.command(name="disable")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_disable(self, ctx: commands.Context):
         """Disable weekly Trade Commission messages."""
         await self.config.guild(ctx.guild).enabled.set(False)
         await ctx.send("✅ Weekly Trade Commission messages disabled.")
 
-    @commands.command(name="enable")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_enable(self, ctx: commands.Context):
         """Enable weekly Trade Commission messages."""
         channel_id = await self.config.guild(ctx.guild).channel_id()
@@ -97,9 +88,6 @@ class CommandsConfigMixin:
         await self.config.guild(ctx.guild).enabled.set(True)
         await ctx.send("✅ Weekly Trade Commission messages enabled.")
 
-    @commands.command(name="addrole")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_addrole(self, ctx: commands.Context, role: discord.Role):
         """
         Add a role that can use addinfo reactions.
@@ -122,9 +110,6 @@ class CommandsConfigMixin:
 
         await ctx.send(f"✅ {role.mention} can now use addinfo reactions!")
 
-    @commands.command(name="removerole")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_removerole(self, ctx: commands.Context, role: discord.Role):
         """
         Remove a role from the addinfo allowed list.
@@ -144,9 +129,6 @@ class CommandsConfigMixin:
 
         await ctx.send(f"✅ {role.mention} can no longer use addinfo reactions.")
 
-    @commands.command(name="listroles")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_listroles(self, ctx: commands.Context):
         """
         List all roles that can use addinfo reactions.
@@ -185,9 +167,6 @@ class CommandsConfigMixin:
 
         await ctx.send(embed=embed)
 
-    @commands.command(name="adduser")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_adduser(self, ctx: commands.Context, user: discord.Member):
         """
         Add a user that can use addinfo reactions.
@@ -210,9 +189,6 @@ class CommandsConfigMixin:
 
         await ctx.send(f"✅ {user.mention} can now use addinfo reactions!")
 
-    @commands.command(name="removeuser")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_removeuser(self, ctx: commands.Context, user: discord.Member):
         """
         Remove a user from the addinfo allowed list.
@@ -232,9 +208,6 @@ class CommandsConfigMixin:
 
         await ctx.send(f"✅ {user.mention} can no longer use addinfo reactions.")
 
-    @commands.command(name="listusers")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_listusers(self, ctx: commands.Context):
         """
         List all users that can use addinfo reactions.
@@ -273,9 +246,6 @@ class CommandsConfigMixin:
 
         await ctx.send(embed=embed)
 
-    @commands.command(name="settitle")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_settitle(self, ctx: commands.Context, *, title: str):
         """
         Set the title/header for Trade Commission messages.
@@ -289,9 +259,6 @@ class CommandsConfigMixin:
         await self.config.guild(ctx.guild).message_title.set(title)
         await ctx.send(f"✅ Message title set to:\n> {title}")
 
-    @commands.command(name="setinitial")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_setinitial(self, ctx: commands.Context, *, description: str):
         """
         Set the initial description shown before options are added.
@@ -308,9 +275,6 @@ class CommandsConfigMixin:
         await self.config.guild(ctx.guild).initial_description.set(description)
         await ctx.send(f"✅ Initial description set to:\n> {description[:100]}{'...' if len(description) > 100 else ''}")
 
-    @commands.command(name="setpost")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_setpost(self, ctx: commands.Context, *, description: str):
         """
         Set the description shown after options are added.
@@ -327,9 +291,6 @@ class CommandsConfigMixin:
         await self.config.guild(ctx.guild).post_description.set(description)
         await ctx.send(f"✅ Post description set to:\n> {description[:100]}{'...' if len(description) > 100 else ''}")
 
-    @commands.command(name="setpingrole")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_setpingrole(self, ctx: commands.Context, role: Optional[discord.Role] = None):
         """
         Set a role to ping when posting Trade Commission messages.
@@ -351,9 +312,6 @@ class CommandsConfigMixin:
             await self.config.guild(ctx.guild).ping_role_id.set(role.id)
             await ctx.send(f"✅ Will ping {role.mention} when posting Trade Commission messages.")
 
-    @commands.command(name="setnotification")
-    @commands.guild_only()
-    @commands.admin_or_permissions(manage_guild=True)
     async def tc_setnotification(self, ctx: commands.Context, *, message: str):
         """
         Set the notification message sent when all 3 options are selected.
