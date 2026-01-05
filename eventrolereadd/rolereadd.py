@@ -561,7 +561,7 @@ class EventRoleReadd(commands.Cog):
                 )
                 continue
 
-            # Re-add the role with exponential backoff (up to 5 attempts)
+            # Re-add the role with linear backoff (up to 5 attempts, plus 1 final remove/re-add attempt)
             # Now retries even if user already has the role, checking audit logs to confirm it was us
             max_attempts = 5
             success = False
@@ -569,8 +569,8 @@ class EventRoleReadd(commands.Cog):
 
             for attempt in range(1, max_attempts + 1):
                 try:
-                    # Exponential backoff starting at 10s: 10s, 20s, 40s, 80s, 160s
-                    delay = 10 * (2 ** (attempt - 1))
+                    # Linear backoff starting at 10s, increasing by 4s each time: 10s, 14s, 18s, 22s, 26s
+                    delay = 10 + (4 * (attempt - 1))
                     log.debug(f"Attempt {attempt}/{max_attempts} to re-add role '{matching_role.name}' to {member.name}, waiting {delay}s")
                     await asyncio.sleep(delay)
 
@@ -630,6 +630,47 @@ class EventRoleReadd(commands.Cog):
                     # Continue retrying for HTTP errors
                     if attempt == max_attempts:
                         log.error(f"All {max_attempts} attempts failed to re-add role '{matching_role.name}' to {member.name}")
+
+            # If all normal attempts failed and user has the role (but not added by us), try final remove/re-add
+            if not success and not isinstance(last_error, discord.Forbidden):
+                # Re-fetch member one last time
+                member = message.guild.get_member(user_id)
+                if member and matching_role in member.roles:
+                    try:
+                        log.info(f"Final attempt: removing and re-adding role '{matching_role.name}' for {member.name}")
+                        await member.remove_roles(matching_role, reason=f"EventRoleReadd: Final attempt - removing before re-add")
+                        await asyncio.sleep(4)
+                        await member.add_roles(matching_role, reason=f"EventRoleReadd: Final attempt - re-add (keyword: {matched_keyword})")
+
+                        log.info(
+                            f"Successfully re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
+                            f"on final remove/re-add attempt due to keyword '{matched_keyword}' in log embed"
+                        )
+                        success = True
+                    except discord.Forbidden as e:
+                        last_error = e
+                        log.warning(f"Final remove/re-add attempt failed - insufficient permissions")
+                    except discord.HTTPException as e:
+                        last_error = e
+                        log.error(f"Final remove/re-add attempt failed: {e}")
+                elif member and matching_role not in member.roles:
+                    # User doesn't have the role, try one last add
+                    try:
+                        log.info(f"Final attempt: adding role '{matching_role.name}' to {member.name}")
+                        await asyncio.sleep(4)
+                        await member.add_roles(matching_role, reason=f"EventRoleReadd: Final attempt - re-add (keyword: {matched_keyword})")
+
+                        log.info(
+                            f"Successfully re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
+                            f"on final attempt due to keyword '{matched_keyword}' in log embed"
+                        )
+                        success = True
+                    except discord.Forbidden as e:
+                        last_error = e
+                        log.warning(f"Final attempt failed - insufficient permissions")
+                    except discord.HTTPException as e:
+                        last_error = e
+                        log.error(f"Final attempt failed: {e}")
 
             if success:
                 # Send success report to report channel if configured
