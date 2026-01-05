@@ -360,6 +360,48 @@ class EventRoleReadd(commands.Cog):
             log.error(f"Error converting embed description to role name: {e}")
             return None
 
+    async def _check_role_added_by_cog(
+        self,
+        guild: discord.Guild,
+        member: discord.Member,
+        role: discord.Role
+    ) -> bool:
+        """Check if a role was recently added to a member by EventRoleReadd.
+
+        Checks audit logs for MEMBER_ROLE_UPDATE actions within the last 30 seconds
+        to see if this cog added the role.
+
+        Returns:
+            True if the role was added by EventRoleReadd, False otherwise
+        """
+        try:
+            # Check audit logs from the last 30 seconds
+            async for entry in guild.audit_logs(
+                limit=50,
+                action=discord.AuditLogAction.member_role_update,
+                after=datetime.utcnow().replace(tzinfo=None) - __import__('datetime').timedelta(seconds=30)
+            ):
+                # Check if this entry is for our member
+                if entry.target.id != member.id:
+                    continue
+
+                # Check if this role was added in this audit entry
+                if role not in entry.after.roles or role in entry.before.roles:
+                    continue
+
+                # Check if the reason contains "EventRoleReadd"
+                if entry.reason and "EventRoleReadd" in entry.reason:
+                    log.debug(f"Found audit log entry showing EventRoleReadd added role '{role.name}' to {member.name}")
+                    return True
+
+            return False
+        except discord.Forbidden:
+            log.warning("Bot lacks permission to view audit logs - cannot verify role source")
+            return False
+        except Exception as e:
+            log.error(f"Error checking audit logs: {e}")
+            return False
+
     async def _send_error_report(
         self,
         guild: discord.Guild,
@@ -519,31 +561,48 @@ class EventRoleReadd(commands.Cog):
                 )
                 continue
 
-            # Check if member already has the role
-            if matching_role in member.roles:
-                log.debug(f"Member {member.name} already has role '{matching_role.name}'")
-                await self._send_error_report(
-                    message.guild,
-                    matched_keyword,
-                    f"User already has the role {matching_role.mention}",
-                    message,
-                    user_id=member.id,
-                    user_name=member.name
-                )
-                continue
-
-            # Re-add the role with exponential backoff (up to 5 attempts)
+            # Re-add the role with linear backoff (up to 5 attempts, plus 1 final remove/re-add attempt)
+            # Now retries even if user already has the role, checking audit logs to confirm it was us
             max_attempts = 5
             success = False
             last_error = None
 
             for attempt in range(1, max_attempts + 1):
                 try:
-                    # Exponential backoff: 2s, 4s, 8s, 16s, 32s
-                    delay = 2 ** attempt
+                    # Linear backoff starting at 10s, increasing by 4s each time: 10s, 14s, 18s, 22s, 26s
+                    delay = 10 + (4 * (attempt - 1))
                     log.debug(f"Attempt {attempt}/{max_attempts} to re-add role '{matching_role.name}' to {member.name}, waiting {delay}s")
                     await asyncio.sleep(delay)
 
+                    # Re-fetch member to get current state
+                    member = message.guild.get_member(user_id)
+                    if not member:
+                        last_error = Exception("Member left the server")
+                        log.warning(f"Member {user_id} left the server during retry attempt {attempt}")
+                        break
+
+                    # Check if member already has the role
+                    if matching_role in member.roles:
+                        # Check audit logs to see if EventRoleReadd added it
+                        added_by_us = await self._check_role_added_by_cog(message.guild, member, matching_role)
+                        if added_by_us:
+                            log.info(
+                                f"Role '{matching_role.name}' already on {member.name} and was added by EventRoleReadd - "
+                                f"considering this a success on attempt {attempt}/{max_attempts}"
+                            )
+                            success = True
+                            break
+                        else:
+                            log.debug(
+                                f"Member {member.name} already has role '{matching_role.name}' but it wasn't added by EventRoleReadd - "
+                                f"continuing retry (attempt {attempt}/{max_attempts})"
+                            )
+                            # Continue to next attempt
+                            if attempt == max_attempts:
+                                last_error = Exception("User has role but it wasn't added by EventRoleReadd")
+                            continue
+
+                    # Try to add the role
                     await member.add_roles(matching_role, reason=f"EventRoleReadd: Auto re-add (keyword: {matched_keyword})")
 
                     log.info(
@@ -571,6 +630,47 @@ class EventRoleReadd(commands.Cog):
                     # Continue retrying for HTTP errors
                     if attempt == max_attempts:
                         log.error(f"All {max_attempts} attempts failed to re-add role '{matching_role.name}' to {member.name}")
+
+            # If all normal attempts failed and user has the role (but not added by us), try final remove/re-add
+            if not success and not isinstance(last_error, discord.Forbidden):
+                # Re-fetch member one last time
+                member = message.guild.get_member(user_id)
+                if member and matching_role in member.roles:
+                    try:
+                        log.info(f"Final attempt: removing and re-adding role '{matching_role.name}' for {member.name}")
+                        await member.remove_roles(matching_role, reason=f"EventRoleReadd: Final attempt - removing before re-add")
+                        await asyncio.sleep(4)
+                        await member.add_roles(matching_role, reason=f"EventRoleReadd: Final attempt - re-add (keyword: {matched_keyword})")
+
+                        log.info(
+                            f"Successfully re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
+                            f"on final remove/re-add attempt due to keyword '{matched_keyword}' in log embed"
+                        )
+                        success = True
+                    except discord.Forbidden as e:
+                        last_error = e
+                        log.warning(f"Final remove/re-add attempt failed - insufficient permissions")
+                    except discord.HTTPException as e:
+                        last_error = e
+                        log.error(f"Final remove/re-add attempt failed: {e}")
+                elif member and matching_role not in member.roles:
+                    # User doesn't have the role, try one last add
+                    try:
+                        log.info(f"Final attempt: adding role '{matching_role.name}' to {member.name}")
+                        await asyncio.sleep(4)
+                        await member.add_roles(matching_role, reason=f"EventRoleReadd: Final attempt - re-add (keyword: {matched_keyword})")
+
+                        log.info(
+                            f"Successfully re-added event role '{matching_role.name}' to {member.name} (ID: {member.id}) "
+                            f"on final attempt due to keyword '{matched_keyword}' in log embed"
+                        )
+                        success = True
+                    except discord.Forbidden as e:
+                        last_error = e
+                        log.warning(f"Final attempt failed - insufficient permissions")
+                    except discord.HTTPException as e:
+                        last_error = e
+                        log.error(f"Final attempt failed: {e}")
 
             if success:
                 # Send success report to report channel if configured
