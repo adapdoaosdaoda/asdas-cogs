@@ -157,11 +157,11 @@ class HandlersMixin:
 
             # Apply character limit to base name only (not the full channel name)
             if channel_name_limit_char:
-                # Character-based limiting: truncate at first occurrence (inclusive)
+                # Character-based limiting: truncate before first occurrence (exclusive)
                 char_index = base_name.find(channel_name_limit_char)
                 if char_index != -1:
-                    # Found the character, truncate up to and including it
-                    base_name = base_name[:char_index + len(channel_name_limit_char)]
+                    # Found the character, truncate before it
+                    base_name = base_name[:char_index]
                 # If character not found, keep full name (or fall back to numeric limit)
                 elif len(base_name) > channel_name_limit:
                     base_name = base_name[:channel_name_limit]

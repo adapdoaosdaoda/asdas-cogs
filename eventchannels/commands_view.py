@@ -71,7 +71,7 @@ class CommandsViewMixin:
 
         # Display channel name limit setting
         if channel_name_limit_char:
-            name_limit_display = f"Truncate at `{channel_name_limit_char}` (character-based)"
+            name_limit_display = f"Truncate before `{channel_name_limit_char}` (character-based)"
         else:
             name_limit_display = f"{channel_name_limit} characters (numeric)"
 
