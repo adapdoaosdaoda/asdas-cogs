@@ -1,0 +1,15 @@
+{
+    "name": "ForumThreadMessage",
+    "short": "Automatically send messages in new forum threads",
+    "description": "Monitors a configured forum channel for new threads and automatically sends a message that gets edited after 2 seconds and optionally deleted after another 2 seconds. All message content is configurable.",
+    "end_user_data_statement": "This cog does not persistently store any end user data.",
+    "install_msg": "Thank you for installing ForumThreadMessage! Use `[p]forumthreadmessage settings` to configure the cog.",
+    "author": ["Claude"],
+    "required_cogs": {},
+    "requirements": [],
+    "tags": ["forums", "threads", "automation"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
