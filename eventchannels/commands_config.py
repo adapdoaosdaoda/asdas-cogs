@@ -127,6 +127,24 @@ class CommandsConfigMixin:
 
                 # Generate new channel names
                 base_name = event.name.lower().replace(" ", space_replacer)
+
+                # Apply channel name limit
+                channel_name_limit = await self.config.guild(ctx.guild).channel_name_limit()
+                channel_name_limit_char = await self.config.guild(ctx.guild).channel_name_limit_char()
+
+                if channel_name_limit_char:
+                    # Character-based limiting: truncate before first occurrence (exclusive)
+                    char_index = base_name.find(channel_name_limit_char)
+                    if char_index != -1:
+                        # Found the character, truncate before it
+                        base_name = base_name[:char_index]
+                    # If character not found, keep full name (or fall back to numeric limit)
+                    elif len(base_name) > channel_name_limit:
+                        base_name = base_name[:channel_name_limit]
+                elif len(base_name) > channel_name_limit:
+                    # Numeric limiting
+                    base_name = base_name[:channel_name_limit]
+
                 new_text_name = format_string.format(name=base_name, type="text")
                 new_voice_name = format_string.format(name=base_name, type="voice")
 
@@ -198,13 +216,13 @@ class CommandsConfigMixin:
         - Discord's maximum is 100 characters
 
         **Character-Based Limit:**
-        - Truncates at the first occurrence of a specific character (inclusive)
+        - Truncates before the first occurrence of a specific character (exclusive)
         - Useful for cutting at specific separators
 
         Examples:
         - `[p]eventchannels setchannelnamelimit 50` - Limit to 50 characters
-        - `[p]eventchannels setchannelnamelimit ﹕` - Truncate at first "﹕" (including it)
-        - `[p]eventchannels setchannelnamelimit :` - Truncate at first ":" (including it)
+        - `[p]eventchannels setchannelnamelimit ﹕` - Truncate before first "﹕" (excluding it)
+        - `[p]eventchannels setchannelnamelimit :` - Truncate before first ":" (excluding it)
         - `[p]eventchannels setchannelnamelimit 100` - Use Discord's maximum (default)
         """
         # Try to parse as integer first
@@ -230,7 +248,7 @@ class CommandsConfigMixin:
             # Set character-based limiting
             await self.config.guild(ctx.guild).channel_name_limit_char.set(limit)
             await self.config.guild(ctx.guild).channel_name_limit.set(100)  # Reset to max as fallback
-            await ctx.send(f"✅ Channel name limit set to truncate at first occurrence of **'{limit}'** (inclusive).")
+            await ctx.send(f"✅ Channel name limit set to truncate before first occurrence of **'{limit}'** (exclusive).")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
