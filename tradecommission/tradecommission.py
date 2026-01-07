@@ -240,7 +240,7 @@ class AddInfoView(discord.ui.View):
                         # Schedule deletion after 3 hours
                         asyncio.create_task(
                             self.cog._delete_notification_after_delay(
-                                self.guild, current_channel, notification_msg.id, 3
+                                self.guild, current_channel, notification_msg.id, 3 * 3600
                             )
                         )
                 except (discord.Forbidden, discord.HTTPException):
@@ -360,10 +360,10 @@ class TradeCommission(commands.Cog):
 
         return any(role_id in allowed_role_ids for role_id in member_role_ids)
 
-    async def _delete_notification_after_delay(self, guild: discord.Guild, channel: discord.TextChannel, message_id: int, delay_hours: int = 3):
-        """Delete a notification message after a specified delay."""
+    async def _delete_notification_after_delay(self, guild: discord.Guild, channel: discord.TextChannel, message_id: int, delay_seconds: int):
+        """Delete a notification message after a specified delay in seconds."""
         try:
-            await asyncio.sleep(delay_hours * 3600)  # Convert hours to seconds
+            await asyncio.sleep(delay_seconds)
             try:
                 message = await channel.fetch_message(message_id)
                 await message.delete()
@@ -681,7 +681,7 @@ class TradeCommission(commands.Cog):
             message: The message text (can include {timestamp} placeholder)
             ping_role_id: Optional role ID to ping
             guild: The guild
-            event_timestamp: Optional Unix timestamp for the event (for {timestamp} replacement)
+            event_timestamp: Optional Unix timestamp for the event (used for {timestamp} replacement and deletion timing)
         """
         try:
             content = message
@@ -700,10 +700,18 @@ class TradeCommission(commands.Cog):
 
             notification_msg = await channel.send(content, allowed_mentions=discord.AllowedMentions(roles=True))
 
-            # Schedule deletion after 3 hours
+            # Schedule deletion at event time
+            if event_timestamp:
+                # Calculate delay in seconds until event time
+                current_timestamp = int(datetime.now().timestamp())
+                delay_seconds = max(0, event_timestamp - current_timestamp)
+            else:
+                # Fallback to 3 hours if no event timestamp provided
+                delay_seconds = 3 * 3600
+
             asyncio.create_task(
                 self._delete_notification_after_delay(
-                    guild, channel, notification_msg.id, 3
+                    guild, channel, notification_msg.id, delay_seconds
                 )
             )
         except discord.Forbidden:
