@@ -45,6 +45,7 @@ Track and display days since your bot last crashed in the bot's About Me section
 **Key Features:**
 - Automatic crash detection (distinguishes between crashes and intentional restarts)
 - Automatically updates bot's About Me with "Last borked: X days ago"
+- Customizable status text (e.g., "Last borked:", "Days without incident:", "Uptime streak:")
 - Crash history tracking with longest streak highscores
 - Bio length validation for 10.000+ day counts
 - Uses period (.) as thousand separator (e.g., "10.000 days")

@@ -30,6 +30,7 @@ class BorkedSince(commands.Cog):
             "total_crashes": 0,  # Total number of crashes detected
             "start_time": None,  # When current streak started
             "update_interval": 86400,  # 24 hours in seconds
+            "last_borked_text": "Last borked:",  # Prefix text for the counter
         }
 
         self.config.register_global(**default_global)
@@ -167,10 +168,11 @@ class BorkedSince(commands.Cog):
         """Update the bot's About Me (application description) with current streak."""
         days = await self.config.days_since_borked()
         base_bio = await self.config.base_bio()
+        last_borked_text = await self.config.last_borked_text()
 
         # Format the suffix
         days_formatted = self._format_days(days)
-        suffix = f"\nLast borked: {days_formatted} day{'s' if days != 1 else ''} ago"
+        suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''} ago"
 
         # Combine and truncate to 190 chars
         full_bio = (base_bio + suffix)[:190]
@@ -184,14 +186,14 @@ class BorkedSince(commands.Cog):
             else:
                 print(f"BorkedSince: Error updating bio: {e}")
 
-    def _validate_bio_length(self, base_bio: str) -> tuple[bool, str]:
+    def _validate_bio_length(self, base_bio: str, last_borked_text: str) -> tuple[bool, str]:
         """Validate if bio is short enough to fit the maximum possible counter.
 
         Returns:
             (is_valid, message)
         """
         # Test with 10.000 days as the sample
-        test_suffix = "\nLast borked: 10.000 days ago"
+        test_suffix = f"\n{last_borked_text} 10.000 days ago"
         test_full = base_bio + test_suffix
 
         if len(test_full) > 190:
@@ -290,13 +292,56 @@ class BorkedSince(commands.Cog):
         **Note:** The suffix "Last borked: X days ago" will be automatically added.
         """
         # Validate length
-        is_valid, message = self._validate_bio_length(bio_text)
+        last_borked_text = await self.config.last_borked_text()
+        is_valid, message = self._validate_bio_length(bio_text, last_borked_text)
 
         # Save the bio
         await self.config.base_bio.set(bio_text)
 
         # Send validation message
         await ctx.send(message)
+
+        # Update bio if enabled
+        if await self.config.enabled():
+            await self._update_bio()
+            await ctx.send("Bio has been updated on Discord.")
+
+    @borkedsince.command(name="settext")
+    async def bs_settext(self, ctx: commands.Context, *, prefix_text: str):
+        """Set the prefix text for the counter (e.g., "Last borked:", "Days without incident:", etc.).
+
+        **Arguments:**
+        - `prefix_text`: The text to show before the day count
+
+        **Examples:**
+        - `[p]borkedsince settext Last borked:`
+        - `[p]borkedsince settext Days without incident:`
+        - `[p]borkedsince settext Uptime streak:`
+
+        **Note:** The format will be: "[prefix_text] X days ago"
+        """
+        # Validate the text isn't too long
+        base_bio = await self.config.base_bio()
+        if base_bio:
+            is_valid, message = self._validate_bio_length(base_bio, prefix_text)
+            if not is_valid:
+                await ctx.send(
+                    f"⚠️ **Warning:** The new prefix text may cause bio truncation!\n\n{message}\n\n"
+                    f"The prefix has been saved, but consider using a shorter one or reducing your base bio length."
+                )
+
+        # Save the prefix text
+        await self.config.last_borked_text.set(prefix_text)
+
+        # Show preview
+        days = await self.config.days_since_borked()
+        days_formatted = self._format_days(days)
+        preview = f"\n{prefix_text} {days_formatted} day{'s' if days != 1 else ''} ago"
+
+        await ctx.send(
+            f"✅ Prefix text updated!\n\n"
+            f"**Preview:**\n{box(preview)}"
+        )
 
         # Update bio if enabled
         if await self.config.enabled():
@@ -376,10 +421,11 @@ class BorkedSince(commands.Cog):
 
         # Bio preview
         if config["base_bio"]:
-            suffix = f"\nLast borked: {days_formatted} day{'s' if days != 1 else ''} ago"
+            last_borked_text = config["last_borked_text"]
+            suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''} ago"
             full_bio = (config["base_bio"] + suffix)[:190]
 
-            is_valid, _ = self._validate_bio_length(config["base_bio"])
+            is_valid, _ = self._validate_bio_length(config["base_bio"], last_borked_text)
             validation_emoji = "✅" if is_valid else "⚠️"
 
             embed.add_field(
@@ -532,7 +578,8 @@ class BorkedSince(commands.Cog):
             )
             return
 
-        is_valid, message = self._validate_bio_length(base_bio)
+        last_borked_text = await self.config.last_borked_text()
+        is_valid, message = self._validate_bio_length(base_bio, last_borked_text)
         await ctx.send(message)
 
     @borkedsince.command(name="updatenow")

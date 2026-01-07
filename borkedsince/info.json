@@ -2,8 +2,8 @@
     "author": [
         "adapdoaosdaoda"
     ],
-    "description": "Track and display days since the bot last crashed in the bot's About Me section. Features crash history, longest streak tracking, and automatic crash detection.",
-    "install_msg": "Thank you for installing BorkedSince! Use `[p]borkedsince setbio <text>` to set your base bio, then `[p]borkedsince enable` to start tracking. The cog will automatically detect crashes and update your bot's About Me with 'Last borked: X days ago'.",
+    "description": "Track and display days since the bot last crashed in the bot's About Me section. Features crash history, longest streak tracking, automatic crash detection, and customizable status text.",
+    "install_msg": "Thank you for installing BorkedSince! Use `[p]borkedsince setbio <text>` to set your base bio, optionally use `[p]borkedsince settext <text>` to customize the prefix (default: 'Last borked:'), then `[p]borkedsince enable` to start tracking. The cog will automatically detect crashes and update your bot's About Me.",
     "short": "Track days since last bot crash in About Me",
     "tags": [
         "utility",
