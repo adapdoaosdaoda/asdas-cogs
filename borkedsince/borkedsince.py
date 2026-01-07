@@ -164,8 +164,12 @@ class BorkedSince(commands.Cog):
         """Format days with period as thousand separator (e.g., 10.000)."""
         return f"{days:,}".replace(",", ".")
 
-    async def _update_bio(self):
-        """Update the bot's About Me (application description) with current streak."""
+    async def _update_bio(self) -> tuple[bool, Optional[str]]:
+        """Update the bot's About Me (application description) with current streak.
+
+        Returns:
+            (success, error_message): True if successful, False if rate limited or error occurred.
+        """
         days = await self.config.days_since_borked()
         base_bio = await self.config.base_bio()
         last_borked_text = await self.config.last_borked_text()
@@ -180,11 +184,14 @@ class BorkedSince(commands.Cog):
         try:
             # Update the application description (shows as "About Me" in bot profile)
             await self.bot.application.edit(description=full_bio)
+            return True, None
         except discord.HTTPException as e:
             if e.status == 429:  # Rate limited
                 print("BorkedSince: Rate limited on bio update")
+                return False, "Rate limited by Discord. Please try again later."
             else:
                 print(f"BorkedSince: Error updating bio: {e}")
+                return False, f"Error updating bio: {e}"
 
     def _validate_bio_length(self, base_bio: str, last_borked_text: str) -> tuple[bool, str]:
         """Validate if bio is short enough to fit the maximum possible counter.
@@ -255,14 +262,23 @@ class BorkedSince(commands.Cog):
             self._task = asyncio.create_task(self._daily_update_loop())
 
         # Update bio immediately
-        await self._update_bio()
+        success, error_msg = await self._update_bio()
 
         days = await self.config.days_since_borked()
-        await ctx.send(
-            f"✅ BorkedSince enabled!\n\n"
-            f"Current streak: **{days}** day{'s' if days != 1 else ''}\n"
-            f"Bot bio has been updated."
-        )
+        if success:
+            await ctx.send(
+                f"✅ BorkedSince enabled!\n\n"
+                f"Current streak: **{days}** day{'s' if days != 1 else ''}\n"
+                f"Bot bio has been updated."
+            )
+        else:
+            await ctx.send(
+                f"⚠️ BorkedSince enabled, but bio update failed!\n\n"
+                f"**Current streak:** {days} day{'s' if days != 1 else ''}\n"
+                f"**Error:** {error_msg}\n\n"
+                f"The counter is tracking, but the Discord bio was not updated. "
+                f"You can try `[p]borkedsince updatenow` later."
+            )
 
     @borkedsince.command(name="disable")
     async def bs_disable(self, ctx: commands.Context):
@@ -303,8 +319,15 @@ class BorkedSince(commands.Cog):
 
         # Update bio if enabled
         if await self.config.enabled():
-            await self._update_bio()
-            await ctx.send("Bio has been updated on Discord.")
+            success, error_msg = await self._update_bio()
+            if success:
+                await ctx.send("Bio has been updated on Discord.")
+            else:
+                await ctx.send(
+                    f"⚠️ Failed to update bio on Discord.\n\n"
+                    f"**Error:** {error_msg}\n\n"
+                    f"Your base bio has been saved and will be used for future updates."
+                )
 
     @borkedsince.command(name="settext")
     async def bs_settext(self, ctx: commands.Context, *, prefix_text: str):
@@ -345,8 +368,15 @@ class BorkedSince(commands.Cog):
 
         # Update bio if enabled
         if await self.config.enabled():
-            await self._update_bio()
-            await ctx.send("Bio has been updated on Discord.")
+            success, error_msg = await self._update_bio()
+            if success:
+                await ctx.send("Bio has been updated on Discord.")
+            else:
+                await ctx.send(
+                    f"⚠️ Failed to update bio on Discord.\n\n"
+                    f"**Error:** {error_msg}\n\n"
+                    f"Your prefix text has been saved and will be used for future updates."
+                )
 
     @borkedsince.command(name="reset")
     async def bs_reset(self, ctx: commands.Context, *, reason: Optional[str] = None):
@@ -370,13 +400,16 @@ class BorkedSince(commands.Cog):
         await self.config.last_update.set(datetime.now(timezone.utc).isoformat())
 
         # Update bio if enabled
+        bio_status = ""
         if await self.config.enabled():
-            await self._update_bio()
+            success, error_msg = await self._update_bio()
+            if not success:
+                bio_status = f"\n\n⚠️ **Bio update failed:** {error_msg}"
 
         reason_text = f"\n**Reason:** {reason}" if reason else ""
         await ctx.send(
             f"✅ Counter reset to 0 days!\n"
-            f"**Previous streak:** {current_streak} day{'s' if current_streak != 1 else ''}{reason_text}"
+            f"**Previous streak:** {current_streak} day{'s' if current_streak != 1 else ''}{reason_text}{bio_status}"
         )
 
     @borkedsince.command(name="info")
@@ -592,14 +625,22 @@ class BorkedSince(commands.Cog):
             )
             return
 
-        await self._update_bio()
+        success, error_msg = await self._update_bio()
         days = await self.config.days_since_borked()
         days_formatted = self._format_days(days)
 
-        await ctx.send(
-            f"✅ Bio updated!\n\n"
-            f"Current streak: **{days_formatted}** day{'s' if days != 1 else ''}"
-        )
+        if success:
+            await ctx.send(
+                f"✅ Bio updated!\n\n"
+                f"Current streak: **{days_formatted}** day{'s' if days != 1 else ''}"
+            )
+        else:
+            await ctx.send(
+                f"❌ Bio update failed!\n\n"
+                f"**Error:** {error_msg}\n"
+                f"**Current streak:** {days_formatted} day{'s' if days != 1 else ''}\n\n"
+                f"The counter is still tracking, but the Discord bio was not updated."
+            )
 
     @borkedsince.command(name="increment")
     async def bs_increment(self, ctx: commands.Context):
@@ -621,12 +662,15 @@ class BorkedSince(commands.Cog):
             await self.config.longest_streak.set(new_days)
 
         # Update bio if enabled
+        bio_status = ""
         if await self.config.enabled():
-            await self._update_bio()
+            success, error_msg = await self._update_bio()
+            if not success:
+                bio_status = f"\n\n⚠️ **Bio update failed:** {error_msg}"
 
         new_days_formatted = self._format_days(new_days)
         await ctx.send(
             f"✅ Counter incremented!\n\n"
             f"**Previous:** {self._format_days(current_days)} day{'s' if current_days != 1 else ''}\n"
-            f"**New:** {new_days_formatted} day{'s' if new_days != 1 else ''}"
+            f"**New:** {new_days_formatted} day{'s' if new_days != 1 else ''}{bio_status}"
         )
