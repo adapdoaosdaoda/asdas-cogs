@@ -244,7 +244,6 @@ class BirthdayAdminCommands(MixinMeta):
         )
 
     @commands.group()
-    @commands.guild_only()  # type:ignore
     @commands.admin_or_permissions(manage_guild=True)
     async def bdset(self, ctx: commands.Context):
         """
@@ -254,6 +253,7 @@ class BirthdayAdminCommands(MixinMeta):
         """
 
     @commands.bot_has_permissions(manage_roles=True)
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def interactive(self, ctx: commands.Context):
         """Start interactive setup"""
@@ -263,6 +263,7 @@ class BirthdayAdminCommands(MixinMeta):
 
         await ctx.send("Click below to start.", view=SetupView(ctx.author, self.bot, self.config))
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def settings(self, ctx: commands.Context):
         """View your current settings"""
@@ -415,11 +416,44 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send(message)
 
     @bdset.command()
-    async def listall(self, ctx: commands.Context):
-        """List all birthdays for members in this server."""
-        # group has guild check
-        if TYPE_CHECKING:
-            assert ctx.guild is not None
+    async def listall(self, ctx: commands.Context, guild_id: int = None):
+        """List all birthdays for members in a server.
+
+        When used in a server, lists birthdays for that server.
+        When used in DMs, you must provide a guild_id.
+
+        **Examples:**
+        - `[p]bdset listall` - in a server, list birthdays for that server
+        - `[p]bdset listall 123456789` - in DMs, list birthdays for the specified server
+        """
+        # Determine which guild to use
+        if ctx.guild is None:
+            # In DMs - require guild_id
+            if guild_id is None:
+                await ctx.send(
+                    "When using this command in DMs, you must provide a guild ID.\n"
+                    f"**Usage:** `{ctx.clean_prefix}bdset listall <guild_id>`"
+                )
+                return
+
+            guild = self.bot.get_guild(guild_id)
+            if guild is None:
+                await ctx.send(f"I couldn't find a guild with ID {guild_id}.")
+                return
+
+            # Check if the user is an admin in that guild
+            member = guild.get_member(ctx.author.id)
+            if member is None:
+                await ctx.send(f"You are not a member of the guild with ID {guild_id}.")
+                return
+
+            # Check if user has admin permissions in that guild
+            if not member.guild_permissions.administrator and not await self.bot.is_owner(ctx.author):
+                await ctx.send(f"You don't have admin permissions in the guild with ID {guild_id}.")
+                return
+        else:
+            # In a server - use that server
+            guild = ctx.guild
 
         all_birthdays: dict[int, dict[str, dict]] = await self.config.all_users()
 
@@ -429,7 +463,7 @@ class BirthdayAdminCommands(MixinMeta):
             if not user_data.get("birthday"):
                 continue
 
-            member = ctx.guild.get_member(user_id)
+            member = guild.get_member(user_id)
             if not isinstance(member, discord.Member):
                 continue
 
@@ -479,6 +513,7 @@ class BirthdayAdminCommands(MixinMeta):
         else:
             await ctx.send(f"**Birthdays ({len(members_with_birthdays)} members)**\n{message}")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def time(self, ctx: commands.Context, *, time: TimeConverter):
         """
@@ -524,6 +559,7 @@ class BirthdayAdminCommands(MixinMeta):
             f"and `{ctx.clean_prefix}bdset messagetime`."
         )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def roletime(self, ctx: commands.Context, *, time: TimeConverter):
         """
@@ -559,6 +595,7 @@ class BirthdayAdminCommands(MixinMeta):
             f"Role time set! I'll update birthday roles at {time.strftime('%H:%M')} UTC."
         )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def messagetime(self, ctx: commands.Context, *, time: TimeConverter):
         """
@@ -594,6 +631,7 @@ class BirthdayAdminCommands(MixinMeta):
             f"Message time set! I'll send birthday announcements at {time.strftime('%H:%M')} UTC."
         )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def msgwithoutyear(self, ctx: commands.Context, *, message: str):
         """
@@ -642,6 +680,7 @@ class BirthdayAdminCommands(MixinMeta):
             allowed_mentions=discord.AllowedMentions(users=True),
         )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def msgwithyear(self, ctx: commands.Context, *, message: str):
         """
@@ -691,6 +730,7 @@ class BirthdayAdminCommands(MixinMeta):
             allowed_mentions=discord.AllowedMentions(users=True),
         )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def channel(self, ctx: commands.Context, channel: discord.TextChannel):
         """
@@ -720,6 +760,7 @@ class BirthdayAdminCommands(MixinMeta):
         await ctx.send(f"Channel set to {channel.mention}.")
 
     @commands.bot_has_permissions(manage_roles=True)
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def role(self, ctx: commands.Context, *, role: discord.Role):
         """
@@ -750,6 +791,7 @@ class BirthdayAdminCommands(MixinMeta):
 
         await ctx.send(f"Role set to {role.name}.")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def forceset(
         self, ctx: commands.Context, user: discord.Member, *, birthday: BirthdayConverter
@@ -776,6 +818,7 @@ class BirthdayAdminCommands(MixinMeta):
         str_bday = birthday.strftime("%B %d")
         await ctx.send(f"{user.name}'s birthday has been set as {str_bday}. This will apply globally across all servers.")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def forceremove(self, ctx: commands.Context, user: discord.Member):
         """Force-remove a user's birthday."""
@@ -803,6 +846,7 @@ class BirthdayAdminCommands(MixinMeta):
         await ctx.send(f"{user.name}'s birthday has been removed globally.")
 
     @commands.is_owner()
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def zemigrate(self, ctx: commands.Context):
         """
@@ -881,6 +925,7 @@ class BirthdayAdminCommands(MixinMeta):
             " under `[p]bdset`, if you would like to change it from ZeLarp's. This is per-guild."
         )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def rolemention(self, ctx: commands.Context, value: bool):
         """
@@ -897,6 +942,7 @@ class BirthdayAdminCommands(MixinMeta):
         else:
             await ctx.send("Role mentions have been disabled.")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def requiredrole(self, ctx: commands.Context, role1: Union[discord.Role, None] = None, role2: Union[discord.Role, None] = None):
         """
@@ -974,6 +1020,7 @@ class BirthdayAdminCommands(MixinMeta):
                     "at least one of these roles to have their birthday announced."
                 )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command(name="requiredrolepurge")
     async def requiredrole_purge(self, ctx: commands.Context):
         """Remove birthdays from the database for users who no longer have any required role.
@@ -1035,6 +1082,7 @@ class BirthdayAdminCommands(MixinMeta):
 
         await ctx.send(f"Purged {purged} users from the database.")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def setchannel(self, ctx: commands.Context, channel: Union[discord.TextChannel, None] = None):
         """
@@ -1063,6 +1111,7 @@ class BirthdayAdminCommands(MixinMeta):
                 f"Users can now only set their birthday in {channel.mention}."
             )
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def image(self, ctx: commands.Context, image_url: Union[str, None] = None):
         """
@@ -1156,6 +1205,7 @@ class BirthdayAdminCommands(MixinMeta):
                 log.exception("Error downloading birthday image", exc_info=e)
                 await ctx.send(f"An error occurred while downloading the image.")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def reaction(self, ctx: commands.Context, *emojis: str):
         """
@@ -1221,6 +1271,7 @@ class BirthdayAdminCommands(MixinMeta):
                 emoji_str = " ".join(valid_emojis)
                 await ctx.send(f"Birthday announcements will now be reacted to with {emoji_str}")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def test(self, ctx: commands.Context, *, member: discord.Member = None):
         """
@@ -1318,6 +1369,7 @@ class BirthdayAdminCommands(MixinMeta):
         except discord.HTTPException as e:
             await ctx.send(f"Failed to send test announcement: {e}")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def forcesend(self, ctx: commands.Context):
         """
@@ -1456,6 +1508,7 @@ class BirthdayAdminCommands(MixinMeta):
             else:
                 await ctx.send(f"✅ Sent {sent_count} birthday announcements to {channel.mention}.")
 
+    @commands.guild_only()  # type:ignore
     @bdset.command()
     async def stop(self, ctx: commands.Context):
         """
