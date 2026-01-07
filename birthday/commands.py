@@ -440,10 +440,8 @@ class BirthdayAdminCommands(MixinMeta):
                 day=birthday_data["day"],
             )
 
-            if birthday_data["year"]:
-                date_str = birthday_dt.strftime("%B %d, %Y")
-            else:
-                date_str = birthday_dt.strftime("%B %d")
+            # Always show birthday without year in listall
+            date_str = birthday_dt.strftime("%B %d")
 
             members_with_birthdays.append((member.display_name, date_str, birthday_dt))
 
