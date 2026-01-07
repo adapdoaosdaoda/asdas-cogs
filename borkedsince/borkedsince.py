@@ -516,7 +516,7 @@ class BorkedSince(commands.Cog):
 
         embed = discord.Embed(
             title="🏆 Bork History - Longest Streaks",
-            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borkes",
+            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borkening",
             color=embed_color,
         )
 
@@ -548,7 +548,7 @@ class BorkedSince(commands.Cog):
         longest_formatted = self._format_days(longest)
 
         embed.set_footer(
-            text=f"Total crashes recorded: {total_crashes} | "
+            text=f"Total borks recorded: {total_crashes} | "
                  f"All-time longest: {longest_formatted} days"
         )
 
