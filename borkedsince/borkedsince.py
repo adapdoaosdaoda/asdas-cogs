@@ -507,8 +507,8 @@ class BorkedSince(commands.Cog):
         sorted_crashes = sorted(crash_history, key=lambda x: x["streak_length"], reverse=True)
 
         embed = discord.Embed(
-            title="🏆 Crash History - Longest Streaks",
-            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before crashes",
+            title="🏆 Bork History - Longest Streaks",
+            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borkes",
             color=discord.Color.gold(),
         )
 
@@ -530,7 +530,7 @@ class BorkedSince(commands.Cog):
 
             embed.add_field(
                 name=f"{emoji} {streak_formatted} day{'s' if streak != 1 else ''}",
-                value=f"Crashed <t:{int(timestamp.timestamp())}:R>",
+                value=f"Borked <t:{int(timestamp.timestamp())}:R>",
                 inline=False
             )
 
