@@ -229,10 +229,10 @@ class AddInfoView(discord.ui.View):
                             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                                 pass
 
-                        # Send new notification (without role ping)
+                        # Send new notification
                         notification_content = guild_config["notification_message"]
 
-                        notification_msg = await current_channel.send(notification_content)
+                        notification_msg = await current_channel.send(notification_content, allowed_mentions=discord.AllowedMentions(roles=True))
 
                         # Store notification message ID
                         await self.cog.config.guild(self.guild).notification_message_id.set(notification_msg.id)
@@ -657,7 +657,7 @@ class TradeCommission(commands.Cog):
                 content = role.mention
 
         try:
-            message = await channel.send(content=content, embed=embed)
+            message = await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
             # Store current message as previous for next week
             await self.config.guild(guild).previous_message_id.set(config["current_message_id"])
             # Set new current message
@@ -698,7 +698,7 @@ class TradeCommission(commands.Cog):
                 if role:
                     content = f"{role.mention}\n\n{content}"
 
-            notification_msg = await channel.send(content)
+            notification_msg = await channel.send(content, allowed_mentions=discord.AllowedMentions(roles=True))
 
             # Schedule deletion after 3 hours
             asyncio.create_task(
