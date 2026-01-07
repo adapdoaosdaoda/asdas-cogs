@@ -128,6 +128,35 @@ class BirthdayCommands(MixinMeta):
         await self.config.user(ctx.author).birthday.set({})
         await ctx.send("Your birthday has been removed.")
 
+    @commands.dm_only()  # type:ignore
+    @birthday.command()
+    async def show(self, ctx: commands.Context):
+        """Show your birthday. This command only works in DMs."""
+        birthday_data = await self.config.user(ctx.author).birthday()
+
+        if not birthday_data or not birthday_data.get("month"):
+            await ctx.send("You haven't set your birthday yet. Use `[p]birthday set` to set it.")
+            return
+
+        # Reconstruct the datetime from stored data
+        birthday_dt = datetime.datetime(
+            year=birthday_data.get("year") or 1,
+            month=birthday_data["month"],
+            day=birthday_data["day"],
+        )
+
+        # Format the birthday string
+        if birthday_data.get("year"):
+            # Birthday with year
+            formatted_date = birthday_dt.strftime("%B %d, %Y")
+            current_year = datetime.datetime.utcnow().year
+            age = current_year - birthday_data["year"]
+            await ctx.send(f"Your birthday is **{formatted_date}**. You are currently {age} years old.")
+        else:
+            # Birthday without year
+            formatted_date = birthday_dt.strftime("%B %d")
+            await ctx.send(f"Your birthday is **{formatted_date}**.")
+
     @commands.guild_only()  # type:ignore
     @commands.before_invoke(setup_check)  # type:ignore
     @birthday.command()
