@@ -337,25 +337,13 @@ class BirthdayLoop(MixinMeta):
                         log.trace("Member %s already announced today in guild %s, skipping", member.id, guild_id)
                         continue
 
-                    if dt.year == 1:
-                        await self.send_announcement(
-                            channel,
-                            format_bday_message(guild_settings["message_wo_year"], member),
-                            guild_settings["allow_role_mention"],
-                            image_path,
-                            announcement_reactions,
-                        )
-                    else:
-                        age = today_dt.year - dt.year
-                        await self.send_announcement(
-                            channel,
-                            format_bday_message(
-                                guild_settings["message_w_year"], member, age
-                            ),
-                            guild_settings["allow_role_mention"],
-                            image_path,
-                            announcement_reactions,
-                        )
+                    await self.send_announcement(
+                        channel,
+                        format_bday_message(guild_settings["message_wo_year"], member),
+                        guild_settings["allow_role_mention"],
+                        image_path,
+                        announcement_reactions,
+                    )
 
                     # Mark this member as announced today
                     announced_today.append(member.id)

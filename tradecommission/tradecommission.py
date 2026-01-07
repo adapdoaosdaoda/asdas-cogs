@@ -229,10 +229,10 @@ class AddInfoView(discord.ui.View):
                             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                                 pass
 
-                        # Send new notification (without role ping)
+                        # Send new notification
                         notification_content = guild_config["notification_message"]
 
-                        notification_msg = await current_channel.send(notification_content)
+                        notification_msg = await current_channel.send(notification_content, allowed_mentions=discord.AllowedMentions(roles=True))
 
                         # Store notification message ID
                         await self.cog.config.guild(self.guild).notification_message_id.set(notification_msg.id)
@@ -240,7 +240,7 @@ class AddInfoView(discord.ui.View):
                         # Schedule deletion after 3 hours
                         asyncio.create_task(
                             self.cog._delete_notification_after_delay(
-                                self.guild, current_channel, notification_msg.id, 3
+                                self.guild, current_channel, notification_msg.id, 3 * 3600
                             )
                         )
                 except (discord.Forbidden, discord.HTTPException):
@@ -316,7 +316,7 @@ class TradeCommission(commands.Cog):
             "sunday_minute": 0,
             "sunday_message": "🔔 **Pre-Shop Restock Reminder!**\n\nThe shop will be restocking {timestamp}! Get ready!",
             "sunday_ping_role_id": None,
-            "sunday_event_hour": 21,  # Hour when the actual event happens (21 UTC for shop restock)
+            "sunday_event_hour": 21,  # Hour when the actual event happens (in configured timezone, default 21:00 for shop restock)
 
             # Wednesday sell recommendation notification
             "wednesday_enabled": False,
@@ -324,13 +324,15 @@ class TradeCommission(commands.Cog):
             "wednesday_minute": 0,
             "wednesday_message": "📈 **Recommended to Sell Now!**\n\nIt's Wednesday! Best time to sell is {timestamp}!",
             "wednesday_ping_role_id": None,
-            "wednesday_event_hour": 22,  # Hour when the actual event happens (22 UTC for sell time)
+            "wednesday_event_hour": 22,  # Hour when the actual event happens (in configured timezone, default 22:00 for sell time)
         }
 
         self.config.register_global(**default_global)
         self.config.register_guild(**default_guild)
         self._task = None
         self._ready = False
+        self._sync_state = "sync_minute"  # States: sync_minute -> sync_second -> normal
+        self._last_sync_day = None  # Track last Friday sync
 
     async def cog_load(self):
         """Start the background task when cog loads."""
@@ -360,10 +362,10 @@ class TradeCommission(commands.Cog):
 
         return any(role_id in allowed_role_ids for role_id in member_role_ids)
 
-    async def _delete_notification_after_delay(self, guild: discord.Guild, channel: discord.TextChannel, message_id: int, delay_hours: int = 3):
-        """Delete a notification message after a specified delay."""
+    async def _delete_notification_after_delay(self, guild: discord.Guild, channel: discord.TextChannel, message_id: int, delay_seconds: int):
+        """Delete a notification message after a specified delay in seconds."""
         try:
-            await asyncio.sleep(delay_hours * 3600)  # Convert hours to seconds
+            await asyncio.sleep(delay_seconds)
             try:
                 message = await channel.fetch_message(message_id)
                 await message.delete()
@@ -479,19 +481,59 @@ class TradeCommission(commands.Cog):
         return embed
 
     async def _check_schedule_loop(self):
-        """Background loop to check for scheduled messages."""
+        """Background loop to check for scheduled messages.
+
+        Uses three-stage smart syncing:
+        1. sync_minute: Check every 60s until synchronized to minute 0
+        2. sync_second: Check every 1s until synchronized to second 0
+        3. normal: Check every 3600s (fully synchronized)
+
+        Every Friday: Re-sync to minute 0 (not second 0) to correct drift
+        """
         await self.bot.wait_until_ready()
         while True:
             try:
+                now_utc = datetime.now(pytz.UTC)
+
+                # Check if it's Friday and we haven't synced today
+                if now_utc.weekday() == 4:  # 4 = Friday
+                    today_date = now_utc.date()
+                    if self._last_sync_day != today_date:
+                        # Re-sync to minute 0 only (not second 0)
+                        self._sync_state = "sync_minute"
+                        self._last_sync_day = today_date
+
+                # Run checks for all guilds
                 for guild in self.bot.guilds:
                     await self._check_guild_schedule(guild)
-                # Check every hour
-                await asyncio.sleep(3600)
+
+                # Determine sleep interval based on sync state
+                if self._sync_state == "sync_minute":
+                    # Stage 1: Check every minute until we hit minute 0
+                    if now_utc.minute == 0:
+                        self._sync_state = "sync_second"  # Move to second sync
+                        await asyncio.sleep(1)  # Sleep for 1 second
+                    else:
+                        await asyncio.sleep(60)  # Sleep for 1 minute
+
+                elif self._sync_state == "sync_second":
+                    # Stage 2: Check every second until we hit second 0
+                    if now_utc.second == 0:
+                        self._sync_state = "normal"  # Switch to normal mode
+                        await asyncio.sleep(3600)  # Sleep for 1 hour
+                    else:
+                        await asyncio.sleep(1)  # Sleep for 1 second
+
+                else:  # normal mode
+                    # Stage 3: Check every hour (fully synchronized)
+                    await asyncio.sleep(3600)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 print(f"Error in Trade Commission schedule loop: {e}")
-                await asyncio.sleep(3600)
+                # On error, use safe 60 second interval
+                await asyncio.sleep(60)
 
     async def _check_guild_schedule(self, guild: discord.Guild):
         """Check if it's time to send the weekly message or scheduled notifications for a guild."""
@@ -510,11 +552,10 @@ class TradeCommission(commands.Cog):
 
         # Check weekly message (only if enabled)
         if config["enabled"]:
-            # Check if it's the right day and hour
+            # Check if it's the right day, hour, and within 2 minutes of scheduled time
             if (now.weekday() == config["schedule_day"] and
                 now.hour == config["schedule_hour"] and
-                now.minute >= config["schedule_minute"] and
-                now.minute < config["schedule_minute"] + 60):
+                abs(now.minute - config["schedule_minute"]) < 2):
 
                 # Check if we already sent a message this week
                 last_sent = await self.config.guild(guild).get_raw("last_sent", default=None)
@@ -535,8 +576,7 @@ class TradeCommission(commands.Cog):
         if (config["sunday_enabled"] and
             now.weekday() == 6 and
             now.hour == config["sunday_hour"] and
-            now.minute >= config["sunday_minute"] and
-            now.minute < config["sunday_minute"] + 60):
+            abs(now.minute - config["sunday_minute"]) < 2):
 
             # Check if we already sent this notification today
             last_sunday = await self.config.guild(guild).get_raw("last_sunday_notification", default=None)
@@ -545,9 +585,8 @@ class TradeCommission(commands.Cog):
                 if (now - last_sunday_dt).days < 1:
                     pass  # Already sent today
                 else:
-                    # Calculate event timestamp (21 UTC on Sunday)
+                    # Calculate event timestamp in configured timezone
                     event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
-                    # If event time has already passed today, it refers to today
                     event_timestamp = int(event_time.timestamp())
 
                     await self._send_scheduled_notification(
@@ -559,9 +598,8 @@ class TradeCommission(commands.Cog):
                     )
                     await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
             else:
-                # Calculate event timestamp (21 UTC on Sunday)
+                # Calculate event timestamp in configured timezone
                 event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
-                # If event time has already passed today, it refers to today
                 event_timestamp = int(event_time.timestamp())
 
                 await self._send_scheduled_notification(
@@ -577,8 +615,7 @@ class TradeCommission(commands.Cog):
         if (config["wednesday_enabled"] and
             now.weekday() == 2 and
             now.hour == config["wednesday_hour"] and
-            now.minute >= config["wednesday_minute"] and
-            now.minute < config["wednesday_minute"] + 60):
+            abs(now.minute - config["wednesday_minute"]) < 2):
 
             # Check if we already sent this notification today
             last_wednesday = await self.config.guild(guild).get_raw("last_wednesday_notification", default=None)
@@ -587,9 +624,8 @@ class TradeCommission(commands.Cog):
                 if (now - last_wednesday_dt).days < 1:
                     pass  # Already sent today
                 else:
-                    # Calculate event timestamp (22 UTC on Wednesday)
+                    # Calculate event timestamp in configured timezone
                     event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
-                    # If event time has already passed today, it refers to today
                     event_timestamp = int(event_time.timestamp())
 
                     await self._send_scheduled_notification(
@@ -601,9 +637,8 @@ class TradeCommission(commands.Cog):
                     )
                     await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
             else:
-                # Calculate event timestamp (22 UTC on Wednesday)
+                # Calculate event timestamp in configured timezone
                 event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
-                # If event time has already passed today, it refers to today
                 event_timestamp = int(event_time.timestamp())
 
                 await self._send_scheduled_notification(
@@ -657,7 +692,7 @@ class TradeCommission(commands.Cog):
                 content = role.mention
 
         try:
-            message = await channel.send(content=content, embed=embed)
+            message = await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
             # Store current message as previous for next week
             await self.config.guild(guild).previous_message_id.set(config["current_message_id"])
             # Set new current message
@@ -681,7 +716,7 @@ class TradeCommission(commands.Cog):
             message: The message text (can include {timestamp} placeholder)
             ping_role_id: Optional role ID to ping
             guild: The guild
-            event_timestamp: Optional Unix timestamp for the event (for {timestamp} replacement)
+            event_timestamp: Optional Unix timestamp for the event (used for {timestamp} replacement and deletion timing)
         """
         try:
             content = message
@@ -698,12 +733,20 @@ class TradeCommission(commands.Cog):
                 if role:
                     content = f"{role.mention}\n\n{content}"
 
-            notification_msg = await channel.send(content)
+            notification_msg = await channel.send(content, allowed_mentions=discord.AllowedMentions(roles=True))
 
-            # Schedule deletion after 3 hours
+            # Schedule deletion at event time
+            if event_timestamp:
+                # Calculate delay in seconds until event time
+                current_timestamp = int(datetime.now().timestamp())
+                delay_seconds = max(0, event_timestamp - current_timestamp)
+            else:
+                # Fallback to 3 hours if no event timestamp provided
+                delay_seconds = 3 * 3600
+
             asyncio.create_task(
                 self._delete_notification_after_delay(
-                    guild, channel, notification_msg.id, 3
+                    guild, channel, notification_msg.id, delay_seconds
                 )
             )
         except discord.Forbidden:
@@ -1795,20 +1838,22 @@ class TradeCommission(commands.Cog):
         """Set the hour when the Sunday event actually happens (for timestamp display).
 
         This is the hour shown in the {timestamp} variable in your message.
-        Default is 21 (9 PM UTC for shop restock).
+        The hour is in your configured timezone, not UTC.
+        Default is 21 (9 PM in your server's timezone).
 
         **Arguments:**
-        - `hour` - Hour in 24-hour format (0-23)
+        - `hour` - Hour in 24-hour format (0-23) in your configured timezone
 
         **Example:**
-        - `[p]tradecommission sunday eventhour 21` - Shop restocks at 21:00 UTC
+        - `[p]tradecommission sunday eventhour 21` - Shop restocks at 21:00 in your server's timezone
         """
         if not 0 <= hour <= 23:
             await ctx.send("❌ Hour must be between 0 and 23")
             return
 
         await self.config.guild(ctx.guild).sunday_event_hour.set(hour)
-        await ctx.send(f"✅ Sunday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
+        tz = await self.config.guild(ctx.guild).timezone()
+        await ctx.send(f"✅ Sunday event hour set to {hour:02d}:00 {tz}\n*This will be used for the {{timestamp}} variable in your message.*")
 
     @tc_sunday.command(name="test")
     async def sunday_test(self, ctx: commands.Context, use_configured: bool = False):
@@ -1837,7 +1882,7 @@ class TradeCommission(commands.Cog):
         else:
             channel = ctx.channel
 
-        # Calculate event timestamp for testing (21 UTC today or tomorrow)
+        # Calculate event timestamp for testing (in configured timezone)
         tz = pytz.timezone(guild_config["timezone"])
         now = datetime.now(tz)
         event_time = now.replace(hour=guild_config["sunday_event_hour"], minute=0, second=0, microsecond=0)
@@ -1929,20 +1974,22 @@ class TradeCommission(commands.Cog):
         """Set the hour when the Wednesday event actually happens (for timestamp display).
 
         This is the hour shown in the {timestamp} variable in your message.
-        Default is 22 (10 PM UTC for best sell time).
+        The hour is in your configured timezone, not UTC.
+        Default is 22 (10 PM in your server's timezone).
 
         **Arguments:**
-        - `hour` - Hour in 24-hour format (0-23)
+        - `hour` - Hour in 24-hour format (0-23) in your configured timezone
 
         **Example:**
-        - `[p]tradecommission wednesday eventhour 22` - Best sell time at 22:00 UTC
+        - `[p]tradecommission wednesday eventhour 22` - Best sell time at 22:00 in your server's timezone
         """
         if not 0 <= hour <= 23:
             await ctx.send("❌ Hour must be between 0 and 23")
             return
 
         await self.config.guild(ctx.guild).wednesday_event_hour.set(hour)
-        await ctx.send(f"✅ Wednesday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
+        tz = await self.config.guild(ctx.guild).timezone()
+        await ctx.send(f"✅ Wednesday event hour set to {hour:02d}:00 {tz}\n*This will be used for the {{timestamp}} variable in your message.*")
 
     @tc_wednesday.command(name="test")
     async def wednesday_test(self, ctx: commands.Context, use_configured: bool = False):
@@ -1971,7 +2018,7 @@ class TradeCommission(commands.Cog):
         else:
             channel = ctx.channel
 
-        # Calculate event timestamp for testing (22 UTC today or tomorrow)
+        # Calculate event timestamp for testing (in configured timezone)
         tz = pytz.timezone(guild_config["timezone"])
         now = datetime.now(tz)
         event_time = now.replace(hour=guild_config["wednesday_event_hour"], minute=0, second=0, microsecond=0)

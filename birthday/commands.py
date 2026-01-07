@@ -19,7 +19,7 @@ from rich.table import Table  # type:ignore
 from .abc import MixinMeta
 from .components.paged_embed import PaginatedEmbedView
 from .components.setup import SetupView
-from .consts import MAX_BDAY_MSG_LEN, MIN_BDAY_YEAR
+from .consts import MAX_BDAY_MSG_LEN
 from .converters import BirthdayConverter, TimeConverter
 from .utils import channel_perm_check, format_bday_message, role_perm_check
 from .vexutils import get_vex_logger, no_colour_rich_markup
@@ -52,17 +52,16 @@ class BirthdayCommands(MixinMeta):
         """
         Set your birthday.
 
-        You can optionally add in the year, if you are happy to share this.
+        Only the month and day are stored - birth years are not supported.
 
-        If you use a date in the format xx/xx/xx or xx-xx-xx MM-DD-YYYY is assumed.
+        If you use a date in the format xx/xx or xx-xx, MM-DD is assumed.
 
         This command works in DMs or in servers.
 
         **Examples:**
         - `[p]bday set 24th September`
-        - `[p]bday set 24th Sept 2002`
-        - `[p]bday set 9/24/2002`
-        - `[p]bday set 9-24-2002`
+        - `[p]bday set 24th Sept`
+        - `[p]bday set 9/24`
         - `[p]bday set 9-24`
         """
         # Check if there's a channel restriction (only in guilds)
@@ -83,18 +82,9 @@ class BirthdayCommands(MixinMeta):
                     )
                 return
 
-        # year as 1 means year not specified
-
-        if birthday.year != 1 and birthday.year < MIN_BDAY_YEAR:
-            await ctx.send(f"I'm sorry, but I can't set your birthday to before {MIN_BDAY_YEAR}.")
-            return
-
-        if birthday > datetime.datetime.utcnow():
-            await ctx.send("You can't be born in the future!")
-            return
-
+        # Store birthday without year
         async with self.config.user(ctx.author).birthday() as bday:
-            bday["year"] = birthday.year if birthday.year != 1 else None
+            bday["year"] = None
             bday["month"] = birthday.month
             bday["day"] = birthday.day
 
@@ -127,6 +117,27 @@ class BirthdayCommands(MixinMeta):
 
         await self.config.user(ctx.author).birthday.set({})
         await ctx.send("Your birthday has been removed.")
+
+    @commands.dm_only()  # type:ignore
+    @birthday.command()
+    async def show(self, ctx: commands.Context):
+        """Show your birthday. This command only works in DMs."""
+        birthday_data = await self.config.user(ctx.author).birthday()
+
+        if not birthday_data or not birthday_data.get("month"):
+            await ctx.send("You haven't set your birthday yet. Use `[p]birthday set` to set it.")
+            return
+
+        # Reconstruct the datetime from stored data
+        birthday_dt = datetime.datetime(
+            year=1,
+            month=birthday_data["month"],
+            day=birthday_data["day"],
+        )
+
+        # Format the birthday string (month and day only)
+        formatted_date = birthday_dt.strftime("%B %d")
+        await ctx.send(f"Your birthday is **{formatted_date}**.")
 
     @commands.guild_only()  # type:ignore
     @commands.before_invoke(setup_check)  # type:ignore
@@ -170,14 +181,7 @@ class BirthdayCommands(MixinMeta):
             )
 
             if today_dt.month == birthday_dt.month and today_dt.day == birthday_dt.day:
-                parsed_bdays[0].append(
-                    member.mention
-                    + (
-                        ""
-                        if birthday_dt.year == 1
-                        else f" turns {today_dt.year - birthday_dt.year}"
-                    )
-                )
+                parsed_bdays[0].append(member.mention)
                 number_day_mapping[0] = "Today"
                 continue
 
@@ -189,18 +193,7 @@ class BirthdayCommands(MixinMeta):
             if diff.days > days:
                 continue
 
-            next_bday_year = (
-                today_dt.year if today_dt.year == next_birthday_dt.year else today_dt.year + 1
-            )
-
-            parsed_bdays[diff.days].append(
-                member.mention
-                + (
-                    ""
-                    if birthday_dt.year == 1
-                    else (f" will turn {next_bday_year - birthday_dt.year}")
-                )
-            )
+            parsed_bdays[diff.days].append(member.mention)
             number_day_mapping[diff.days] = next_birthday_dt.strftime("%B %d")
 
         log.trace("bdays parsed: %s", parsed_bdays)
@@ -766,35 +759,23 @@ class BirthdayAdminCommands(MixinMeta):
         """
         Force-set a specific user's birthday.
 
+        Only the month and day are stored - birth years are not supported.
+
         You can @ mention any user or type out their exact name. If you're typing out a name with
         spaces, make sure to put quotes around it (`"`).
 
         **Examples:**
-        - `[p]bdset set @User 1-1-2000` - set the birthday of `@User` to 1/1/2000
-        - `[p]bdset set User 1/1` - set the birthday of `@User` to 1/1/2000
-        - `[p]bdset set "User with spaces" 1-1` - set the birthday of `@User with spaces`
-            to 1/1
-        - `[p]bdset set 354125157387344896 1/1/2000` - set the birthday of `354125157387344896`
-            to 1/1/2000
+        - `[p]bdset set @User 1-1` - set the birthday of `@User` to January 1st
+        - `[p]bdset set User 1/1` - set the birthday of `@User` to January 1st
+        - `[p]bdset set "User with spaces" 1-1` - set the birthday of `@User with spaces` to January 1st
+        - `[p]bdset set 354125157387344896 1/1` - set the birthday of `354125157387344896` to January 1st
         """
-        if birthday.year != 1 and birthday.year < MIN_BDAY_YEAR:
-            await ctx.send(f"I'm sorry, but I can't set a birthday to before {MIN_BDAY_YEAR}.")
-            return
-
-        if birthday > datetime.datetime.utcnow():
-            await ctx.send("You can't be born in the future!")
-            return
-
         async with self.config.user(user).birthday() as bday:
-            bday["year"] = birthday.year if birthday.year != 1 else None
+            bday["year"] = None
             bday["month"] = birthday.month
             bday["day"] = birthday.day
 
-        if birthday.year == 1:
-            str_bday = birthday.strftime("%B %d")
-        else:
-            str_bday = birthday.strftime("%B %d, %Y")
-
+        str_bday = birthday.strftime("%B %d")
         await ctx.send(f"{user.name}'s birthday has been set as {str_bday}. This will apply globally across all servers.")
 
     @bdset.command()
@@ -887,22 +868,9 @@ class BirthdayAdminCommands(MixinMeta):
             for day, users in guild_data.items():
                 for user_id, year in users.items():
                     dt = datetime.datetime.fromordinal(int(day))
-                    year = year
-                    if year is None:
-                        year = 1
-                    else:
-                        year = int(year)
-
-                    if year < MIN_BDAY_YEAR:
-                        year = 1
-
-                    try:
-                        dt = dt.replace(year=year)
-                    except (OverflowError, ValueError):  # flare's users are crazy
-                        dt = dt.replace(year=1)
 
                     new_data = {
-                        "year": dt.year if dt.year != 1 else None,
+                        "year": None,  # Year support removed
                         "month": dt.month,
                         "day": dt.day,
                     }
@@ -1295,19 +1263,9 @@ class BirthdayAdminCommands(MixinMeta):
             await ctx.send(f"I can't send messages in {channel.mention}: {error}")
             return
 
-        # Get user's birthday to determine which message to use
-        member_bday = await self.config.user(member).birthday()
-        has_year = member_bday and member_bday.get("year") is not None
-
-        # Get the appropriate message
-        if has_year:
-            message = await self.config.guild(ctx.guild).message_w_year()
-            # Calculate a fake age for testing (using current year - birth year)
-            test_age = datetime.datetime.utcnow().year - member_bday["year"]
-            formatted_message = format_bday_message(message, member, test_age)
-        else:
-            message = await self.config.guild(ctx.guild).message_wo_year()
-            formatted_message = format_bday_message(message, member)
+        # Get the message (no year support)
+        message = await self.config.guild(ctx.guild).message_wo_year()
+        formatted_message = format_bday_message(message, member)
 
         # Get image path
         image_path = await self.config.guild(ctx.guild).image_path()
@@ -1478,23 +1436,13 @@ class BirthdayAdminCommands(MixinMeta):
             # Send announcements
             sent_count = 0
             for member, dt in birthday_members.items():
-                if dt.year == 1:
-                    await self.send_announcement(
-                        channel,
-                        format_bday_message(guild_settings["message_wo_year"], member),
-                        allow_role_mention,
-                        image_path,
-                        announcement_reactions,
-                    )
-                else:
-                    age = today_dt.year - dt.year
-                    await self.send_announcement(
-                        channel,
-                        format_bday_message(guild_settings["message_w_year"], member, age),
-                        allow_role_mention,
-                        image_path,
-                        announcement_reactions,
-                    )
+                await self.send_announcement(
+                    channel,
+                    format_bday_message(guild_settings["message_wo_year"], member),
+                    allow_role_mention,
+                    image_path,
+                    announcement_reactions,
+                )
 
                 # Add to announced_today list if not already there
                 if member.id not in announced_today:

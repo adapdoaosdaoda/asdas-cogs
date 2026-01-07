@@ -46,6 +46,8 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             whitelisted_roles=[],  # List of role IDs that always have view, read, connect & speak permissions
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
+        self._config_lock = asyncio.Lock()  # Protect event_channels config updates
+        self._divider_lock = asyncio.Lock()  # Protect divider channel operations
         self.bot.loop.create_task(self._startup_scan())
 
     # ---------- Setup Commands ----------

@@ -21,13 +21,14 @@ else:
                 default = datetime.datetime(year=1, month=1, day=1)
                 log.trace("parsed date: %s", argument)
                 out = parse(argument, default=default, ignoretz=True).replace(
+                    year=1,  # Always set year to 1 (no year support)
                     hour=0, minute=0, second=0, microsecond=0
                 )
 
                 return out
             except ParserError:
                 if ctx.interaction:
-                    raise BadArgument("That's not a valid date. Example: `1 Jan` or `1 Jan 2000`.")
+                    raise BadArgument("That's not a valid date. Example: `1 Jan` or `24 September`.")
                 raise BadArgument(
                     f"That's not a valid date. See {ctx.clean_prefix}help"
                     f" {ctx.command.qualified_name} for more information."
