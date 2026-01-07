@@ -391,7 +391,7 @@ class BorkedSince(commands.Cog):
         # Record current streak as a "crash" for history
         current_streak = await self.config.days_since_borked()
 
-        if current_streak > 0:
+        if current_streak >= 0:
             await self._record_crash(current_streak)
 
         # Reset counter
