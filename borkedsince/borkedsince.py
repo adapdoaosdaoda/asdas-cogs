@@ -164,7 +164,7 @@ class BorkedSince(commands.Cog):
         return f"{days:,}".replace(",", ".")
 
     async def _update_bio(self):
-        """Update the bot's bio with current streak."""
+        """Update the bot's About Me (application description) with current streak."""
         days = await self.config.days_since_borked()
         base_bio = await self.config.base_bio()
 
@@ -176,7 +176,8 @@ class BorkedSince(commands.Cog):
         full_bio = (base_bio + suffix)[:190]
 
         try:
-            await self.bot.user.edit(bio=full_bio)
+            # Update the application description (shows as "About Me" in bot profile)
+            await self.bot.application.edit(description=full_bio)
         except discord.HTTPException as e:
             if e.status == 429:  # Rate limited
                 print("BorkedSince: Rate limited on bio update")
