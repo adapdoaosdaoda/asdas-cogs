@@ -1547,8 +1547,16 @@ class TradeCommission(commands.Cog):
     @tradecommission.command(name="info")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
-    async def tc_info(self, ctx: commands.Context):
-        """Show current Trade Commission configuration."""
+    async def tc_info(self, ctx: commands.Context, full: bool = False):
+        """Show current Trade Commission configuration.
+
+        **Arguments:**
+        - `full`: Show full Sunday/Wednesday messages (default: False)
+
+        **Examples:**
+        - `[p]tc info` - Show config with truncated messages
+        - `[p]tc info true` - Show config with full messages
+        """
         guild_config = await self.config.guild(ctx.guild).all()
         global_config = await self.config.all()
 
@@ -1595,24 +1603,40 @@ class TradeCommission(commands.Cog):
         # Sunday pre-shop restock notification
         sunday_role = ctx.guild.get_role(guild_config["sunday_ping_role_id"]) if guild_config["sunday_ping_role_id"] else None
         sunday_role_text = sunday_role.mention if sunday_role else "None"
+
+        # Show full or truncated message based on 'full' parameter
+        sunday_message = guild_config['sunday_message']
+        if not full and len(sunday_message) > 80:
+            sunday_message_display = sunday_message[:80] + '...'
+        else:
+            sunday_message_display = sunday_message
+
         sunday_text = (
             f"**Enabled:** {'✅ Yes' if guild_config['sunday_enabled'] else '❌ No'}\n"
             f"**Notification Time:** {guild_config['sunday_hour']:02d}:{guild_config['sunday_minute']:02d}\n"
             f"**Event Time:** {guild_config['sunday_event_hour']:02d}:00 UTC\n"
             f"**Ping Role:** {sunday_role_text}\n"
-            f"**Message:** {guild_config['sunday_message'][:80]}{'...' if len(guild_config['sunday_message']) > 80 else ''}"
+            f"**Message:** {sunday_message_display}"
         )
         embed.add_field(name="📅 Sunday Pre-Shop Restock", value=sunday_text, inline=False)
 
         # Wednesday sell recommendation notification
         wednesday_role = ctx.guild.get_role(guild_config["wednesday_ping_role_id"]) if guild_config["wednesday_ping_role_id"] else None
         wednesday_role_text = wednesday_role.mention if wednesday_role else "None"
+
+        # Show full or truncated message based on 'full' parameter
+        wednesday_message = guild_config['wednesday_message']
+        if not full and len(wednesday_message) > 80:
+            wednesday_message_display = wednesday_message[:80] + '...'
+        else:
+            wednesday_message_display = wednesday_message
+
         wednesday_text = (
             f"**Enabled:** {'✅ Yes' if guild_config['wednesday_enabled'] else '❌ No'}\n"
             f"**Notification Time:** {guild_config['wednesday_hour']:02d}:{guild_config['wednesday_minute']:02d}\n"
             f"**Event Time:** {guild_config['wednesday_event_hour']:02d}:00 UTC\n"
             f"**Ping Role:** {wednesday_role_text}\n"
-            f"**Message:** {guild_config['wednesday_message'][:80]}{'...' if len(guild_config['wednesday_message']) > 80 else ''}"
+            f"**Message:** {wednesday_message_display}"
         )
         embed.add_field(name="📅 Wednesday Sell Recommendation", value=wednesday_text, inline=False)
 
