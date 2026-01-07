@@ -44,14 +44,12 @@ Track and display days since your bot last crashed in the bot's About Me section
 
 **Key Features:**
 - Automatic crash detection (distinguishes between crashes and intentional restarts)
-- Generates formatted "Last borked: X days ago" text for bot's About Me
+- Automatically updates bot's About Me with "Last borked: X days ago"
 - Crash history tracking with longest streak highscores
 - Bio length validation for 10.000+ day counts
 - Uses period (.) as thousand separator (e.g., "10.000 days")
 - Manual reset command for after bug fixes
 - All-time statistics and recent crash reports
-
-**Note:** Discord bots cannot programmatically update their About Me section. The cog will show you what your bio should be, but you'll need to manually update it in the Discord Developer Portal.
 
 ### EventChannels
 Automatically creates and manages temporary channels for Discord scheduled events, created with [Raid-Helper](https://raid-helper.dev/) in mind.
