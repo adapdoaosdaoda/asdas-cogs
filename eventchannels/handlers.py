@@ -36,9 +36,11 @@ class HandlersMixin:
                 # Wait until configured minutes before start
                 await asyncio.sleep((create_time - now).total_seconds())
 
-            stored = await self.config.guild(guild).event_channels()
-            if str(event.id) in stored:
-                return
+            # Check if event already has channels (with lock to prevent race)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
+                if str(event.id) in stored:
+                    return
 
             category_id = await self.config.guild(guild).category_id()
             category = guild.get_channel(category_id) if category_id else None
@@ -370,12 +372,15 @@ class HandlersMixin:
                         pass
                 return
 
-            stored[str(event.id)] = {
-                "text": text_channel.id,
-                "voice": [vc.id for vc in voice_channels],  # Store list of voice channel IDs
-                "role": role.id,
-            }
-            await self.config.guild(guild).event_channels.set(stored)
+            # Store channel data (with lock to prevent race)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
+                stored[str(event.id)] = {
+                    "text": text_channel.id,
+                    "voice": [vc.id for vc in voice_channels],  # Store list of voice channel IDs
+                    "role": role.id,
+                }
+                await self.config.guild(guild).event_channels.set(stored)
 
             # ---------- Event Start ----------
 
@@ -508,59 +513,19 @@ class HandlersMixin:
             # Wait the remaining 15 minutes before deletion
             await asyncio.sleep(max(0, (delete_time - datetime.now(timezone.utc)).total_seconds()))
 
-            # Refetch stored data to ensure we have current state
-            stored = await self.config.guild(guild).event_channels()
-            data = stored.get(str(event.id))
-            if not data:
-                return
+            # Refetch stored data and delete channels (with lock to prevent race)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
+                data = stored.get(str(event.id))
+                if not data:
+                    return
 
-            # Delete text channel
-            text_channel = guild.get_channel(data.get("text"))
-            if text_channel:
-                try:
-                    await text_channel.delete(reason="Scheduled event ended")
-                except discord.NotFound:
-                    pass
-
-            # Delete all voice channels
-            voice_channel_ids = data.get("voice", [])
-            # Handle both old format (single ID) and new format (list of IDs)
-            if isinstance(voice_channel_ids, int):
-                voice_channel_ids = [voice_channel_ids]
-
-            for vc_id in voice_channel_ids:
-                voice_channel = guild.get_channel(vc_id)
-                if voice_channel:
-                    try:
-                        await voice_channel.delete(reason="Scheduled event ended")
-                    except discord.NotFound:
-                        pass
-
-            role = guild.get_role(data["role"])
-            if role:
-                # Remove role from divider permissions before deleting it
-                await self._update_divider_permissions(guild, role, add=False)
-                try:
-                    await role.delete(reason="Scheduled event ended")
-                except discord.Forbidden:
-                    pass
-
-            stored.pop(str(event.id), None)
-            await self.config.guild(guild).event_channels.set(stored)
-
-            # Check if divider should be deleted (no more event roles)
-            await self._cleanup_divider_if_empty(guild)
-        except asyncio.CancelledError:
-            # Task was cancelled - clean up if channels were created
-            stored = await self.config.guild(guild).event_channels()
-            data = stored.get(str(event.id))
-            if data:
                 # Delete text channel
                 text_channel = guild.get_channel(data.get("text"))
                 if text_channel:
                     try:
-                        await text_channel.delete(reason="Scheduled event cancelled")
-                    except (discord.NotFound, discord.Forbidden):
+                        await text_channel.delete(reason="Scheduled event ended")
+                    except discord.NotFound:
                         pass
 
                 # Delete all voice channels
@@ -573,16 +538,65 @@ class HandlersMixin:
                     voice_channel = guild.get_channel(vc_id)
                     if voice_channel:
                         try:
-                            await voice_channel.delete(reason="Scheduled event cancelled")
+                            await voice_channel.delete(reason="Scheduled event ended")
+                        except discord.NotFound:
+                            pass
+
+                role = guild.get_role(data["role"])
+
+                # Remove from stored config before role deletion
+                stored.pop(str(event.id), None)
+                await self.config.guild(guild).event_channels.set(stored)
+
+            # Remove role from divider and delete role (outside lock, uses own lock)
+            if role:
+                await self._update_divider_permissions(guild, role, add=False)
+                try:
+                    await role.delete(reason="Scheduled event ended")
+                except discord.Forbidden:
+                    pass
+
+            # Check if divider should be deleted (no more event roles)
+            await self._cleanup_divider_if_empty(guild)
+        except asyncio.CancelledError:
+            # Task was cancelled - clean up if channels were created (with lock)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
+                data = stored.get(str(event.id))
+                if data:
+                    # Delete text channel
+                    text_channel = guild.get_channel(data.get("text"))
+                    if text_channel:
+                        try:
+                            await text_channel.delete(reason="Scheduled event cancelled")
                         except (discord.NotFound, discord.Forbidden):
                             pass
 
-                # Remove role from divider permissions
+                    # Delete all voice channels
+                    voice_channel_ids = data.get("voice", [])
+                    # Handle both old format (single ID) and new format (list of IDs)
+                    if isinstance(voice_channel_ids, int):
+                        voice_channel_ids = [voice_channel_ids]
+
+                    for vc_id in voice_channel_ids:
+                        voice_channel = guild.get_channel(vc_id)
+                        if voice_channel:
+                            try:
+                                await voice_channel.delete(reason="Scheduled event cancelled")
+                            except (discord.NotFound, discord.Forbidden):
+                                pass
+
+                    role = guild.get_role(data["role"])
+
+                    # Remove from stored config
+                    stored.pop(str(event.id), None)
+                    await self.config.guild(guild).event_channels.set(stored)
+
+            # Remove role from divider and clean up (outside lock, uses own locks)
+            if data:
                 role = guild.get_role(data["role"])
                 if role:
                     await self._update_divider_permissions(guild, role, add=False)
-                stored.pop(str(event.id), None)
-                await self.config.guild(guild).event_channels.set(stored)
 
                 # Check if divider should be deleted (no more event roles)
                 await self._cleanup_divider_if_empty(guild)

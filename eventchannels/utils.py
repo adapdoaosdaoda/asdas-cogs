@@ -27,40 +27,42 @@ class UtilsMixin:
 
     async def _cleanup_divider_if_empty(self, guild: discord.Guild):
         """Delete the divider channel if no event channels remain."""
-        # Check if there are any active event channels
-        stored = await self.config.guild(guild).event_channels()
+        async with self._divider_lock:
+            # Check if there are any active event channels (use config lock for reading)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
 
-        # Check if any events still have active channels
-        has_active_channels = False
-        for event_id, data in stored.items():
-            text_channel = guild.get_channel(data.get("text"))
+            # Check if any events still have active channels
+            has_active_channels = False
+            for event_id, data in stored.items():
+                text_channel = guild.get_channel(data.get("text"))
 
-            # Handle both old format (single ID) and new format (list of IDs)
-            voice_channel_ids = data.get("voice", [])
-            if isinstance(voice_channel_ids, int):
-                voice_channel_ids = [voice_channel_ids]
+                # Handle both old format (single ID) and new format (list of IDs)
+                voice_channel_ids = data.get("voice", [])
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
 
-            has_voice_channels = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
+                has_voice_channels = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
 
-            if text_channel or has_voice_channels:
-                has_active_channels = True
-                break
+                if text_channel or has_voice_channels:
+                    has_active_channels = True
+                    break
 
-        # Only delete divider if no event channels remain
-        if not has_active_channels:
-            divider_channel_id = await self.config.guild(guild).divider_channel_id()
-            if divider_channel_id:
-                divider_channel = guild.get_channel(divider_channel_id)
-                if divider_channel:
-                    try:
-                        await divider_channel.delete(reason="No event channels remain - cleaning up divider channel")
-                        log.info(f"Deleted divider channel in '{guild.name}' - no event channels remain")
-                    except (discord.Forbidden, discord.NotFound):
-                        pass
+            # Only delete divider if no event channels remain
+            if not has_active_channels:
+                divider_channel_id = await self.config.guild(guild).divider_channel_id()
+                if divider_channel_id:
+                    divider_channel = guild.get_channel(divider_channel_id)
+                    if divider_channel:
+                        try:
+                            await divider_channel.delete(reason="No event channels remain - cleaning up divider channel")
+                            log.info(f"Deleted divider channel in '{guild.name}' - no event channels remain")
+                        except (discord.Forbidden, discord.NotFound):
+                            pass
 
-                # Clear the stored divider data
-                await self.config.guild(guild).divider_channel_id.set(None)
-                await self.config.guild(guild).divider_roles.set([])
+                    # Clear the stored divider data
+                    await self.config.guild(guild).divider_channel_id.set(None)
+                    await self.config.guild(guild).divider_roles.set([])
 
     async def _update_divider_permissions(self, guild: discord.Guild, role: discord.Role, add: bool = True):
         """Update divider channel permissions to add or remove a role.
@@ -70,103 +72,49 @@ class UtilsMixin:
             role: The role to add or remove
             add: True to add the role, False to remove it
         """
-        divider_enabled = await self.config.guild(guild).divider_enabled()
-        if not divider_enabled:
-            log.info(f"Divider not enabled, skipping permission update for role '{role.name}'")
-            return
+        async with self._divider_lock:
+            divider_enabled = await self.config.guild(guild).divider_enabled()
+            if not divider_enabled:
+                log.info(f"Divider not enabled, skipping permission update for role '{role.name}'")
+                return
 
-        divider_channel_id = await self.config.guild(guild).divider_channel_id()
-        if not divider_channel_id:
-            log.warning(f"No divider channel ID found when trying to update permissions for role '{role.name}'")
-            return
+            divider_channel_id = await self.config.guild(guild).divider_channel_id()
+            if not divider_channel_id:
+                log.warning(f"No divider channel ID found when trying to update permissions for role '{role.name}'")
+                return
 
-        divider_channel = guild.get_channel(divider_channel_id)
-        if not divider_channel:
-            log.warning(f"Divider channel {divider_channel_id} not found when trying to update permissions for role '{role.name}'")
-            return
+            divider_channel = guild.get_channel(divider_channel_id)
+            if not divider_channel:
+                log.warning(f"Divider channel {divider_channel_id} not found when trying to update permissions for role '{role.name}'")
+                return
 
-        # Check if bot's role is high enough to manage this role's permissions
-        bot_top_role = guild.me.top_role
-        if role.position >= bot_top_role.position:
-            log.warning(f"⚠️ Cannot manage permissions for role '{role.name}' (position: {role.position}) - bot's top role '{bot_top_role.name}' (position: {bot_top_role.position}) is not high enough. Skipping divider permissions update.")
-            return
+            # Check if bot's role is high enough to manage this role's permissions
+            bot_top_role = guild.me.top_role
+            if role.position >= bot_top_role.position:
+                log.warning(f"⚠️ Cannot manage permissions for role '{role.name}' (position: {role.position}) - bot's top role '{bot_top_role.name}' (position: {bot_top_role.position}) is not high enough. Skipping divider permissions update.")
+                return
 
-        divider_roles = await self.config.guild(guild).divider_roles()
-        log.info(f"Updating divider permissions: add={add}, role='{role.name}', current_roles={divider_roles}")
+            divider_roles = await self.config.guild(guild).divider_roles()
+            log.info(f"Updating divider permissions: add={add}, role='{role.name}', current_roles={divider_roles}")
 
-        try:
-            if add and role.id not in divider_roles:
-                # Build complete overwrites dictionary including the new role
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(
-                        view_channel=False,
-                        send_messages=False,
-                        add_reactions=False,
-                    ),
-                    guild.me: discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=False,
-                        manage_channels=True,
-                    ),
-                }
-
-                # Add all existing tracked event roles
-                for existing_role_id in divider_roles:
-                    existing_role = guild.get_role(existing_role_id)
-                    if existing_role:
-                        overwrites[existing_role] = discord.PermissionOverwrite(
-                            view_channel=True,
+            try:
+                if add and role.id not in divider_roles:
+                    # Build complete overwrites dictionary including the new role
+                    overwrites = {
+                        guild.default_role: discord.PermissionOverwrite(
+                            view_channel=False,
                             send_messages=False,
                             add_reactions=False,
-                        )
-
-                # Add whitelisted roles with view-only permissions
-                whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
-                for whitelisted_role_id in whitelisted_role_ids:
-                    whitelisted_role = guild.get_role(whitelisted_role_id)
-                    if whitelisted_role:
-                        overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                        ),
+                        guild.me: discord.PermissionOverwrite(
                             view_channel=True,
                             send_messages=False,
-                            add_reactions=False,
-                        )
+                            manage_channels=True,
+                        ),
+                    }
 
-                # Add the new event role
-                overwrites[role] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=False,
-                    add_reactions=False,
-                )
-
-                log.info(f"Adding permission overwrite for role '{role.name}' (ID: {role.id}) to divider channel '{divider_channel.name}'")
-
-                # Apply all overwrites at once using edit() - bypasses role hierarchy check
-                await divider_channel.edit(
-                    overwrites=overwrites,
-                    reason=f"Adding event role '{role.name}' to divider channel"
-                )
-
-                divider_roles.append(role.id)
-                await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"✅ Successfully added role '{role.name}' to divider channel permissions - can view but not send messages")
-            elif not add and role.id in divider_roles:
-                # Build complete overwrites dictionary without the removed role
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(
-                        view_channel=False,
-                        send_messages=False,
-                        add_reactions=False,
-                    ),
-                    guild.me: discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=False,
-                        manage_channels=True,
-                    ),
-                }
-
-                # Add remaining tracked event roles (excluding the one being removed)
-                for existing_role_id in divider_roles:
-                    if existing_role_id != role.id:
+                    # Add all existing tracked event roles
+                    for existing_role_id in divider_roles:
                         existing_role = guild.get_role(existing_role_id)
                         if existing_role:
                             overwrites[existing_role] = discord.PermissionOverwrite(
@@ -175,6 +123,158 @@ class UtilsMixin:
                                 add_reactions=False,
                             )
 
+                    # Add whitelisted roles with view-only permissions
+                    whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                    for whitelisted_role_id in whitelisted_role_ids:
+                        whitelisted_role = guild.get_role(whitelisted_role_id)
+                        if whitelisted_role:
+                            overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=False,
+                                add_reactions=False,
+                            )
+
+                    # Add the new event role
+                    overwrites[role] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        add_reactions=False,
+                    )
+
+                    log.info(f"Adding permission overwrite for role '{role.name}' (ID: {role.id}) to divider channel '{divider_channel.name}'")
+
+                    # Apply all overwrites at once using edit() - bypasses role hierarchy check
+                    await divider_channel.edit(
+                        overwrites=overwrites,
+                        reason=f"Adding event role '{role.name}' to divider channel"
+                    )
+
+                    divider_roles.append(role.id)
+                    await self.config.guild(guild).divider_roles.set(divider_roles)
+                    log.info(f"✅ Successfully added role '{role.name}' to divider channel permissions - can view but not send messages")
+                elif not add and role.id in divider_roles:
+                    # Build complete overwrites dictionary without the removed role
+                    overwrites = {
+                        guild.default_role: discord.PermissionOverwrite(
+                            view_channel=False,
+                            send_messages=False,
+                            add_reactions=False,
+                        ),
+                        guild.me: discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            manage_channels=True,
+                        ),
+                    }
+
+                    # Add remaining tracked event roles (excluding the one being removed)
+                    for existing_role_id in divider_roles:
+                        if existing_role_id != role.id:
+                            existing_role = guild.get_role(existing_role_id)
+                            if existing_role:
+                                overwrites[existing_role] = discord.PermissionOverwrite(
+                                    view_channel=True,
+                                    send_messages=False,
+                                    add_reactions=False,
+                                )
+
+                    # Add whitelisted roles with view-only permissions
+                    whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                    for whitelisted_role_id in whitelisted_role_ids:
+                        whitelisted_role = guild.get_role(whitelisted_role_id)
+                        if whitelisted_role:
+                            overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=False,
+                                add_reactions=False,
+                            )
+
+                    log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
+
+                    # Apply all overwrites at once using edit() - bypasses role hierarchy check
+                    await divider_channel.edit(
+                        overwrites=overwrites,
+                        reason=f"Removing event role '{role.name}' from divider channel"
+                    )
+
+                    divider_roles.remove(role.id)
+                    await self.config.guild(guild).divider_roles.set(divider_roles)
+                    log.info(f"✅ Removed role '{role.name}' from divider channel permissions")
+                else:
+                    log.info(f"Skipping divider permission update for role '{role.name}' - add={add}, already_tracked={role.id in divider_roles}")
+            except discord.Forbidden as e:
+                log.error(f"❌ Permission error while updating divider permissions for role '{role.name}': {e}")
+            except Exception as e:
+                log.error(f"❌ Failed to update divider permissions for role '{role.name}': {e}")
+
+    async def _ensure_divider_channel(self, guild: discord.Guild, category: discord.CategoryChannel = None):
+        """Ensure the divider channel exists in the specified category.
+
+        Returns the divider channel if it exists or was created, otherwise None.
+        """
+        async with self._divider_lock:
+            divider_enabled = await self.config.guild(guild).divider_enabled()
+            if not divider_enabled:
+                return None
+
+            divider_name = await self.config.guild(guild).divider_name()
+            divider_channel_id = await self.config.guild(guild).divider_channel_id()
+
+            # Check if we have a stored divider channel ID
+            if divider_channel_id:
+                divider_channel = guild.get_channel(divider_channel_id)
+                if divider_channel and divider_channel.category == category:
+                    # Divider exists and is in the right category
+                    log.info(f"Found existing divider channel: {divider_channel.name}")
+                    return divider_channel
+                else:
+                    # Stored divider doesn't exist or is in wrong category, clear the stored ID
+                    await self.config.guild(guild).divider_channel_id.set(None)
+
+            # Check if a divider channel with the correct name already exists in the category
+            if category:
+                for channel in category.channels:
+                    if channel.name == divider_name and isinstance(channel, discord.TextChannel):
+                        # Found an existing divider channel, store its ID
+                        log.info(f"Found existing divider channel by name: {channel.name}")
+                        await self.config.guild(guild).divider_channel_id.set(channel.id)
+                        return channel
+
+            # No divider exists, create one
+            try:
+                # Create divider channel without overwrites first
+                divider_channel = await guild.create_text_channel(
+                    name=divider_name,
+                    category=category,
+                    reason="Creating divider channel for event channels",
+                )
+                log.info(f"Created new divider channel: {divider_channel.name}")
+
+                # Now apply permission overwrites in a separate step
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(
+                        view_channel=False,  # Hidden by default
+                        send_messages=False,
+                        add_reactions=False,
+                    ),
+                    guild.me: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        manage_channels=True,
+                    ),
+                }
+
+                # Add permissions for tracked event roles
+                divider_roles = await self.config.guild(guild).divider_roles()
+                for role_id in divider_roles:
+                    role = guild.get_role(role_id)
+                    if role:
+                        overwrites[role] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            add_reactions=False,
+                        )
+
                 # Add whitelisted roles with view-only permissions
                 whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
                 for whitelisted_role_id in whitelisted_role_ids:
@@ -186,129 +286,33 @@ class UtilsMixin:
                             add_reactions=False,
                         )
 
-                log.info(f"Removing permission overwrite for role '{role.name}' from divider channel")
+                # Apply the overwrites
+                await divider_channel.edit(overwrites=overwrites)
+                log.info(f"Successfully applied permissions to divider channel")
 
-                # Apply all overwrites at once using edit() - bypasses role hierarchy check
-                await divider_channel.edit(
-                    overwrites=overwrites,
-                    reason=f"Removing event role '{role.name}' from divider channel"
-                )
-
-                divider_roles.remove(role.id)
-                await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"✅ Removed role '{role.name}' from divider channel permissions")
-            else:
-                log.info(f"Skipping divider permission update for role '{role.name}' - add={add}, already_tracked={role.id in divider_roles}")
-        except discord.Forbidden as e:
-            log.error(f"❌ Permission error while updating divider permissions for role '{role.name}': {e}")
-        except Exception as e:
-            log.error(f"❌ Failed to update divider permissions for role '{role.name}': {e}")
-
-    async def _ensure_divider_channel(self, guild: discord.Guild, category: discord.CategoryChannel = None):
-        """Ensure the divider channel exists in the specified category.
-
-        Returns the divider channel if it exists or was created, otherwise None.
-        """
-        divider_enabled = await self.config.guild(guild).divider_enabled()
-        if not divider_enabled:
-            return None
-
-        divider_name = await self.config.guild(guild).divider_name()
-        divider_channel_id = await self.config.guild(guild).divider_channel_id()
-
-        # Check if we have a stored divider channel ID
-        if divider_channel_id:
-            divider_channel = guild.get_channel(divider_channel_id)
-            if divider_channel and divider_channel.category == category:
-                # Divider exists and is in the right category
-                log.info(f"Found existing divider channel: {divider_channel.name}")
+                # Store the divider channel ID
+                await self.config.guild(guild).divider_channel_id.set(divider_channel.id)
+                log.info(f"Stored divider channel ID: {divider_channel.id} (name: '{divider_channel.name}')")
                 return divider_channel
-            else:
-                # Stored divider doesn't exist or is in wrong category, clear the stored ID
-                await self.config.guild(guild).divider_channel_id.set(None)
 
-        # Check if a divider channel with the correct name already exists in the category
-        if category:
-            for channel in category.channels:
-                if channel.name == divider_name and isinstance(channel, discord.TextChannel):
-                    # Found an existing divider channel, store its ID
-                    log.info(f"Found existing divider channel by name: {channel.name}")
-                    await self.config.guild(guild).divider_channel_id.set(channel.id)
-                    return channel
-
-        # No divider exists, create one
-        try:
-            # Create divider channel without overwrites first
-            divider_channel = await guild.create_text_channel(
-                name=divider_name,
-                category=category,
-                reason="Creating divider channel for event channels",
-            )
-            log.info(f"Created new divider channel: {divider_channel.name}")
-
-            # Now apply permission overwrites in a separate step
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(
-                    view_channel=False,  # Hidden by default
-                    send_messages=False,
-                    add_reactions=False,
-                ),
-                guild.me: discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=False,
-                    manage_channels=True,
-                ),
-            }
-
-            # Add permissions for tracked event roles
-            divider_roles = await self.config.guild(guild).divider_roles()
-            for role_id in divider_roles:
-                role = guild.get_role(role_id)
-                if role:
-                    overwrites[role] = discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=False,
-                        add_reactions=False,
-                    )
-
-            # Add whitelisted roles with view-only permissions
-            whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
-            for whitelisted_role_id in whitelisted_role_ids:
-                whitelisted_role = guild.get_role(whitelisted_role_id)
-                if whitelisted_role:
-                    overwrites[whitelisted_role] = discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=False,
-                        add_reactions=False,
-                    )
-
-            # Apply the overwrites
-            await divider_channel.edit(overwrites=overwrites)
-            log.info(f"Successfully applied permissions to divider channel")
-
-            # Store the divider channel ID
-            await self.config.guild(guild).divider_channel_id.set(divider_channel.id)
-            log.info(f"Stored divider channel ID: {divider_channel.id} (name: '{divider_channel.name}')")
-            return divider_channel
-
-        except discord.Forbidden as e:
-            log.error(f"Permission error while creating divider channel in guild '{guild.name}': {e}")
-            # Clean up the channel if it was created but permissions failed
-            if 'divider_channel' in locals():
-                try:
-                    await divider_channel.delete(reason="Failed to apply permissions")
-                except:
-                    pass
-            return None
-        except Exception as e:
-            log.error(f"Failed to create divider channel in guild '{guild.name}': {e}")
-            # Clean up the channel if it was created
-            if 'divider_channel' in locals():
-                try:
-                    await divider_channel.delete(reason="Creation failed")
-                except:
-                    pass
-            return None
+            except discord.Forbidden as e:
+                log.error(f"Permission error while creating divider channel in guild '{guild.name}': {e}")
+                # Clean up the channel if it was created but permissions failed
+                if 'divider_channel' in locals():
+                    try:
+                        await divider_channel.delete(reason="Failed to apply permissions")
+                    except:
+                        pass
+                return None
+            except Exception as e:
+                log.error(f"Failed to create divider channel in guild '{guild.name}': {e}")
+                # Clean up the channel if it was created
+                if 'divider_channel' in locals():
+                    try:
+                        await divider_channel.delete(reason="Creation failed")
+                    except:
+                        pass
+                return None
 
     async def _get_role_member_count(self, guild: discord.Guild, role: discord.Role, event_name: str = None) -> tuple[int, bool]:
         """
