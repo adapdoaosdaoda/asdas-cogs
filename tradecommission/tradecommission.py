@@ -1811,19 +1811,31 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ Sunday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
 
     @tc_sunday.command(name="test")
-    async def sunday_test(self, ctx: commands.Context):
-        """Test the Sunday notification by sending it immediately."""
+    async def sunday_test(self, ctx: commands.Context, use_configured: bool = False):
+        """Test the Sunday notification by sending it immediately.
+
+        **Arguments:**
+        - `use_configured`: Send to configured announcement channel instead of current channel (default: False)
+
+        **Examples:**
+        - `[p]tc sunday test` - Send test to current channel
+        - `[p]tc sunday test true` - Send test to configured announcement channel
+        """
         guild_config = await self.config.guild(ctx.guild).all()
 
-        channel_id = guild_config["channel_id"]
-        if not channel_id:
-            await ctx.send("❌ No channel configured. Use `[p]tradecommission schedule` first.")
-            return
+        # Determine which channel to use
+        if use_configured:
+            channel_id = guild_config["channel_id"]
+            if not channel_id:
+                await ctx.send("❌ No channel configured. Use `[p]tradecommission schedule` first.")
+                return
 
-        channel = ctx.guild.get_channel(channel_id)
-        if not channel:
-            await ctx.send("❌ Configured channel not found.")
-            return
+            channel = ctx.guild.get_channel(channel_id)
+            if not channel:
+                await ctx.send("❌ Configured channel not found.")
+                return
+        else:
+            channel = ctx.channel
 
         # Calculate event timestamp for testing (21 UTC today or tomorrow)
         tz = pytz.timezone(guild_config["timezone"])
@@ -1933,19 +1945,31 @@ class TradeCommission(commands.Cog):
         await ctx.send(f"✅ Wednesday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
 
     @tc_wednesday.command(name="test")
-    async def wednesday_test(self, ctx: commands.Context):
-        """Test the Wednesday notification by sending it immediately."""
+    async def wednesday_test(self, ctx: commands.Context, use_configured: bool = False):
+        """Test the Wednesday notification by sending it immediately.
+
+        **Arguments:**
+        - `use_configured`: Send to configured announcement channel instead of current channel (default: False)
+
+        **Examples:**
+        - `[p]tc wednesday test` - Send test to current channel
+        - `[p]tc wednesday test true` - Send test to configured announcement channel
+        """
         guild_config = await self.config.guild(ctx.guild).all()
 
-        channel_id = guild_config["channel_id"]
-        if not channel_id:
-            await ctx.send("❌ No channel configured. Use `[p]tradecommission schedule` first.")
-            return
+        # Determine which channel to use
+        if use_configured:
+            channel_id = guild_config["channel_id"]
+            if not channel_id:
+                await ctx.send("❌ No channel configured. Use `[p]tradecommission schedule` first.")
+                return
 
-        channel = ctx.guild.get_channel(channel_id)
-        if not channel:
-            await ctx.send("❌ Configured channel not found.")
-            return
+            channel = ctx.guild.get_channel(channel_id)
+            if not channel:
+                await ctx.send("❌ Configured channel not found.")
+                return
+        else:
+            channel = ctx.channel
 
         # Calculate event timestamp for testing (22 UTC today or tomorrow)
         tz = pytz.timezone(guild_config["timezone"])
