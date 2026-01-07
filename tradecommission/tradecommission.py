@@ -331,7 +331,7 @@ class TradeCommission(commands.Cog):
         self.config.register_guild(**default_guild)
         self._task = None
         self._ready = False
-        self._sync_mode = True  # Start in sync mode to align with minute boundaries
+        self._sync_state = "sync_minute"  # States: sync_minute -> sync_second -> normal
         self._last_sync_day = None  # Track last Friday sync
 
     async def cog_load(self):
@@ -483,10 +483,12 @@ class TradeCommission(commands.Cog):
     async def _check_schedule_loop(self):
         """Background loop to check for scheduled messages.
 
-        Uses smart syncing:
-        - On bot start: Check every minute until synchronized to minute 0
-        - Once synced: Check every hour
-        - Every Friday: Re-sync to correct any drift
+        Uses three-stage smart syncing:
+        1. sync_minute: Check every 60s until synchronized to minute 0
+        2. sync_second: Check every 1s until synchronized to second 0
+        3. normal: Check every 3600s (fully synchronized)
+
+        Every Friday: Re-sync to minute 0 (not second 0) to correct drift
         """
         await self.bot.wait_until_ready()
         while True:
@@ -497,23 +499,33 @@ class TradeCommission(commands.Cog):
                 if now_utc.weekday() == 4:  # 4 = Friday
                     today_date = now_utc.date()
                     if self._last_sync_day != today_date:
-                        self._sync_mode = True
+                        # Re-sync to minute 0 only (not second 0)
+                        self._sync_state = "sync_minute"
                         self._last_sync_day = today_date
 
                 # Run checks for all guilds
                 for guild in self.bot.guilds:
                     await self._check_guild_schedule(guild)
 
-                # Determine sleep interval based on sync mode
-                if self._sync_mode:
-                    # In sync mode: check every minute until we hit minute 0
+                # Determine sleep interval based on sync state
+                if self._sync_state == "sync_minute":
+                    # Stage 1: Check every minute until we hit minute 0
                     if now_utc.minute == 0:
-                        self._sync_mode = False  # Switch to normal mode
-                        await asyncio.sleep(3600)  # Sleep for 1 hour
+                        self._sync_state = "sync_second"  # Move to second sync
+                        await asyncio.sleep(1)  # Sleep for 1 second
                     else:
                         await asyncio.sleep(60)  # Sleep for 1 minute
-                else:
-                    # In normal mode: check every hour
+
+                elif self._sync_state == "sync_second":
+                    # Stage 2: Check every second until we hit second 0
+                    if now_utc.second == 0:
+                        self._sync_state = "normal"  # Switch to normal mode
+                        await asyncio.sleep(3600)  # Sleep for 1 hour
+                    else:
+                        await asyncio.sleep(1)  # Sleep for 1 second
+
+                else:  # normal mode
+                    # Stage 3: Check every hour (fully synchronized)
                     await asyncio.sleep(3600)
 
             except asyncio.CancelledError:
