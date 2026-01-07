@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 from pathlib import Path
 
 import discord
@@ -104,6 +105,42 @@ class Birthday(
         else:
             log.debug("No user data found for user with ID %s.", target_u_id)
 
+    async def _set_bot_birthday(self) -> None:
+        """Automatically set the bot's birthday to its creation date from Discord snowflake."""
+        if self.bot.user is None:
+            log.warning("Bot user not available, cannot set bot birthday")
+            return
+
+        bot_id = self.bot.user.id
+
+        # Check if bot already has a birthday set
+        bot_bday = await self.config.user_from_id(bot_id).birthday()
+        if bot_bday and bot_bday.get("year") != 1:
+            # Birthday already set with a year, don't override
+            log.debug("Bot birthday already set, skipping auto-set")
+            return
+
+        # Calculate creation date from Discord snowflake
+        # Discord epoch is January 1, 2015 00:00:00 UTC
+        # Snowflake format: (timestamp << 22) | (worker_id << 17) | (process_id << 12) | increment
+        discord_epoch = 1420070400000  # milliseconds
+        timestamp_ms = (bot_id >> 22) + discord_epoch
+
+        # Convert to datetime
+        creation_date = datetime.datetime.utcfromtimestamp(timestamp_ms / 1000)
+
+        # Set the bot's birthday
+        await self.config.user_from_id(bot_id).birthday.set({
+            "year": creation_date.year,
+            "month": creation_date.month,
+            "day": creation_date.day,
+        })
+
+        log.info(
+            f"Automatically set bot birthday to {creation_date.year}-{creation_date.month:02d}-{creation_date.day:02d} "
+            f"(bot creation date)"
+        )
+
     async def cog_load(self) -> None:
         version = await self.config.version()
         if version == 0:  # first load so no need to update
@@ -144,6 +181,9 @@ class Birthday(
 
             await self.config.version.set(3)
             log.info(f"Migrated {migrated_guilds} guilds to separate time configuration")
+
+        # Automatically set the bot's birthday to its creation date
+        await self._set_bot_birthday()
 
         self.ready.set()
 
