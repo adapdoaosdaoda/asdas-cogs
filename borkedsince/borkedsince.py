@@ -164,7 +164,11 @@ class BorkedSince(commands.Cog):
         return f"{days:,}".replace(",", ".")
 
     async def _update_bio(self):
-        """Update the bot's bio with current streak."""
+        """Calculate what the bot's bio should be.
+
+        Note: Discord bots cannot programmatically update their About Me section.
+        This must be done manually through the Discord Developer Portal.
+        """
         days = await self.config.days_since_borked()
         base_bio = await self.config.base_bio()
 
@@ -175,13 +179,11 @@ class BorkedSince(commands.Cog):
         # Combine and truncate to 190 chars
         full_bio = (base_bio + suffix)[:190]
 
-        try:
-            await self.bot.user.edit(bio=full_bio)
-        except discord.HTTPException as e:
-            if e.status == 429:  # Rate limited
-                print("BorkedSince: Rate limited on bio update")
-            else:
-                print(f"BorkedSince: Error updating bio: {e}")
+        # Log the desired bio for manual update
+        print(f"BorkedSince: Bio should be updated to:\n{full_bio}")
+
+        # Note: self.bot.user.edit(bio=...) is not supported by Discord API for bots
+        # Users must manually update the About Me section in Discord Developer Portal
 
     def _validate_bio_length(self, base_bio: str) -> tuple[bool, str]:
         """Validate if bio is short enough to fit the maximum possible counter.
@@ -251,14 +253,23 @@ class BorkedSince(commands.Cog):
         if not self._task or self._task.done():
             self._task = asyncio.create_task(self._daily_update_loop())
 
-        # Update bio immediately
+        # Calculate desired bio (logs to console)
         await self._update_bio()
 
         days = await self.config.days_since_borked()
+        days_formatted = self._format_days(days)
+        base_bio = await self.config.base_bio()
+        suffix = f"\nLast borked: {days_formatted} day{'s' if days != 1 else ''} ago"
+        full_bio = (base_bio + suffix)[:190]
+
         await ctx.send(
             f"✅ BorkedSince enabled!\n\n"
-            f"Current streak: **{days}** day{'s' if days != 1 else ''}\n"
-            f"Bot bio has been updated."
+            f"Current streak: **{days}** day{'s' if days != 1 else ''}\n\n"
+            f"**⚠️ Important:** Discord bots cannot automatically update their About Me section.\n"
+            f"Please manually update your bot's About Me in the Discord Developer Portal to:\n"
+            f"{box(full_bio)}\n\n"
+            f"The counter will continue tracking, and you can check what the bio should be "
+            f"anytime with `[p]borkedsince info`"
         )
 
     @borkedsince.command(name="disable")
@@ -297,10 +308,17 @@ class BorkedSince(commands.Cog):
         # Send validation message
         await ctx.send(message)
 
-        # Update bio if enabled
+        # Show what bio should be if enabled
         if await self.config.enabled():
             await self._update_bio()
-            await ctx.send("Bio has been updated on Discord.")
+            days = await self.config.days_since_borked()
+            days_formatted = self._format_days(days)
+            suffix = f"\nLast borked: {days_formatted} day{'s' if days != 1 else ''} ago"
+            full_bio = (bio_text + suffix)[:190]
+            await ctx.send(
+                f"**Current bio to set manually:**\n{box(full_bio)}\n\n"
+                f"Update this in your bot's About Me section in the Discord Developer Portal."
+            )
 
     @borkedsince.command(name="reset")
     async def bs_reset(self, ctx: commands.Context, *, reason: Optional[str] = None):
@@ -323,15 +341,21 @@ class BorkedSince(commands.Cog):
         await self.config.start_time.set(datetime.now(timezone.utc).isoformat())
         await self.config.last_update.set(datetime.now(timezone.utc).isoformat())
 
-        # Update bio if enabled
+        # Calculate new bio if enabled
         if await self.config.enabled():
             await self._update_bio()
+            base_bio = await self.config.base_bio()
+            suffix = f"\nLast borked: 0 days ago"
+            full_bio = (base_bio + suffix)[:190]
 
         reason_text = f"\n**Reason:** {reason}" if reason else ""
-        await ctx.send(
-            f"✅ Counter reset to 0 days!\n"
-            f"**Previous streak:** {current_streak} day{'s' if current_streak != 1 else ''}{reason_text}"
-        )
+        response = f"✅ Counter reset to 0 days!\n" \
+                  f"**Previous streak:** {current_streak} day{'s' if current_streak != 1 else ''}{reason_text}"
+
+        if await self.config.enabled():
+            response += f"\n\n**Update your bot's About Me to:**\n{box(full_bio)}"
+
+        await ctx.send(response)
 
     @borkedsince.command(name="info")
     async def bs_info(self, ctx: commands.Context):
@@ -536,7 +560,7 @@ class BorkedSince(commands.Cog):
 
     @borkedsince.command(name="updatenow")
     async def bs_updatenow(self, ctx: commands.Context):
-        """Manually trigger a bio update immediately."""
+        """Show what the bio should currently be set to."""
         if not await self.config.enabled():
             await ctx.send(
                 "❌ BorkedSince is currently disabled!\n\n"
@@ -547,10 +571,14 @@ class BorkedSince(commands.Cog):
         await self._update_bio()
         days = await self.config.days_since_borked()
         days_formatted = self._format_days(days)
+        base_bio = await self.config.base_bio()
+        suffix = f"\nLast borked: {days_formatted} day{'s' if days != 1 else ''} ago"
+        full_bio = (base_bio + suffix)[:190]
 
         await ctx.send(
-            f"✅ Bio updated!\n\n"
-            f"Current streak: **{days_formatted}** day{'s' if days != 1 else ''}"
+            f"**Current bio to set:**\n{box(full_bio)}\n\n"
+            f"Current streak: **{days_formatted}** day{'s' if days != 1 else ''}\n\n"
+            f"**Note:** Update this manually in your bot's About Me section in the Discord Developer Portal."
         )
 
     @borkedsince.command(name="increment")
@@ -572,13 +600,19 @@ class BorkedSince(commands.Cog):
         if new_days > longest:
             await self.config.longest_streak.set(new_days)
 
-        # Update bio if enabled
+        # Calculate new bio if enabled
+        new_days_formatted = self._format_days(new_days)
         if await self.config.enabled():
             await self._update_bio()
+            base_bio = await self.config.base_bio()
+            suffix = f"\nLast borked: {new_days_formatted} day{'s' if new_days != 1 else ''} ago"
+            full_bio = (base_bio + suffix)[:190]
 
-        new_days_formatted = self._format_days(new_days)
-        await ctx.send(
-            f"✅ Counter incremented!\n\n"
-            f"**Previous:** {self._format_days(current_days)} day{'s' if current_days != 1 else ''}\n"
-            f"**New:** {new_days_formatted} day{'s' if new_days != 1 else ''}"
-        )
+        response = f"✅ Counter incremented!\n\n" \
+                  f"**Previous:** {self._format_days(current_days)} day{'s' if current_days != 1 else ''}\n" \
+                  f"**New:** {new_days_formatted} day{'s' if new_days != 1 else ''}"
+
+        if await self.config.enabled():
+            response += f"\n\n**Update your bot's About Me to:**\n{box(full_bio)}"
+
+        await ctx.send(response)
