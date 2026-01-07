@@ -506,10 +506,18 @@ class BorkedSince(commands.Cog):
         # Sort by streak length (descending) for highscores
         sorted_crashes = sorted(crash_history, key=lambda x: x["streak_length"], reverse=True)
 
+        # Determine embed color: bot's role color in guild, or #58b99c fallback
+        embed_color = discord.Color(0x58b99c)  # Fallback color
+        if ctx.guild and ctx.guild.me:
+            bot_color = ctx.guild.me.color
+            # Only use bot color if it's not the default (black)
+            if bot_color.value != 0:
+                embed_color = bot_color
+
         embed = discord.Embed(
             title="🏆 Bork History - Longest Streaks",
             description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borkes",
-            color=discord.Color.gold(),
+            color=embed_color,
         )
 
         # Show top streaks
