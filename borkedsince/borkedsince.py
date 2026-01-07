@@ -552,3 +552,33 @@ class BorkedSince(commands.Cog):
             f"✅ Bio updated!\n\n"
             f"Current streak: **{days_formatted}** day{'s' if days != 1 else ''}"
         )
+
+    @borkedsince.command(name="increment")
+    async def bs_increment(self, ctx: commands.Context):
+        """Manually increment the counter by 1 day.
+
+        Useful for testing or manual adjustments.
+        """
+        # Increment the counter
+        current_days = await self.config.days_since_borked()
+        new_days = current_days + 1
+        await self.config.days_since_borked.set(new_days)
+
+        # Update last update timestamp
+        await self.config.last_update.set(datetime.now(timezone.utc).isoformat())
+
+        # Update longest streak if applicable
+        longest = await self.config.longest_streak()
+        if new_days > longest:
+            await self.config.longest_streak.set(new_days)
+
+        # Update bio if enabled
+        if await self.config.enabled():
+            await self._update_bio()
+
+        new_days_formatted = self._format_days(new_days)
+        await ctx.send(
+            f"✅ Counter incremented!\n\n"
+            f"**Previous:** {self._format_days(current_days)} day{'s' if current_days != 1 else ''}\n"
+            f"**New:** {new_days_formatted} day{'s' if new_days != 1 else ''}"
+        )
