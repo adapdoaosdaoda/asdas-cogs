@@ -331,6 +331,8 @@ class TradeCommission(commands.Cog):
         self.config.register_guild(**default_guild)
         self._task = None
         self._ready = False
+        self._sync_mode = True  # Start in sync mode to align with minute boundaries
+        self._last_sync_day = None  # Track last Friday sync
 
     async def cog_load(self):
         """Start the background task when cog loads."""
@@ -479,18 +481,46 @@ class TradeCommission(commands.Cog):
         return embed
 
     async def _check_schedule_loop(self):
-        """Background loop to check for scheduled messages."""
+        """Background loop to check for scheduled messages.
+
+        Uses smart syncing:
+        - On bot start: Check every minute until synchronized to minute 0
+        - Once synced: Check every hour
+        - Every Friday: Re-sync to correct any drift
+        """
         await self.bot.wait_until_ready()
         while True:
             try:
+                now_utc = datetime.now(pytz.UTC)
+
+                # Check if it's Friday and we haven't synced today
+                if now_utc.weekday() == 4:  # 4 = Friday
+                    today_date = now_utc.date()
+                    if self._last_sync_day != today_date:
+                        self._sync_mode = True
+                        self._last_sync_day = today_date
+
+                # Run checks for all guilds
                 for guild in self.bot.guilds:
                     await self._check_guild_schedule(guild)
-                # Check every minute for accurate timing
-                await asyncio.sleep(60)
+
+                # Determine sleep interval based on sync mode
+                if self._sync_mode:
+                    # In sync mode: check every minute until we hit minute 0
+                    if now_utc.minute == 0:
+                        self._sync_mode = False  # Switch to normal mode
+                        await asyncio.sleep(3600)  # Sleep for 1 hour
+                    else:
+                        await asyncio.sleep(60)  # Sleep for 1 minute
+                else:
+                    # In normal mode: check every hour
+                    await asyncio.sleep(3600)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 print(f"Error in Trade Commission schedule loop: {e}")
+                # On error, use safe 60 second interval
                 await asyncio.sleep(60)
 
     async def _check_guild_schedule(self, guild: discord.Guild):
@@ -510,11 +540,10 @@ class TradeCommission(commands.Cog):
 
         # Check weekly message (only if enabled)
         if config["enabled"]:
-            # Check if it's the right day and hour (within 2-minute window)
+            # Check if it's the right day, hour, and within 2 minutes of scheduled time
             if (now.weekday() == config["schedule_day"] and
                 now.hour == config["schedule_hour"] and
-                now.minute >= config["schedule_minute"] and
-                now.minute < config["schedule_minute"] + 2):
+                abs(now.minute - config["schedule_minute"]) < 2):
 
                 # Check if we already sent a message this week
                 last_sent = await self.config.guild(guild).get_raw("last_sent", default=None)
@@ -535,8 +564,7 @@ class TradeCommission(commands.Cog):
         if (config["sunday_enabled"] and
             now.weekday() == 6 and
             now.hour == config["sunday_hour"] and
-            now.minute >= config["sunday_minute"] and
-            now.minute < config["sunday_minute"] + 2):
+            abs(now.minute - config["sunday_minute"]) < 2):
 
             # Check if we already sent this notification today
             last_sunday = await self.config.guild(guild).get_raw("last_sunday_notification", default=None)
@@ -575,8 +603,7 @@ class TradeCommission(commands.Cog):
         if (config["wednesday_enabled"] and
             now.weekday() == 2 and
             now.hour == config["wednesday_hour"] and
-            now.minute >= config["wednesday_minute"] and
-            now.minute < config["wednesday_minute"] + 2):
+            abs(now.minute - config["wednesday_minute"]) < 2):
 
             # Check if we already sent this notification today
             last_wednesday = await self.config.guild(guild).get_raw("last_wednesday_notification", default=None)
