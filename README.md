@@ -14,6 +14,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]cog install asdas-cogs borkedsince
 [p]cog install asdas-cogs eventchannels
 [p]cog install asdas-cogs eventrolereadd
+[p]cog install asdas-cogs forumthreadmessage
 [p]cog install asdas-cogs reminders
 [p]cog install asdas-cogs tradecommission
 ```
@@ -22,6 +23,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]load borkedsince
 [p]load eventchannels
 [p]load eventrolereadd
+[p]load forumthreadmessage
 [p]load reminders
 [p]load tradecommission
 ```
@@ -66,6 +68,17 @@ Extension to EventChannels that automatically re-adds event roles based on log c
 - Keyword-based role management
 - Intended to be used with [Raid-helper](https://raid-helper.dev/)
 - Instant role restoration
+
+### ForumThreadMessage
+Automatically send, edit, and optionally delete messages in new forum threads.
+
+**Key Features:**
+- Monitors configured forum channels for new threads
+- Automatically sends a message when a thread is created
+- Edits the message after 2 seconds
+- Optionally deletes the message after another 2 seconds
+- Fully configurable message content
+- Silent message sending (no notifications)
 
 ### Reminders
 [AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
@@ -124,6 +137,7 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 - **BorkedSince** - Custom development for Red-Discord Bot
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
+- **ForumThreadMessage** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
 - **TradeCommission** - Custom development for Red-Discord Bot
 
