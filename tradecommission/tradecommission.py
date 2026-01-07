@@ -485,13 +485,13 @@ class TradeCommission(commands.Cog):
             try:
                 for guild in self.bot.guilds:
                     await self._check_guild_schedule(guild)
-                # Check every hour
-                await asyncio.sleep(3600)
+                # Check every minute for accurate timing
+                await asyncio.sleep(60)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 print(f"Error in Trade Commission schedule loop: {e}")
-                await asyncio.sleep(3600)
+                await asyncio.sleep(60)
 
     async def _check_guild_schedule(self, guild: discord.Guild):
         """Check if it's time to send the weekly message or scheduled notifications for a guild."""
@@ -510,11 +510,11 @@ class TradeCommission(commands.Cog):
 
         # Check weekly message (only if enabled)
         if config["enabled"]:
-            # Check if it's the right day and hour
+            # Check if it's the right day and hour (within 2-minute window)
             if (now.weekday() == config["schedule_day"] and
                 now.hour == config["schedule_hour"] and
                 now.minute >= config["schedule_minute"] and
-                now.minute < config["schedule_minute"] + 60):
+                now.minute < config["schedule_minute"] + 2):
 
                 # Check if we already sent a message this week
                 last_sent = await self.config.guild(guild).get_raw("last_sent", default=None)
@@ -536,7 +536,7 @@ class TradeCommission(commands.Cog):
             now.weekday() == 6 and
             now.hour == config["sunday_hour"] and
             now.minute >= config["sunday_minute"] and
-            now.minute < config["sunday_minute"] + 60):
+            now.minute < config["sunday_minute"] + 2):
 
             # Check if we already sent this notification today
             last_sunday = await self.config.guild(guild).get_raw("last_sunday_notification", default=None)
@@ -576,7 +576,7 @@ class TradeCommission(commands.Cog):
             now.weekday() == 2 and
             now.hour == config["wednesday_hour"] and
             now.minute >= config["wednesday_minute"] and
-            now.minute < config["wednesday_minute"] + 60):
+            now.minute < config["wednesday_minute"] + 2):
 
             # Check if we already sent this notification today
             last_wednesday = await self.config.guild(guild).get_raw("last_wednesday_notification", default=None)
