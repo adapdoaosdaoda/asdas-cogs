@@ -11,15 +11,19 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 ```
 ```
 [p]cog install asdas-cogs birthday
+[p]cog install asdas-cogs borkedsince
 [p]cog install asdas-cogs eventchannels
 [p]cog install asdas-cogs eventrolereadd
+[p]cog install asdas-cogs forumthreadmessage
 [p]cog install asdas-cogs reminders
 [p]cog install asdas-cogs tradecommission
 ```
 ```
 [p]load birthday
+[p]load borkedsince
 [p]load eventchannels
 [p]load eventrolereadd
+[p]load forumthreadmessage
 [p]load reminders
 [p]load tradecommission
 ```
@@ -34,6 +38,18 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 - Increased the role requirerment from 1 to 2
 - Added the ability to limit the set subcommand to a single channel
 - Automatic emote reaction to the announcement
+
+### BorkedSince
+Track and display days since your bot last crashed in the bot's About Me section.
+
+**Key Features:**
+- Automatic crash detection (distinguishes between crashes and intentional restarts)
+- Updates bot's About Me with "Last borked: X days ago"
+- Crash history tracking with longest streak highscores
+- Bio length validation for 10.000+ day counts
+- Uses period (.) as thousand separator (e.g., "10.000 days")
+- Manual reset command for after bug fixes
+- All-time statistics and recent crash reports
 
 ### EventChannels
 Automatically creates and manages temporary channels for Discord scheduled events, created with [Raid-Helper](https://raid-helper.dev/) in mind.
@@ -52,6 +68,17 @@ Extension to EventChannels that automatically re-adds event roles based on log c
 - Keyword-based role management
 - Intended to be used with [Raid-helper](https://raid-helper.dev/)
 - Instant role restoration
+
+### ForumThreadMessage
+Automatically send, edit, and optionally delete messages in new forum threads.
+
+**Key Features:**
+- Monitors configured forum channels for new threads
+- Automatically sends a message when a thread is created
+- Edits the message after 2 seconds
+- Optionally deletes the message after another 2 seconds
+- Fully configurable message content
+- Silent message sending (no notifications)
 
 ### Reminders
 [AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
@@ -107,8 +134,10 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 
 - **Claude** - Everything 🎉🎊
 - **Birthday** - Cloned from [Vexed01's Birthday cog](https://github.com/Vexed01/Vex-Cogs), added image upload to announcements, multi-role inclusion, and something else i forgot
+- **BorkedSince** - Custom development for Red-Discord Bot
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
+- **ForumThreadMessage** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
 - **TradeCommission** - Custom development for Red-Discord Bot
 
