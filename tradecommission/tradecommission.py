@@ -314,15 +314,17 @@ class TradeCommission(commands.Cog):
             "sunday_enabled": False,
             "sunday_hour": 19,
             "sunday_minute": 0,
-            "sunday_message": "🔔 **Pre-Shop Restock Reminder!**\n\nThe shop will be restocking soon! Get ready!",
+            "sunday_message": "🔔 **Pre-Shop Restock Reminder!**\n\nThe shop will be restocking {timestamp}! Get ready!",
             "sunday_ping_role_id": None,
+            "sunday_event_hour": 21,  # Hour when the actual event happens (21 UTC for shop restock)
 
             # Wednesday sell recommendation notification
             "wednesday_enabled": False,
             "wednesday_hour": 19,
             "wednesday_minute": 0,
-            "wednesday_message": "📈 **Recommended to Sell Now!**\n\nIt's Wednesday! Check your prices and consider selling!",
+            "wednesday_message": "📈 **Recommended to Sell Now!**\n\nIt's Wednesday! Best time to sell is {timestamp}!",
             "wednesday_ping_role_id": None,
+            "wednesday_event_hour": 22,  # Hour when the actual event happens (22 UTC for sell time)
         }
 
         self.config.register_global(**default_global)
@@ -543,19 +545,31 @@ class TradeCommission(commands.Cog):
                 if (now - last_sunday_dt).days < 1:
                     pass  # Already sent today
                 else:
+                    # Calculate event timestamp (21 UTC on Sunday)
+                    event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
+                    # If event time has already passed today, it refers to today
+                    event_timestamp = int(event_time.timestamp())
+
                     await self._send_scheduled_notification(
                         channel,
                         config["sunday_message"],
                         config["sunday_ping_role_id"],
-                        guild
+                        guild,
+                        event_timestamp
                     )
                     await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
             else:
+                # Calculate event timestamp (21 UTC on Sunday)
+                event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
+                # If event time has already passed today, it refers to today
+                event_timestamp = int(event_time.timestamp())
+
                 await self._send_scheduled_notification(
                     channel,
                     config["sunday_message"],
                     config["sunday_ping_role_id"],
-                    guild
+                    guild,
+                    event_timestamp
                 )
                 await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
 
@@ -573,19 +587,31 @@ class TradeCommission(commands.Cog):
                 if (now - last_wednesday_dt).days < 1:
                     pass  # Already sent today
                 else:
+                    # Calculate event timestamp (22 UTC on Wednesday)
+                    event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
+                    # If event time has already passed today, it refers to today
+                    event_timestamp = int(event_time.timestamp())
+
                     await self._send_scheduled_notification(
                         channel,
                         config["wednesday_message"],
                         config["wednesday_ping_role_id"],
-                        guild
+                        guild,
+                        event_timestamp
                     )
                     await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
             else:
+                # Calculate event timestamp (22 UTC on Wednesday)
+                event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
+                # If event time has already passed today, it refers to today
+                event_timestamp = int(event_time.timestamp())
+
                 await self._send_scheduled_notification(
                     channel,
                     config["wednesday_message"],
                     config["wednesday_ping_role_id"],
-                    guild
+                    guild,
+                    event_timestamp
                 )
                 await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
 
@@ -645,11 +671,26 @@ class TradeCommission(commands.Cog):
         channel: discord.TextChannel,
         message: str,
         ping_role_id: Optional[int],
-        guild: discord.Guild
+        guild: discord.Guild,
+        event_timestamp: Optional[int] = None
     ):
-        """Send a scheduled notification message to the channel."""
+        """Send a scheduled notification message to the channel.
+
+        Args:
+            channel: The channel to send the notification to
+            message: The message text (can include {timestamp} placeholder)
+            ping_role_id: Optional role ID to ping
+            guild: The guild
+            event_timestamp: Optional Unix timestamp for the event (for {timestamp} replacement)
+        """
         try:
             content = message
+
+            # Replace {timestamp} placeholder with Discord timestamp format
+            if event_timestamp and "{timestamp}" in content:
+                # Use relative time format (<t:timestamp:R>)
+                discord_timestamp = f"<t:{event_timestamp}:R>"
+                content = content.replace("{timestamp}", discord_timestamp)
 
             # Add role ping if configured
             if ping_role_id:
@@ -1556,7 +1597,8 @@ class TradeCommission(commands.Cog):
         sunday_role_text = sunday_role.mention if sunday_role else "None"
         sunday_text = (
             f"**Enabled:** {'✅ Yes' if guild_config['sunday_enabled'] else '❌ No'}\n"
-            f"**Time:** {guild_config['sunday_hour']:02d}:{guild_config['sunday_minute']:02d}\n"
+            f"**Notification Time:** {guild_config['sunday_hour']:02d}:{guild_config['sunday_minute']:02d}\n"
+            f"**Event Time:** {guild_config['sunday_event_hour']:02d}:00 UTC\n"
             f"**Ping Role:** {sunday_role_text}\n"
             f"**Message:** {guild_config['sunday_message'][:80]}{'...' if len(guild_config['sunday_message']) > 80 else ''}"
         )
@@ -1567,7 +1609,8 @@ class TradeCommission(commands.Cog):
         wednesday_role_text = wednesday_role.mention if wednesday_role else "None"
         wednesday_text = (
             f"**Enabled:** {'✅ Yes' if guild_config['wednesday_enabled'] else '❌ No'}\n"
-            f"**Time:** {guild_config['wednesday_hour']:02d}:{guild_config['wednesday_minute']:02d}\n"
+            f"**Notification Time:** {guild_config['wednesday_hour']:02d}:{guild_config['wednesday_minute']:02d}\n"
+            f"**Event Time:** {guild_config['wednesday_event_hour']:02d}:00 UTC\n"
             f"**Ping Role:** {wednesday_role_text}\n"
             f"**Message:** {guild_config['wednesday_message'][:80]}{'...' if len(guild_config['wednesday_message']) > 80 else ''}"
         )
@@ -1723,6 +1766,26 @@ class TradeCommission(commands.Cog):
             await self.config.guild(ctx.guild).sunday_ping_role_id.set(None)
             await ctx.send("✅ Sunday notifications will not ping any role")
 
+    @tc_sunday.command(name="eventhour")
+    async def sunday_eventhour(self, ctx: commands.Context, hour: int):
+        """Set the hour when the Sunday event actually happens (for timestamp display).
+
+        This is the hour shown in the {timestamp} variable in your message.
+        Default is 21 (9 PM UTC for shop restock).
+
+        **Arguments:**
+        - `hour` - Hour in 24-hour format (0-23)
+
+        **Example:**
+        - `[p]tradecommission sunday eventhour 21` - Shop restocks at 21:00 UTC
+        """
+        if not 0 <= hour <= 23:
+            await ctx.send("❌ Hour must be between 0 and 23")
+            return
+
+        await self.config.guild(ctx.guild).sunday_event_hour.set(hour)
+        await ctx.send(f"✅ Sunday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
+
     @tc_sunday.command(name="test")
     async def sunday_test(self, ctx: commands.Context):
         """Test the Sunday notification by sending it immediately."""
@@ -1738,11 +1801,21 @@ class TradeCommission(commands.Cog):
             await ctx.send("❌ Configured channel not found.")
             return
 
+        # Calculate event timestamp for testing (21 UTC today or tomorrow)
+        tz = pytz.timezone(guild_config["timezone"])
+        now = datetime.now(tz)
+        event_time = now.replace(hour=guild_config["sunday_event_hour"], minute=0, second=0, microsecond=0)
+        # If event time has passed, use tomorrow
+        if event_time < now:
+            event_time += timedelta(days=1)
+        event_timestamp = int(event_time.timestamp())
+
         await self._send_scheduled_notification(
             channel,
             guild_config["sunday_message"],
             guild_config["sunday_ping_role_id"],
-            ctx.guild
+            ctx.guild,
+            event_timestamp
         )
         await ctx.send(f"✅ Test Sunday notification sent to {channel.mention}")
 
@@ -1815,6 +1888,26 @@ class TradeCommission(commands.Cog):
             await self.config.guild(ctx.guild).wednesday_ping_role_id.set(None)
             await ctx.send("✅ Wednesday notifications will not ping any role")
 
+    @tc_wednesday.command(name="eventhour")
+    async def wednesday_eventhour(self, ctx: commands.Context, hour: int):
+        """Set the hour when the Wednesday event actually happens (for timestamp display).
+
+        This is the hour shown in the {timestamp} variable in your message.
+        Default is 22 (10 PM UTC for best sell time).
+
+        **Arguments:**
+        - `hour` - Hour in 24-hour format (0-23)
+
+        **Example:**
+        - `[p]tradecommission wednesday eventhour 22` - Best sell time at 22:00 UTC
+        """
+        if not 0 <= hour <= 23:
+            await ctx.send("❌ Hour must be between 0 and 23")
+            return
+
+        await self.config.guild(ctx.guild).wednesday_event_hour.set(hour)
+        await ctx.send(f"✅ Wednesday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
+
     @tc_wednesday.command(name="test")
     async def wednesday_test(self, ctx: commands.Context):
         """Test the Wednesday notification by sending it immediately."""
@@ -1830,11 +1923,21 @@ class TradeCommission(commands.Cog):
             await ctx.send("❌ Configured channel not found.")
             return
 
+        # Calculate event timestamp for testing (22 UTC today or tomorrow)
+        tz = pytz.timezone(guild_config["timezone"])
+        now = datetime.now(tz)
+        event_time = now.replace(hour=guild_config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
+        # If event time has passed, use tomorrow
+        if event_time < now:
+            event_time += timedelta(days=1)
+        event_timestamp = int(event_time.timestamp())
+
         await self._send_scheduled_notification(
             channel,
             guild_config["wednesday_message"],
             guild_config["wednesday_ping_role_id"],
-            ctx.guild
+            ctx.guild,
+            event_timestamp
         )
         await ctx.send(f"✅ Test Wednesday notification sent to {channel.mention}")
 
