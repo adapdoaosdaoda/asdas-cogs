@@ -191,8 +191,8 @@ class ForumThreadMessage(commands.Cog):
         delete_enabled = guild_config["delete_enabled"]
 
         try:
-            # Send the initial message
-            message = await thread.send(initial_message)
+            # Send the initial message with suppressed notifications
+            message = await thread.send(initial_message, silent=True)
             log.info(f"Sent initial message in thread {thread.name} ({thread.id}) in guild {guild.name}")
 
             # Wait 2 seconds
