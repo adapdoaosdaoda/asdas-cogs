@@ -316,7 +316,7 @@ class TradeCommission(commands.Cog):
             "sunday_minute": 0,
             "sunday_message": "🔔 **Pre-Shop Restock Reminder!**\n\nThe shop will be restocking {timestamp}! Get ready!",
             "sunday_ping_role_id": None,
-            "sunday_event_hour": 21,  # Hour when the actual event happens (21 UTC for shop restock)
+            "sunday_event_hour": 21,  # Hour when the actual event happens (in configured timezone, default 21:00 for shop restock)
 
             # Wednesday sell recommendation notification
             "wednesday_enabled": False,
@@ -324,7 +324,7 @@ class TradeCommission(commands.Cog):
             "wednesday_minute": 0,
             "wednesday_message": "📈 **Recommended to Sell Now!**\n\nIt's Wednesday! Best time to sell is {timestamp}!",
             "wednesday_ping_role_id": None,
-            "wednesday_event_hour": 22,  # Hour when the actual event happens (22 UTC for sell time)
+            "wednesday_event_hour": 22,  # Hour when the actual event happens (in configured timezone, default 22:00 for sell time)
         }
 
         self.config.register_global(**default_global)
@@ -545,9 +545,8 @@ class TradeCommission(commands.Cog):
                 if (now - last_sunday_dt).days < 1:
                     pass  # Already sent today
                 else:
-                    # Calculate event timestamp (21 UTC on Sunday)
+                    # Calculate event timestamp in configured timezone
                     event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
-                    # If event time has already passed today, it refers to today
                     event_timestamp = int(event_time.timestamp())
 
                     await self._send_scheduled_notification(
@@ -559,9 +558,8 @@ class TradeCommission(commands.Cog):
                     )
                     await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
             else:
-                # Calculate event timestamp (21 UTC on Sunday)
+                # Calculate event timestamp in configured timezone
                 event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
-                # If event time has already passed today, it refers to today
                 event_timestamp = int(event_time.timestamp())
 
                 await self._send_scheduled_notification(
@@ -587,9 +585,8 @@ class TradeCommission(commands.Cog):
                 if (now - last_wednesday_dt).days < 1:
                     pass  # Already sent today
                 else:
-                    # Calculate event timestamp (22 UTC on Wednesday)
+                    # Calculate event timestamp in configured timezone
                     event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
-                    # If event time has already passed today, it refers to today
                     event_timestamp = int(event_time.timestamp())
 
                     await self._send_scheduled_notification(
@@ -601,9 +598,8 @@ class TradeCommission(commands.Cog):
                     )
                     await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
             else:
-                # Calculate event timestamp (22 UTC on Wednesday)
+                # Calculate event timestamp in configured timezone
                 event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
-                # If event time has already passed today, it refers to today
                 event_timestamp = int(event_time.timestamp())
 
                 await self._send_scheduled_notification(
@@ -1803,20 +1799,22 @@ class TradeCommission(commands.Cog):
         """Set the hour when the Sunday event actually happens (for timestamp display).
 
         This is the hour shown in the {timestamp} variable in your message.
-        Default is 21 (9 PM UTC for shop restock).
+        The hour is in your configured timezone, not UTC.
+        Default is 21 (9 PM in your server's timezone).
 
         **Arguments:**
-        - `hour` - Hour in 24-hour format (0-23)
+        - `hour` - Hour in 24-hour format (0-23) in your configured timezone
 
         **Example:**
-        - `[p]tradecommission sunday eventhour 21` - Shop restocks at 21:00 UTC
+        - `[p]tradecommission sunday eventhour 21` - Shop restocks at 21:00 in your server's timezone
         """
         if not 0 <= hour <= 23:
             await ctx.send("❌ Hour must be between 0 and 23")
             return
 
         await self.config.guild(ctx.guild).sunday_event_hour.set(hour)
-        await ctx.send(f"✅ Sunday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
+        tz = await self.config.guild(ctx.guild).timezone()
+        await ctx.send(f"✅ Sunday event hour set to {hour:02d}:00 {tz}\n*This will be used for the {{timestamp}} variable in your message.*")
 
     @tc_sunday.command(name="test")
     async def sunday_test(self, ctx: commands.Context, use_configured: bool = False):
@@ -1845,7 +1843,7 @@ class TradeCommission(commands.Cog):
         else:
             channel = ctx.channel
 
-        # Calculate event timestamp for testing (21 UTC today or tomorrow)
+        # Calculate event timestamp for testing (in configured timezone)
         tz = pytz.timezone(guild_config["timezone"])
         now = datetime.now(tz)
         event_time = now.replace(hour=guild_config["sunday_event_hour"], minute=0, second=0, microsecond=0)
@@ -1937,20 +1935,22 @@ class TradeCommission(commands.Cog):
         """Set the hour when the Wednesday event actually happens (for timestamp display).
 
         This is the hour shown in the {timestamp} variable in your message.
-        Default is 22 (10 PM UTC for best sell time).
+        The hour is in your configured timezone, not UTC.
+        Default is 22 (10 PM in your server's timezone).
 
         **Arguments:**
-        - `hour` - Hour in 24-hour format (0-23)
+        - `hour` - Hour in 24-hour format (0-23) in your configured timezone
 
         **Example:**
-        - `[p]tradecommission wednesday eventhour 22` - Best sell time at 22:00 UTC
+        - `[p]tradecommission wednesday eventhour 22` - Best sell time at 22:00 in your server's timezone
         """
         if not 0 <= hour <= 23:
             await ctx.send("❌ Hour must be between 0 and 23")
             return
 
         await self.config.guild(ctx.guild).wednesday_event_hour.set(hour)
-        await ctx.send(f"✅ Wednesday event hour set to {hour:02d}:00 UTC\n*This will be used for the {{timestamp}} variable in your message.*")
+        tz = await self.config.guild(ctx.guild).timezone()
+        await ctx.send(f"✅ Wednesday event hour set to {hour:02d}:00 {tz}\n*This will be used for the {{timestamp}} variable in your message.*")
 
     @tc_wednesday.command(name="test")
     async def wednesday_test(self, ctx: commands.Context, use_configured: bool = False):
@@ -1979,7 +1979,7 @@ class TradeCommission(commands.Cog):
         else:
             channel = ctx.channel
 
-        # Calculate event timestamp for testing (22 UTC today or tomorrow)
+        # Calculate event timestamp for testing (in configured timezone)
         tz = pytz.timezone(guild_config["timezone"])
         now = datetime.now(tz)
         event_time = now.replace(hour=guild_config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
