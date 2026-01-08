@@ -151,6 +151,15 @@ class EventsMixin:
                             await self.config.guild(guild).event_channels.set(event_channels)
                             log.info(f"✅ Also added thread link to existing event channels for event {scheduled_event.name}")
 
+                            # Trigger role button addition since channels already exist
+                            # (normally this happens in on_guild_channel_create, but that already fired)
+                            forumthreadmessage_cog = self.bot.get_cog("ForumThreadMessage")
+                            if forumthreadmessage_cog:
+                                log.info(f"Triggering role button addition for thread {thread.name} since event channels already exist")
+                                asyncio.create_task(forumthreadmessage_cog.add_role_button_to_thread(guild, thread))
+                            else:
+                                log.warning("ForumThreadMessage cog not loaded, cannot add role button")
+
                     return  # Successfully linked, exit
 
             # No match found in this attempt

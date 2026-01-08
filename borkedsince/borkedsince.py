@@ -31,6 +31,7 @@ class BorkedSince(commands.Cog):
             "start_time": None,  # When current streak started
             "update_interval": 86400,  # 24 hours in seconds
             "last_borked_text": "Last borked:",  # Prefix text for the counter
+            "previous_state": None,  # Backup of state before last reset (for undo)
         }
 
         self.config.register_global(**default_global)
@@ -69,6 +70,17 @@ class BorkedSince(commands.Cog):
             # Only count as crash if we had a streak going (ignore first startup)
             start_time = await self.config.start_time()
             if start_time is not None:
+                # Save current state for potential undo
+                last_update = await self.config.last_update()
+                previous_state = {
+                    "days_since_borked": current_streak,
+                    "start_time": start_time,
+                    "last_update": last_update,
+                    "reset_reason": "auto_crash_detection",
+                    "reset_timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                await self.config.previous_state.set(previous_state)
+
                 await self._record_crash(current_streak)
 
                 # Reset counter
@@ -176,7 +188,7 @@ class BorkedSince(commands.Cog):
 
         # Format the suffix
         days_formatted = self._format_days(days)
-        suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''} ago"
+        suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''}"
 
         # Combine and truncate to 190 chars
         full_bio = (base_bio + suffix)[:190]
@@ -200,7 +212,7 @@ class BorkedSince(commands.Cog):
             (is_valid, message)
         """
         # Test with 10.000 days as the sample
-        test_suffix = f"\n{last_borked_text} 10.000 days ago"
+        test_suffix = f"\n{last_borked_text} 10.000 days"
         test_full = base_bio + test_suffix
 
         if len(test_full) > 190:
@@ -246,7 +258,7 @@ class BorkedSince(commands.Cog):
             await ctx.send(
                 "❌ Please set a base bio first using `[p]borkedsince setbio <text>`\n\n"
                 "The base bio is the main text that will appear in your bot's About Me, "
-                "before the 'Last borked: X days ago' suffix is added."
+                "before the 'Last borked: X days' suffix is added."
             )
             return
 
@@ -305,7 +317,7 @@ class BorkedSince(commands.Cog):
         **Example:**
         - `[p]borkedsince setbio Serving Discord servers since 2024!`
 
-        **Note:** The suffix "Last borked: X days ago" will be automatically added.
+        **Note:** The suffix "Last borked: X days" will be automatically added.
         """
         # Validate length
         last_borked_text = await self.config.last_borked_text()
@@ -341,7 +353,7 @@ class BorkedSince(commands.Cog):
         - `[p]borkedsince settext Days without incident:`
         - `[p]borkedsince settext Uptime streak:`
 
-        **Note:** The format will be: "[prefix_text] X days ago"
+        **Note:** The format will be: "[prefix_text] X days"
         """
         # Validate the text isn't too long
         base_bio = await self.config.base_bio()
@@ -359,7 +371,7 @@ class BorkedSince(commands.Cog):
         # Show preview
         days = await self.config.days_since_borked()
         days_formatted = self._format_days(days)
-        preview = f"\n{prefix_text} {days_formatted} day{'s' if days != 1 else ''} ago"
+        preview = f"\n{prefix_text} {days_formatted} day{'s' if days != 1 else ''}"
 
         await ctx.send(
             f"✅ Prefix text updated!\n\n"
@@ -387,11 +399,26 @@ class BorkedSince(commands.Cog):
 
         **Example:**
         - `[p]borkedsince reset Fixed memory leak in event handler`
+
+        **Note:** You can undo this reset with `[p]borkedsince undo`
         """
         # Record current streak as a "crash" for history
         current_streak = await self.config.days_since_borked()
 
         if current_streak >= 0:
+            # Save current state for potential undo
+            start_time = await self.config.start_time()
+            last_update = await self.config.last_update()
+            previous_state = {
+                "days_since_borked": current_streak,
+                "start_time": start_time,
+                "last_update": last_update,
+                "reset_reason": "manual_reset",
+                "reset_timestamp": datetime.now(timezone.utc).isoformat(),
+                "manual_reason": reason,
+            }
+            await self.config.previous_state.set(previous_state)
+
             await self._record_crash(current_streak)
 
         # Reset counter
@@ -409,7 +436,8 @@ class BorkedSince(commands.Cog):
         reason_text = f"\n**Reason:** {reason}" if reason else ""
         await ctx.send(
             f"✅ Counter reset to 0 days!\n"
-            f"**Previous streak:** {current_streak} day{'s' if current_streak != 1 else ''}{reason_text}{bio_status}"
+            f"**Previous streak:** {current_streak} day{'s' if current_streak != 1 else ''}{reason_text}{bio_status}\n\n"
+            f"💡 **Tip:** Use `{ctx.prefix}borkedsince undo` if this reset was a mistake."
         )
 
     @borkedsince.command(name="info")
@@ -455,7 +483,7 @@ class BorkedSince(commands.Cog):
         # Bio preview
         if config["base_bio"]:
             last_borked_text = config["last_borked_text"]
-            suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''} ago"
+            suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''}"
             full_bio = (config["base_bio"] + suffix)[:190]
 
             is_valid, _ = self._validate_bio_length(config["base_bio"], last_borked_text)
@@ -516,7 +544,7 @@ class BorkedSince(commands.Cog):
 
         embed = discord.Embed(
             title="🏆 Bork History - Longest Streaks",
-            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borkening",
+            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borking",
             color=embed_color,
         )
 
@@ -544,13 +572,8 @@ class BorkedSince(commands.Cog):
 
         # Add summary footer
         total_crashes = len(crash_history)
-        longest = await self.config.longest_streak()
-        longest_formatted = self._format_days(longest)
 
-        embed.set_footer(
-            text=f"Total borks recorded: {total_crashes} | "
-                 f"All-time longest: {longest_formatted} days"
-        )
+        embed.set_footer(text=f"Borks on record: {total_crashes}")
 
         await ctx.send(embed=embed)
 
@@ -681,4 +704,84 @@ class BorkedSince(commands.Cog):
             f"✅ Counter incremented!\n\n"
             f"**Previous:** {self._format_days(current_days)} day{'s' if current_days != 1 else ''}\n"
             f"**New:** {new_days_formatted} day{'s' if new_days != 1 else ''}{bio_status}"
+        )
+
+    @borkedsince.command(name="undo")
+    async def bs_undo(self, ctx: commands.Context):
+        """Undo the last reset and restore the previous counter state.
+
+        This command restores the counter to its state before the last automatic
+        crash detection or manual reset. Use this if the counter reset falsely.
+
+        **Example:**
+        - `[p]borkedsince undo` - Restore counter to previous state
+        """
+        previous_state = await self.config.previous_state()
+
+        if not previous_state:
+            await ctx.send(
+                "❌ No previous state found to restore!\n\n"
+                "The undo feature only works if there was a recent reset (automatic or manual)."
+            )
+            return
+
+        # Get reset information
+        reset_reason = previous_state.get("reset_reason", "unknown")
+        reset_timestamp = previous_state.get("reset_timestamp")
+        manual_reason = previous_state.get("manual_reason")
+
+        # Restore the previous state
+        days_to_restore = previous_state["days_since_borked"]
+        start_time_to_restore = previous_state["start_time"]
+        last_update_to_restore = previous_state["last_update"]
+
+        await self.config.days_since_borked.set(days_to_restore)
+        await self.config.start_time.set(start_time_to_restore)
+        if last_update_to_restore:
+            await self.config.last_update.set(last_update_to_restore)
+
+        # Clear the previous state (can only undo once)
+        await self.config.previous_state.set(None)
+
+        # Remove the last crash from history (since we're undoing it)
+        async with self.config.crash_history() as history:
+            if history:
+                removed_crash = history.pop()
+
+        # Decrement total crashes
+        total_crashes = await self.config.total_crashes()
+        if total_crashes > 0:
+            await self.config.total_crashes.set(total_crashes - 1)
+
+        # Update bio if enabled
+        bio_status = ""
+        if await self.config.enabled():
+            success, error_msg = await self._update_bio()
+            if not success:
+                bio_status = f"\n\n⚠️ **Bio update failed:** {error_msg}"
+
+        # Format the response
+        days_formatted = self._format_days(days_to_restore)
+
+        if reset_timestamp:
+            reset_dt = datetime.fromisoformat(reset_timestamp)
+            reset_time_text = f"<t:{int(reset_dt.timestamp())}:R>"
+        else:
+            reset_time_text = "at an unknown time"
+
+        reason_text = ""
+        if reset_reason == "auto_crash_detection":
+            reason_text = "\n**Reset type:** Automatic crash detection"
+        elif reset_reason == "manual_reset":
+            reason_text = f"\n**Reset type:** Manual reset"
+            if manual_reason:
+                reason_text += f"\n**Reason given:** {manual_reason}"
+
+        await ctx.send(
+            f"✅ Counter restored to previous state!\n\n"
+            f"**Restored streak:** {days_formatted} day{'s' if days_to_restore != 1 else ''}\n"
+            f"**Reset was:** {reset_time_text}{reason_text}{bio_status}\n\n"
+            f"⚠️ **Note:** Each undo operation can only revert the most recent reset. "
+            f"If another false reset occurs, you can undo that as well. "
+            f"The crash record has been removed from history."
         )
