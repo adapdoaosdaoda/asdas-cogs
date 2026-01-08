@@ -1,4 +1,4 @@
-"""ForumThreadMessage - Automatically send, edit, and optionally delete messages in new forum threads."""
+"""ForumThreadMessage - Automatically send, edit twice, and optionally delete messages in new forum threads."""
 import asyncio
 import logging
 from typing import Optional
@@ -86,7 +86,8 @@ class ForumThreadMessage(commands.Cog):
     """Automatically send messages in newly created forum threads.
 
     Messages are sent when a new thread is created in a configured forum channel.
-    After 2 seconds, the message is edited to different content.
+    After 2 seconds, the message is edited to different content (first edit).
+    After another 2 seconds, the message is edited again (second edit).
     After another 2 seconds, the message can optionally be deleted.
     """
 
@@ -102,7 +103,8 @@ class ForumThreadMessage(commands.Cog):
         self.config.register_guild(
             forum_channel_id=None,  # ID of the forum channel to monitor
             initial_message="Welcome to this thread!",  # Initial message content
-            edited_message="Thread created successfully!",  # Message content after edit
+            edited_message="Thread created successfully!",  # Message content after first edit
+            third_edited_message="Thread is ready!",  # Message content after second edit
             delete_enabled=False,  # Whether to delete the message after editing
             thread_messages={},  # Store {thread_id: {"message_id": id, "thread_name": name}}
         )
@@ -114,8 +116,8 @@ class ForumThreadMessage(commands.Cog):
         """Configure automatic forum thread messages.
 
         This cog will automatically send a message in newly created threads
-        in a configured forum channel, edit it after 2 seconds, and optionally
-        delete it after another 2 seconds.
+        in a configured forum channel, edit it twice (at 2s and 4s intervals),
+        and optionally delete it after another 2 seconds.
         """
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
@@ -179,11 +181,29 @@ class ForumThreadMessage(commands.Cog):
         await self.config.guild(ctx.guild).edited_message.set(message)
         await ctx.send(f"✅ Edited message set to:\n```{message}```")
 
+    @forumthreadmessage.command(name="thirdeditedmessage")
+    async def set_third_edited_message(self, ctx, *, message: str):
+        """Set the message content for the third edit.
+
+        The message will be edited to this content after another 2 seconds.
+
+        Parameters
+        ----------
+        message : str
+            The message content for the third edit.
+
+        Examples
+        --------
+        `[p]forumthreadmessage thirdeditedmessage Thread is ready!`
+        """
+        await self.config.guild(ctx.guild).third_edited_message.set(message)
+        await ctx.send(f"✅ Third edited message set to:\n```{message}```")
+
     @forumthreadmessage.command(name="delete")
     async def set_delete(self, ctx, enabled: bool):
         """Toggle whether to delete the message after editing.
 
-        If enabled, the message will be deleted 2 seconds after being edited.
+        If enabled, the message will be deleted 2 seconds after the second edit (at 6s).
 
         Parameters
         ----------
@@ -228,8 +248,13 @@ class ForumThreadMessage(commands.Cog):
             inline=False,
         )
         embed.add_field(
-            name="Edited Message",
+            name="First Edited Message (after 2s)",
             value=f"```{guild_config['edited_message']}```",
+            inline=False,
+        )
+        embed.add_field(
+            name="Second Edited Message (after 4s)",
+            value=f"```{guild_config['third_edited_message']}```",
             inline=False,
         )
         embed.add_field(
@@ -339,6 +364,7 @@ class ForumThreadMessage(commands.Cog):
         # Get message configuration
         initial_message = guild_config["initial_message"]
         edited_message = guild_config["edited_message"]
+        third_edited_message = guild_config["third_edited_message"]
         delete_enabled = guild_config["delete_enabled"]
 
         try:
@@ -363,12 +389,22 @@ class ForumThreadMessage(commands.Cog):
             # Wait 2 seconds
             await asyncio.sleep(2)
 
-            # Edit the message
+            # Edit the message (first edit)
             await message.edit(
                 content=edited_message,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
-            log.info(f"Edited message in thread {thread.name} ({thread.id}) in guild {guild.name}")
+            log.info(f"Edited message (first edit) in thread {thread.name} ({thread.id}) in guild {guild.name}")
+
+            # Wait another 2 seconds
+            await asyncio.sleep(2)
+
+            # Edit the message again (second edit)
+            await message.edit(
+                content=third_edited_message,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+            )
+            log.info(f"Edited message (second edit) in thread {thread.name} ({thread.id}) in guild {guild.name}")
 
             # If deletion is enabled, wait another 2 seconds and delete
             if delete_enabled:
