@@ -27,7 +27,7 @@ class RoleButton(discord.ui.Button):
         super().__init__(
             label=label,
             emoji=emoji,
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"add_event_role:{role.id}"
         )
         self.role_id = role.id
@@ -112,18 +112,17 @@ class ForumThreadMessage(commands.Cog):
             role_button_emoji="🎫",  # Emoji for the role button
             role_button_text="Join Event Role",  # Text for the role button
             # Conditional message updates based on event timing
+            # Note: Role minimum thresholds come from EventChannels' voice_minimum_roles config
             event_15min_before_enabled=False,  # Enable 15-min-before updates
             event_15min_role_min_met="✅ Event starting in 15 minutes! We have {role_count} members with the event role!",
             event_15min_role_min_not_met="⚠️ Event starting in 15 minutes but we only have {role_count}/{role_minimum} members!",
             event_15min_default="⏰ Event starting in 15 minutes!",
-            event_15min_role_minimum=5,  # Threshold for role count
-            event_15min_title_keywords=[],  # Only apply to events with these keywords in title (empty = all events)
+            event_15min_title_keywords=[],  # Filter: only apply to events with these keywords (empty = all events)
             event_start_enabled=False,  # Enable at-start updates
             event_start_role_min_met="🎉 Event is starting NOW! {role_count} members ready!",
             event_start_role_min_not_met="⚠️ Event is starting but we're short on members ({role_count}/{role_minimum})!",
             event_start_default="🚀 Event is starting NOW!",
-            event_start_role_minimum=5,  # Threshold for role count
-            event_start_title_keywords=[],  # Only apply to events with these keywords in title (empty = all events)
+            event_start_title_keywords=[],  # Filter: only apply to events with these keywords (empty = all events)
         )
 
         # Background task for monitoring events
@@ -175,7 +174,6 @@ class ForumThreadMessage(commands.Cog):
         if timing == "15min":
             if not await config.event_15min_before_enabled():
                 return None
-            role_minimum = await config.event_15min_role_minimum()
             title_keywords = await config.event_15min_title_keywords()
             msg_role_min_met = await config.event_15min_role_min_met()
             msg_role_min_not_met = await config.event_15min_role_min_not_met()
@@ -183,27 +181,48 @@ class ForumThreadMessage(commands.Cog):
         else:  # "start"
             if not await config.event_start_enabled():
                 return None
-            role_minimum = await config.event_start_role_minimum()
             title_keywords = await config.event_start_title_keywords()
             msg_role_min_met = await config.event_start_role_min_met()
             msg_role_min_not_met = await config.event_start_role_min_not_met()
             msg_default = await config.event_start_default()
 
-        # Check if event title matches keywords (if keywords are configured)
+        # Get minimum role requirement from EventChannels
+        role_minimum = 0
+        matched_keyword = None
+        eventchannels_cog = self.bot.get_cog("EventChannels")
+        if eventchannels_cog:
+            eventchannels_config = eventchannels_cog.config.guild(guild)
+            voice_minimum_roles = await eventchannels_config.voice_minimum_roles()
+
+            # Find the first matching keyword in the event name (same logic as EventChannels)
+            event_name_lower = event.name.lower()
+            for keyword, minimum in voice_minimum_roles.items():
+                if keyword in event_name_lower:
+                    matched_keyword = keyword
+                    role_minimum = minimum
+                    log.debug(f"Event '{event.name}' matched keyword '{keyword}' with minimum {minimum}")
+                    break
+
+        # Check if event title matches filter keywords (if configured)
+        # Empty keywords = global (applies to all events)
+        # Non-empty keywords = specific filter (only applies to matching events)
         if title_keywords:
             event_title_lower = event.name.lower()
             if not any(keyword.lower() in event_title_lower for keyword in title_keywords):
-                log.debug(f"Event '{event.name}' does not match keywords {title_keywords}, skipping message update")
+                log.debug(f"Event '{event.name}' does not match filter keywords {title_keywords}, skipping message update")
                 return None
 
         # Get role member count
         role_count = len(role.members)
 
-        # Choose message based on role count
-        if role_count >= role_minimum:
+        # Choose message based on role count vs minimum
+        if role_minimum > 0 and role_count >= role_minimum:
             message_template = msg_role_min_met
-        else:
+        elif role_minimum > 0 and role_count < role_minimum:
             message_template = msg_role_min_not_met
+        else:
+            # No minimum configured, use default
+            message_template = msg_default
 
         # If no specific message, use default
         if not message_template:
@@ -571,7 +590,10 @@ class ForumThreadMessage(commands.Cog):
         """Configure conditional message updates based on event timing.
 
         Messages can automatically update 15 minutes before event start and when the event starts.
-        Different message variants can be shown based on role count and event title keywords.
+        Different message variants can be shown based on role count thresholds.
+
+        Role minimums are configured via EventChannels' setminimumroles command.
+        Use keyword filters to apply messages globally (all events) or to specific event types.
         """
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
@@ -674,25 +696,15 @@ class ForumThreadMessage(commands.Cog):
         await self.config.guild(ctx.guild).event_15min_default.set(message)
         await ctx.send(f"✅ 15-min default message set to:\n```{message}```")
 
-    @eventmessage_group.command(name="15min_minimum")
-    async def eventmsg_15min_minimum(self, ctx, minimum: int):
-        """Set the role count minimum for 15-min-before messages.
-
-        Parameters
-        ----------
-        minimum : int
-            The minimum number of members needed
-
-        Examples
-        --------
-        `[p]forumthreadmessage eventmessage 15min_minimum 5`
-        """
-        await self.config.guild(ctx.guild).event_15min_role_minimum.set(minimum)
-        await ctx.send(f"✅ 15-min role minimum set to: {minimum}")
-
     @eventmessage_group.command(name="15min_keywords")
     async def eventmsg_15min_keywords(self, ctx, *keywords: str):
-        """Set title keywords for 15-min-before messages (empty = all events).
+        """Set title keyword filter for 15-min-before messages.
+
+        This controls WHICH events get message updates:
+        - Empty keywords (default) = GLOBAL filter, applies to all events
+        - Specified keywords = SPECIFIC filter, only applies to events matching keywords
+
+        Note: Role minimums come from EventChannels' setminimumroles configuration.
 
         Parameters
         ----------
@@ -701,14 +713,14 @@ class ForumThreadMessage(commands.Cog):
 
         Examples
         --------
-        `[p]forumthreadmessage eventmessage 15min_keywords raid dungeon`
-        `[p]forumthreadmessage eventmessage 15min_keywords` - Clear keywords (apply to all)
+        `[p]forumthreadmessage eventmessage 15min_keywords raid dungeon` - Only raid/dungeon events
+        `[p]forumthreadmessage eventmessage 15min_keywords` - All events (global)
         """
         await self.config.guild(ctx.guild).event_15min_title_keywords.set(list(keywords))
         if keywords:
-            await ctx.send(f"✅ 15-min keywords set to: {', '.join(keywords)}")
+            await ctx.send(f"✅ 15-min filter set to SPECIFIC events: {', '.join(keywords)}")
         else:
-            await ctx.send("✅ 15-min keywords cleared (will apply to all events)")
+            await ctx.send("✅ 15-min filter set to GLOBAL (applies to all events)")
 
     @eventmessage_group.command(name="start_met")
     async def eventmsg_start_met(self, ctx, *, message: str):
@@ -764,25 +776,15 @@ class ForumThreadMessage(commands.Cog):
         await self.config.guild(ctx.guild).event_start_default.set(message)
         await ctx.send(f"✅ Event-start default message set to:\n```{message}```")
 
-    @eventmessage_group.command(name="start_minimum")
-    async def eventmsg_start_minimum(self, ctx, minimum: int):
-        """Set the role count minimum for event-start messages.
-
-        Parameters
-        ----------
-        minimum : int
-            The minimum number of members needed
-
-        Examples
-        --------
-        `[p]forumthreadmessage eventmessage start_minimum 5`
-        """
-        await self.config.guild(ctx.guild).event_start_role_minimum.set(minimum)
-        await ctx.send(f"✅ Event-start role minimum set to: {minimum}")
-
     @eventmessage_group.command(name="start_keywords")
     async def eventmsg_start_keywords(self, ctx, *keywords: str):
-        """Set title keywords for event-start messages (empty = all events).
+        """Set title keyword filter for event-start messages.
+
+        This controls WHICH events get message updates:
+        - Empty keywords (default) = GLOBAL filter, applies to all events
+        - Specified keywords = SPECIFIC filter, only applies to events matching keywords
+
+        Note: Role minimums come from EventChannels' setminimumroles configuration.
 
         Parameters
         ----------
@@ -791,14 +793,14 @@ class ForumThreadMessage(commands.Cog):
 
         Examples
         --------
-        `[p]forumthreadmessage eventmessage start_keywords raid dungeon`
-        `[p]forumthreadmessage eventmessage start_keywords` - Clear keywords (apply to all)
+        `[p]forumthreadmessage eventmessage start_keywords raid dungeon` - Only raid/dungeon events
+        `[p]forumthreadmessage eventmessage start_keywords` - All events (global)
         """
         await self.config.guild(ctx.guild).event_start_title_keywords.set(list(keywords))
         if keywords:
-            await ctx.send(f"✅ Event-start keywords set to: {', '.join(keywords)}")
+            await ctx.send(f"✅ Event-start filter set to SPECIFIC events: {', '.join(keywords)}")
         else:
-            await ctx.send("✅ Event-start keywords cleared (will apply to all events)")
+            await ctx.send("✅ Event-start filter set to GLOBAL (applies to all events)")
 
     @forumthreadmessage.command(name="settings")
     async def show_settings(self, ctx):
