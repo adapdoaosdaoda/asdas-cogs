@@ -104,32 +104,54 @@ class EventsMixin:
         if not guild:
             return
 
-        # Get all active events
-        stored = await self.config.guild(guild).event_channels()
-        if not stored:
-            return
+        # Threads are often created before event channels, so we need to retry with exponential backoff
+        # Retry intervals: 2s, 5s, 10s, 20s, 30s (total ~67s of retries)
+        retry_delays = [2, 5, 10, 20, 30]
 
-        # Get all scheduled events in the guild
-        scheduled_events = guild.scheduled_events
+        for attempt, delay in enumerate(retry_delays, start=1):
+            # Wait before checking (skip on first attempt if it's attempt 1)
+            if attempt > 1:
+                await asyncio.sleep(delay)
+                log.debug(f"Retry attempt {attempt} for thread '{thread.name}' after {delay}s delay")
 
-        # Try to match thread name to an event
-        for scheduled_event in scheduled_events:
-            event_id_str = str(scheduled_event.id)
+            # Get all active events
+            stored = await self.config.guild(guild).event_channels()
+            if not stored:
+                # No events with channels yet, continue to next retry
+                if attempt < len(retry_delays):
+                    log.debug(f"No event channels found yet for thread '{thread.name}', will retry in {retry_delays[attempt]}s")
+                    continue
+                else:
+                    log.debug(f"No event channels found for thread '{thread.name}' after all retries")
+                    return
 
-            # Check if this event has channels created
-            if event_id_str not in stored:
-                continue
+            # Get all scheduled events in the guild
+            scheduled_events = guild.scheduled_events
 
-            # Match if thread name matches event name (case-insensitive exact match)
-            if thread.name.lower() == scheduled_event.name.lower():
-                # Link the thread to the event
-                async with self._config_lock:
-                    current_stored = await self.config.guild(guild).event_channels()
-                    if event_id_str in current_stored:
-                        current_stored[event_id_str]["forum_thread"] = thread.id
-                        await self.config.guild(guild).event_channels.set(current_stored)
-                        log.info(f"Linked forum thread '{thread.name}' (ID: {thread.id}) to event '{scheduled_event.name}' (ID: {scheduled_event.id})")
-                break
+            # Try to match thread name to an event
+            for scheduled_event in scheduled_events:
+                event_id_str = str(scheduled_event.id)
+
+                # Check if this event has channels created
+                if event_id_str not in stored:
+                    continue
+
+                # Match if thread name matches event name (case-insensitive exact match)
+                if thread.name.lower() == scheduled_event.name.lower():
+                    # Link the thread to the event
+                    async with self._config_lock:
+                        current_stored = await self.config.guild(guild).event_channels()
+                        if event_id_str in current_stored:
+                            current_stored[event_id_str]["forum_thread"] = thread.id
+                            await self.config.guild(guild).event_channels.set(current_stored)
+                            log.info(f"Linked forum thread '{thread.name}' (ID: {thread.id}) to event '{scheduled_event.name}' (ID: {scheduled_event.id}) on attempt {attempt}")
+                    return  # Successfully linked, exit
+
+            # No match found in this attempt
+            if attempt < len(retry_delays):
+                log.debug(f"No matching event found for thread '{thread.name}' on attempt {attempt}, will retry in {retry_delays[attempt]}s")
+            else:
+                log.debug(f"No matching event found for thread '{thread.name}' after {attempt} attempts")
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
