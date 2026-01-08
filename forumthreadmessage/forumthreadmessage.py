@@ -1,6 +1,7 @@
 """ForumThreadMessage - Automatically send, edit twice, and optionally delete messages in new forum threads."""
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 import discord
@@ -110,7 +111,285 @@ class ForumThreadMessage(commands.Cog):
             role_button_enabled=True,  # Whether to automatically add role buttons
             role_button_emoji="🎫",  # Emoji for the role button
             role_button_text="Join Event Role",  # Text for the role button
+            # Conditional message updates based on event timing
+            event_15min_before_enabled=False,  # Enable 15-min-before updates
+            event_15min_role_min_met="✅ Event starting in 15 minutes! We have {role_count} members with the event role!",
+            event_15min_role_min_not_met="⚠️ Event starting in 15 minutes but we only have {role_count}/{role_minimum} members!",
+            event_15min_default="⏰ Event starting in 15 minutes!",
+            event_15min_role_minimum=5,  # Threshold for role count
+            event_15min_title_keywords=[],  # Only apply to events with these keywords in title (empty = all events)
+            event_start_enabled=False,  # Enable at-start updates
+            event_start_role_min_met="🎉 Event is starting NOW! {role_count} members ready!",
+            event_start_role_min_not_met="⚠️ Event is starting but we're short on members ({role_count}/{role_minimum})!",
+            event_start_default="🚀 Event is starting NOW!",
+            event_start_role_minimum=5,  # Threshold for role count
+            event_start_title_keywords=[],  # Only apply to events with these keywords in title (empty = all events)
         )
+
+        # Background task for monitoring events
+        self.event_monitor_task = None
+
+    async def cog_load(self):
+        """Start background task when cog loads."""
+        self.event_monitor_task = asyncio.create_task(self._event_monitor_loop())
+        log.info("Started event monitor background task")
+
+    async def cog_unload(self):
+        """Clean up background task when cog unloads."""
+        if self.event_monitor_task:
+            self.event_monitor_task.cancel()
+            try:
+                await self.event_monitor_task
+            except asyncio.CancelledError:
+                pass
+            log.info("Stopped event monitor background task")
+
+    async def _evaluate_conditional_message(
+        self,
+        guild: discord.Guild,
+        event: discord.ScheduledEvent,
+        role: discord.Role,
+        timing: str  # "15min" or "start"
+    ) -> Optional[str]:
+        """Evaluate conditions and return the appropriate message for this event.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : discord.ScheduledEvent
+            The scheduled event
+        role : discord.Role
+            The event role
+        timing : str
+            Either "15min" or "start"
+
+        Returns
+        -------
+        Optional[str]
+            The message to use, or None if updates are disabled
+        """
+        config = self.config.guild(guild)
+
+        # Check if this timing is enabled
+        if timing == "15min":
+            if not await config.event_15min_before_enabled():
+                return None
+            role_minimum = await config.event_15min_role_minimum()
+            title_keywords = await config.event_15min_title_keywords()
+            msg_role_min_met = await config.event_15min_role_min_met()
+            msg_role_min_not_met = await config.event_15min_role_min_not_met()
+            msg_default = await config.event_15min_default()
+        else:  # "start"
+            if not await config.event_start_enabled():
+                return None
+            role_minimum = await config.event_start_role_minimum()
+            title_keywords = await config.event_start_title_keywords()
+            msg_role_min_met = await config.event_start_role_min_met()
+            msg_role_min_not_met = await config.event_start_role_min_not_met()
+            msg_default = await config.event_start_default()
+
+        # Check if event title matches keywords (if keywords are configured)
+        if title_keywords:
+            event_title_lower = event.name.lower()
+            if not any(keyword.lower() in event_title_lower for keyword in title_keywords):
+                log.debug(f"Event '{event.name}' does not match keywords {title_keywords}, skipping message update")
+                return None
+
+        # Get role member count
+        role_count = len(role.members)
+
+        # Choose message based on role count
+        if role_count >= role_minimum:
+            message_template = msg_role_min_met
+        else:
+            message_template = msg_role_min_not_met
+
+        # If no specific message, use default
+        if not message_template:
+            message_template = msg_default
+
+        # Format the message with placeholders
+        try:
+            message = message_template.format(
+                role_count=role_count,
+                role_minimum=role_minimum,
+                event_name=event.name,
+                role_mention=role.mention
+            )
+            return message
+        except KeyError as e:
+            log.error(f"Invalid placeholder {e} in message template. Valid: {{role_count}}, {{role_minimum}}, {{event_name}}, {{role_mention}}")
+            return msg_default
+
+    async def _update_event_thread_message(
+        self,
+        guild: discord.Guild,
+        event: discord.ScheduledEvent,
+        role: discord.Role,
+        timing: str
+    ):
+        """Update the thread message for an event at a specific timing.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : discord.ScheduledEvent
+            The scheduled event
+        role : discord.Role
+            The event role
+        timing : str
+            Either "15min" or "start"
+        """
+        # Get the message to use
+        message_content = await self._evaluate_conditional_message(guild, event, role, timing)
+        if not message_content:
+            return
+
+        # Get EventChannels cog to find the linked thread
+        eventchannels_cog = self.bot.get_cog("EventChannels")
+        if not eventchannels_cog:
+            log.debug("EventChannels cog not loaded, cannot update event messages")
+            return
+
+        # Get event channels data
+        eventchannels_config = eventchannels_cog.config.guild(guild)
+        event_channels = await eventchannels_config.event_channels()
+        event_data = event_channels.get(str(event.id))
+
+        if not event_data:
+            log.debug(f"No event channels found for event {event.name} ({event.id})")
+            return
+
+        thread_id = event_data.get("forum_thread")
+        if not thread_id:
+            log.debug(f"No forum thread linked to event {event.name} ({event.id})")
+            return
+
+        # Get the thread
+        thread = await eventchannels_cog.get_event_forum_thread(guild, event.id)
+        if not thread:
+            log.warning(f"Could not retrieve forum thread {thread_id} for event {event.name}")
+            return
+
+        # Get the stored message
+        thread_messages = await self.config.guild(guild).thread_messages()
+        thread_data = thread_messages.get(str(thread_id))
+
+        if not thread_data:
+            log.debug(f"No stored message found for thread {thread_id}")
+            return
+
+        message_id = thread_data.get("message_id")
+
+        # Fetch and update the message
+        try:
+            message = await thread.fetch_message(message_id)
+            await message.edit(
+                content=message_content,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+            )
+            timing_label = "15 minutes before start" if timing == "15min" else "at start"
+            log.info(f"✅ Updated thread message for event '{event.name}' ({timing_label})")
+        except discord.NotFound:
+            log.warning(f"Message {message_id} not found in thread {thread_id}")
+        except discord.Forbidden:
+            log.error(f"No permission to edit message in thread {thread_id}")
+        except Exception as e:
+            log.error(f"Error updating message in thread {thread_id}: {e}", exc_info=True)
+
+    async def _event_monitor_loop(self):
+        """Background task that monitors events and updates messages at appropriate times."""
+        await self.bot.wait_until_ready()
+        log.info("Event monitor loop started")
+
+        # Track which events we've already updated (to avoid duplicate updates)
+        updated_15min = set()  # event_id
+        updated_start = set()  # event_id
+
+        while True:
+            try:
+                # Check every 30 seconds
+                await asyncio.sleep(30)
+
+                # Iterate through all guilds
+                for guild in self.bot.guilds:
+                    # Skip if EventChannels cog is not loaded
+                    eventchannels_cog = self.bot.get_cog("EventChannels")
+                    if not eventchannels_cog:
+                        continue
+
+                    # Get guild config
+                    config = self.config.guild(guild)
+                    enabled_15min = await config.event_15min_before_enabled()
+                    enabled_start = await config.event_start_enabled()
+
+                    # Skip if both are disabled
+                    if not enabled_15min and not enabled_start:
+                        continue
+
+                    # Get event channels data
+                    eventchannels_config = eventchannels_cog.config.guild(guild)
+                    event_channels = await eventchannels_config.event_channels()
+
+                    # Get current time
+                    now = datetime.now(timezone.utc)
+
+                    # Check each event
+                    for event in guild.scheduled_events:
+                        if event.status != discord.EventStatus.scheduled:
+                            continue
+
+                        # Skip if event doesn't have channels
+                        event_data = event_channels.get(str(event.id))
+                        if not event_data:
+                            continue
+
+                        # Skip if no forum thread linked
+                        if not event_data.get("forum_thread"):
+                            continue
+
+                        # Get the role
+                        role_id = event_data.get("role")
+                        if not role_id:
+                            continue
+
+                        role = guild.get_role(role_id)
+                        if not role:
+                            continue
+
+                        # Calculate time until event
+                        time_until_start = (event.start_time - now).total_seconds()
+
+                        # Check if we should update for 15-min-before
+                        if enabled_15min and event.id not in updated_15min:
+                            # Update if between 14-16 minutes before start (2 minute window)
+                            if 14 * 60 <= time_until_start <= 16 * 60:
+                                log.info(f"Triggering 15-min update for event '{event.name}' ({time_until_start:.0f}s until start)")
+                                await self._update_event_thread_message(guild, event, role, "15min")
+                                updated_15min.add(event.id)
+
+                        # Check if we should update for event start
+                        if enabled_start and event.id not in updated_start:
+                            # Update if within 2 minutes of start
+                            if -60 <= time_until_start <= 60:
+                                log.info(f"Triggering start update for event '{event.name}' ({time_until_start:.0f}s until start)")
+                                await self._update_event_thread_message(guild, event, role, "start")
+                                updated_start.add(event.id)
+
+                    # Clean up old event IDs from tracking sets (events that have ended)
+                    current_event_ids = {event.id for event in guild.scheduled_events}
+                    updated_15min = {eid for eid in updated_15min if eid in current_event_ids}
+                    updated_start = {eid for eid in updated_start if eid in current_event_ids}
+
+            except asyncio.CancelledError:
+                log.info("Event monitor loop cancelled")
+                break
+            except Exception as e:
+                log.error(f"Error in event monitor loop: {e}", exc_info=True)
+                # Continue running despite errors
+                await asyncio.sleep(60)
 
     @commands.group(invoke_without_command=True)
     @commands.guild_only()
@@ -286,6 +565,240 @@ class ForumThreadMessage(commands.Cog):
         """
         await self.config.guild(ctx.guild).role_button_text.set(text)
         await ctx.send(f"✅ Role button text set to: `{text}`")
+
+    @forumthreadmessage.group(name="eventmessage", aliases=["eventmsg"], invoke_without_command=True)
+    async def eventmessage_group(self, ctx):
+        """Configure conditional message updates based on event timing.
+
+        Messages can automatically update 15 minutes before event start and when the event starts.
+        Different message variants can be shown based on role count and event title keywords.
+        """
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @eventmessage_group.command(name="enable15min")
+    async def eventmsg_enable_15min(self, ctx):
+        """Enable message updates 15 minutes before event starts.
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage enable15min`
+        """
+        await self.config.guild(ctx.guild).event_15min_before_enabled.set(True)
+        await ctx.send("✅ 15-minute-before message updates have been enabled.")
+
+    @eventmessage_group.command(name="disable15min")
+    async def eventmsg_disable_15min(self, ctx):
+        """Disable message updates 15 minutes before event starts.
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage disable15min`
+        """
+        await self.config.guild(ctx.guild).event_15min_before_enabled.set(False)
+        await ctx.send("✅ 15-minute-before message updates have been disabled.")
+
+    @eventmessage_group.command(name="enablestart")
+    async def eventmsg_enable_start(self, ctx):
+        """Enable message updates when event starts.
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage enablestart`
+        """
+        await self.config.guild(ctx.guild).event_start_enabled.set(True)
+        await ctx.send("✅ Event-start message updates have been enabled.")
+
+    @eventmessage_group.command(name="disablestart")
+    async def eventmsg_disable_start(self, ctx):
+        """Disable message updates when event starts.
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage disablestart`
+        """
+        await self.config.guild(ctx.guild).event_start_enabled.set(False)
+        await ctx.send("✅ Event-start message updates have been disabled.")
+
+    @eventmessage_group.command(name="15min_met")
+    async def eventmsg_15min_met(self, ctx, *, message: str):
+        """Set the message shown 15 min before start when role minimum IS met.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage 15min_met ✅ Event in 15 min! {role_count} members ready!`
+        """
+        await self.config.guild(ctx.guild).event_15min_role_min_met.set(message)
+        await ctx.send(f"✅ 15-min message (role min met) set to:\n```{message}```")
+
+    @eventmessage_group.command(name="15min_notmet")
+    async def eventmsg_15min_notmet(self, ctx, *, message: str):
+        """Set the message shown 15 min before start when role minimum is NOT met.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage 15min_notmet ⚠️ Event in 15 min but only {role_count}/{role_minimum} members!`
+        """
+        await self.config.guild(ctx.guild).event_15min_role_min_not_met.set(message)
+        await ctx.send(f"✅ 15-min message (role min not met) set to:\n```{message}```")
+
+    @eventmessage_group.command(name="15min_default")
+    async def eventmsg_15min_default(self, ctx, *, message: str):
+        """Set the default message shown 15 min before start.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage 15min_default ⏰ Event starting in 15 minutes!`
+        """
+        await self.config.guild(ctx.guild).event_15min_default.set(message)
+        await ctx.send(f"✅ 15-min default message set to:\n```{message}```")
+
+    @eventmessage_group.command(name="15min_minimum")
+    async def eventmsg_15min_minimum(self, ctx, minimum: int):
+        """Set the role count minimum for 15-min-before messages.
+
+        Parameters
+        ----------
+        minimum : int
+            The minimum number of members needed
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage 15min_minimum 5`
+        """
+        await self.config.guild(ctx.guild).event_15min_role_minimum.set(minimum)
+        await ctx.send(f"✅ 15-min role minimum set to: {minimum}")
+
+    @eventmessage_group.command(name="15min_keywords")
+    async def eventmsg_15min_keywords(self, ctx, *keywords: str):
+        """Set title keywords for 15-min-before messages (empty = all events).
+
+        Parameters
+        ----------
+        keywords : str
+            Keywords to match in event title (case-insensitive)
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage 15min_keywords raid dungeon`
+        `[p]forumthreadmessage eventmessage 15min_keywords` - Clear keywords (apply to all)
+        """
+        await self.config.guild(ctx.guild).event_15min_title_keywords.set(list(keywords))
+        if keywords:
+            await ctx.send(f"✅ 15-min keywords set to: {', '.join(keywords)}")
+        else:
+            await ctx.send("✅ 15-min keywords cleared (will apply to all events)")
+
+    @eventmessage_group.command(name="start_met")
+    async def eventmsg_start_met(self, ctx, *, message: str):
+        """Set the message shown at event start when role minimum IS met.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage start_met 🎉 Event starting! {role_count} members ready!`
+        """
+        await self.config.guild(ctx.guild).event_start_role_min_met.set(message)
+        await ctx.send(f"✅ Event-start message (role min met) set to:\n```{message}```")
+
+    @eventmessage_group.command(name="start_notmet")
+    async def eventmsg_start_notmet(self, ctx, *, message: str):
+        """Set the message shown at event start when role minimum is NOT met.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage start_notmet ⚠️ Event starting but only {role_count}/{role_minimum}!`
+        """
+        await self.config.guild(ctx.guild).event_start_role_min_not_met.set(message)
+        await ctx.send(f"✅ Event-start message (role min not met) set to:\n```{message}```")
+
+    @eventmessage_group.command(name="start_default")
+    async def eventmsg_start_default(self, ctx, *, message: str):
+        """Set the default message shown at event start.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage start_default 🚀 Event is starting NOW!`
+        """
+        await self.config.guild(ctx.guild).event_start_default.set(message)
+        await ctx.send(f"✅ Event-start default message set to:\n```{message}```")
+
+    @eventmessage_group.command(name="start_minimum")
+    async def eventmsg_start_minimum(self, ctx, minimum: int):
+        """Set the role count minimum for event-start messages.
+
+        Parameters
+        ----------
+        minimum : int
+            The minimum number of members needed
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage start_minimum 5`
+        """
+        await self.config.guild(ctx.guild).event_start_role_minimum.set(minimum)
+        await ctx.send(f"✅ Event-start role minimum set to: {minimum}")
+
+    @eventmessage_group.command(name="start_keywords")
+    async def eventmsg_start_keywords(self, ctx, *keywords: str):
+        """Set title keywords for event-start messages (empty = all events).
+
+        Parameters
+        ----------
+        keywords : str
+            Keywords to match in event title (case-insensitive)
+
+        Examples
+        --------
+        `[p]forumthreadmessage eventmessage start_keywords raid dungeon`
+        `[p]forumthreadmessage eventmessage start_keywords` - Clear keywords (apply to all)
+        """
+        await self.config.guild(ctx.guild).event_start_title_keywords.set(list(keywords))
+        if keywords:
+            await ctx.send(f"✅ Event-start keywords set to: {', '.join(keywords)}")
+        else:
+            await ctx.send("✅ Event-start keywords cleared (will apply to all events)")
 
     @forumthreadmessage.command(name="settings")
     async def show_settings(self, ctx):
