@@ -327,6 +327,9 @@ class ForumThreadMessage(commands.Cog):
             msg_keyword_default = await config.event_start_keyword_default()
 
         # Get minimum role requirement from EventChannels
+        # Note: The config is called "voice_minimum_roles" but it contains the minimum
+        # number of role members required before creating event channels (per keyword).
+        # This is the correct config to use for role minimum checks.
         role_minimum = 0
         matched_keyword = None
         eventchannels_cog = self.bot.get_cog("EventChannels")
@@ -432,6 +435,9 @@ class ForumThreadMessage(commands.Cog):
         # If we have an event and role, get the details
         if event and role:
             # Get minimum role requirement from EventChannels
+            # Note: The config is called "voice_minimum_roles" but it contains the minimum
+            # number of role members required before creating event channels (per keyword).
+            # This is the correct config to use for role minimum checks.
             eventchannels_cog = self.bot.get_cog("EventChannels")
             if eventchannels_cog:
                 eventchannels_config = eventchannels_cog.config.guild(guild)
@@ -722,22 +728,57 @@ class ForumThreadMessage(commands.Cog):
                                 await self._update_event_thread_message(guild, event, role, "start")
                                 updated_start.add(event.id)
 
-                        # Check if we should update role count (every 5 minutes)
-                        # Only update before event starts and channels haven't been created yet
-                        if time_until_start > 0 and not event_data.get("text"):
-                            last_update = last_role_count_update.get(event.id)
-                            should_update = False
+                        # Smart role count updates with variable frequency
+                        # Continue updating until the role is deleted (even after channels are created)
+                        last_update = last_role_count_update.get(event.id)
+                        should_update = False
+                        update_interval = 300  # Default: 5 minutes
 
-                            if last_update is None:
-                                should_update = True  # First update
+                        # Get role minimum to determine update frequency
+                        # Note: voice_minimum_roles config contains role minimums per keyword
+                        eventchannels_config = eventchannels_cog.config.guild(guild)
+                        voice_minimum_roles = await eventchannels_config.voice_minimum_roles()
+                        role_minimum = 0
+                        event_name_lower = event.name.lower()
+                        for keyword, minimum in voice_minimum_roles.items():
+                            if keyword in event_name_lower:
+                                role_minimum = minimum
+                                break
+
+                        # Calculate smart update interval based on role count vs minimum
+                        role_count = len(role.members)
+
+                        if role_minimum > 0:
+                            if role_count < role_minimum - 5:
+                                # Far from minimum: update every 5 minutes
+                                update_interval = 300
+                            elif role_count < role_minimum:
+                                # Close to minimum: update every 2 minutes (more urgent)
+                                update_interval = 120
+                            elif time_until_start > 0 and not event_data.get("text"):
+                                # Met minimum but channels not created yet: update every 3 minutes
+                                update_interval = 180
+                            elif event_data.get("text"):
+                                # Channels created: update every 10 minutes (less urgent)
+                                update_interval = 600
                             else:
-                                time_since_update = (now - last_update).total_seconds()
-                                if time_since_update >= 300:  # 5 minutes
-                                    should_update = True
+                                # Default case
+                                update_interval = 300
+                        else:
+                            # No minimum set: update every 10 minutes
+                            update_interval = 600
 
-                            if should_update:
-                                await self._update_third_edited_with_role_count(guild, event, role)
-                                last_role_count_update[event.id] = now
+                        # Check if it's time to update
+                        if last_update is None:
+                            should_update = True  # First update
+                        else:
+                            time_since_update = (now - last_update).total_seconds()
+                            if time_since_update >= update_interval:
+                                should_update = True
+
+                        if should_update:
+                            await self._update_third_edited_with_role_count(guild, event, role)
+                            last_role_count_update[event.id] = now
 
                     # Clean up old event IDs from tracking sets (events that have ended)
                     current_event_ids = {event.id for event in guild.scheduled_events}
