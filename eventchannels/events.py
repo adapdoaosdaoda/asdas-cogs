@@ -154,10 +154,11 @@ class EventsMixin:
                     return  # Successfully linked, exit
 
             # No match found in this attempt
+            event_names = ', '.join(repr(e.name) for e in scheduled_events) if scheduled_events else 'none'
             if attempt < len(retry_delays):
-                log.info(f"No matching event found for thread '{thread.name}' on attempt {attempt}. Available events: {', '.join(f"'{e.name}'" for e in scheduled_events) if scheduled_events else 'none'}. Will retry in {retry_delays[attempt]}s")
+                log.info(f"No matching event found for thread '{thread.name}' on attempt {attempt}. Available events: {event_names}. Will retry in {retry_delays[attempt]}s")
             else:
-                log.warning(f"⚠️ No matching event found for thread '{thread.name}' after {attempt} attempts. Available events: {', '.join(f"'{e.name}'" for e in scheduled_events) if scheduled_events else 'none'}")
+                log.warning(f"⚠️ No matching event found for thread '{thread.name}' after {attempt} attempts. Available events: {event_names}")
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
