@@ -12,20 +12,20 @@ log = logging.getLogger("red.asdas-cogs.forumthreadmessage")
 class RoleButtonView(discord.ui.View):
     """View with a button to add the event role."""
 
-    def __init__(self, role: discord.Role):
+    def __init__(self, role: discord.Role, emoji: str = "🎫", label: str = "Join Event Role"):
         super().__init__(timeout=None)  # Persistent view
         self.role = role
         # Add the button with role ID in custom_id
-        self.add_item(RoleButton(role))
+        self.add_item(RoleButton(role, emoji, label))
 
 
 class RoleButton(discord.ui.Button):
     """Button to add an event role to the user."""
 
-    def __init__(self, role: discord.Role):
+    def __init__(self, role: discord.Role, emoji: str = "🎫", label: str = "Join Event Role"):
         super().__init__(
-            label="Join Event Role",
-            emoji="🎫",
+            label=label,
+            emoji=emoji,
             style=discord.ButtonStyle.primary,
             custom_id=f"add_event_role:{role.id}"
         )
@@ -107,6 +107,9 @@ class ForumThreadMessage(commands.Cog):
             third_edited_message="Thread is ready!",  # Message content after second edit
             delete_enabled=False,  # Whether to delete the message after editing
             thread_messages={},  # Store {thread_id: {"message_id": id, "thread_name": name}}
+            role_button_enabled=True,  # Whether to automatically add role buttons
+            role_button_emoji="🎫",  # Emoji for the role button
+            role_button_text="Join Event Role",  # Text for the role button
         )
 
     @commands.group(invoke_without_command=True)
@@ -219,6 +222,71 @@ class ForumThreadMessage(commands.Cog):
         status = "enabled" if enabled else "disabled"
         await ctx.send(f"✅ Message deletion has been {status}.")
 
+    @forumthreadmessage.group(name="rolebutton", invoke_without_command=True)
+    async def rolebutton_group(self, ctx):
+        """Configure role button settings.
+
+        Use subcommands to enable/disable buttons, change emoji, or change text.
+        """
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @rolebutton_group.command(name="enable")
+    async def rolebutton_enable(self, ctx):
+        """Enable automatic role button creation on event threads.
+
+        Examples
+        --------
+        `[p]forumthreadmessage rolebutton enable`
+        """
+        await self.config.guild(ctx.guild).role_button_enabled.set(True)
+        await ctx.send("✅ Role button creation has been enabled.")
+
+    @rolebutton_group.command(name="disable")
+    async def rolebutton_disable(self, ctx):
+        """Disable automatic role button creation on event threads.
+
+        Examples
+        --------
+        `[p]forumthreadmessage rolebutton disable`
+        """
+        await self.config.guild(ctx.guild).role_button_enabled.set(False)
+        await ctx.send("✅ Role button creation has been disabled.")
+
+    @rolebutton_group.command(name="emoji")
+    async def rolebutton_emoji(self, ctx, emoji: str):
+        """Set the emoji for the role button.
+
+        Parameters
+        ----------
+        emoji : str
+            The emoji to use on the button (can be a unicode emoji or custom emoji).
+
+        Examples
+        --------
+        `[p]forumthreadmessage rolebutton emoji 🎉`
+        `[p]forumthreadmessage rolebutton emoji :custom_emoji:`
+        """
+        await self.config.guild(ctx.guild).role_button_emoji.set(emoji)
+        await ctx.send(f"✅ Role button emoji set to: {emoji}")
+
+    @rolebutton_group.command(name="text")
+    async def rolebutton_text(self, ctx, *, text: str):
+        """Set the text label for the role button.
+
+        Parameters
+        ----------
+        text : str
+            The text to display on the button.
+
+        Examples
+        --------
+        `[p]forumthreadmessage rolebutton text Join Event`
+        `[p]forumthreadmessage rolebutton text Click to get role`
+        """
+        await self.config.guild(ctx.guild).role_button_text.set(text)
+        await ctx.send(f"✅ Role button text set to: `{text}`")
+
     @forumthreadmessage.command(name="settings")
     async def show_settings(self, ctx):
         """Show the current configuration for this server."""
@@ -261,6 +329,24 @@ class ForumThreadMessage(commands.Cog):
             name="Delete After Edit",
             value=delete_status,
             inline=False,
+        )
+
+        # Role button settings
+        role_button_status = "Enabled" if guild_config["role_button_enabled"] else "Disabled"
+        embed.add_field(
+            name="Role Button",
+            value=role_button_status,
+            inline=True,
+        )
+        embed.add_field(
+            name="Button Emoji",
+            value=guild_config["role_button_emoji"],
+            inline=True,
+        )
+        embed.add_field(
+            name="Button Text",
+            value=f"`{guild_config['role_button_text']}`",
+            inline=True,
         )
 
         await ctx.send(embed=embed)
@@ -428,6 +514,12 @@ class ForumThreadMessage(commands.Cog):
             True if button was added successfully, False otherwise
         """
         try:
+            # Check if role buttons are enabled
+            role_button_enabled = await self.config.guild(guild).role_button_enabled()
+            if not role_button_enabled:
+                log.debug(f"Role buttons are disabled for guild {guild.name}, skipping button addition")
+                return False
+
             # Get stored message
             thread_messages = await self.config.guild(guild).thread_messages()
             thread_data = thread_messages.get(str(thread.id))
@@ -467,9 +559,13 @@ class ForumThreadMessage(commands.Cog):
                 log.warning(f"Role {matching_role_id} not found")
                 return False
 
+            # Get button customization settings
+            button_emoji = await self.config.guild(guild).role_button_emoji()
+            button_text = await self.config.guild(guild).role_button_text()
+
             # Fetch and edit the message
             message = await thread.fetch_message(message_id)
-            view = RoleButtonView(role)
+            view = RoleButtonView(role, emoji=button_emoji, label=button_text)
             await message.edit(
                 view=view,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
@@ -745,6 +841,12 @@ class ForumThreadMessage(commands.Cog):
 
             log.info(f"Event channel created for '{event.name}' with role {role.name}")
 
+            # Check if role buttons are enabled
+            role_button_enabled = await self.config.guild(guild).role_button_enabled()
+            if not role_button_enabled:
+                log.debug(f"Role buttons are disabled for guild {guild.name}, skipping button addition")
+                return
+
             # Get the linked forum thread using the new helper method
             if matching_thread_id:
                 log.debug(f"Event {matching_event_id} has forum_thread link: {matching_thread_id}")
@@ -764,8 +866,12 @@ class ForumThreadMessage(commands.Cog):
                             message = await thread.fetch_message(message_id)
                             log.debug(f"Successfully fetched message {message_id} from thread {thread.id}")
 
+                            # Get button customization settings
+                            button_emoji = await self.config.guild(guild).role_button_emoji()
+                            button_text = await self.config.guild(guild).role_button_text()
+
                             # Edit the message to add the role button
-                            view = RoleButtonView(role)
+                            view = RoleButtonView(role, emoji=button_emoji, label=button_text)
                             await message.edit(
                                 view=view,
                                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
