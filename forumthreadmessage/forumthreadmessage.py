@@ -278,7 +278,10 @@ class ForumThreadMessage(commands.Cog):
             await ctx.send(f"**[Test]** Waiting 20 seconds before editing...")
             await asyncio.sleep(20)
 
-            await test_message.edit(content=edited_message)
+            await test_message.edit(
+                content=edited_message,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+            )
             await ctx.send(f"**[Test]** Message edited at 20s mark!")
             log.info(f"Test: Edited message in {ctx.channel.name}")
 
@@ -288,7 +291,10 @@ class ForumThreadMessage(commands.Cog):
                 await asyncio.sleep(20)
 
                 view = RoleButtonView(role)
-                await test_message.edit(view=view)
+                await test_message.edit(
+                    view=view,
+                    allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+                )
                 await ctx.send(f"**[Test]** Role button added at 40s mark! Button will add {role.mention}")
                 log.info(f"Test: Added role button for {role.name} in {ctx.channel.name}")
 
@@ -358,7 +364,10 @@ class ForumThreadMessage(commands.Cog):
             await asyncio.sleep(2)
 
             # Edit the message
-            await message.edit(content=edited_message)
+            await message.edit(
+                content=edited_message,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+            )
             log.info(f"Edited message in thread {thread.name} ({thread.id}) in guild {guild.name}")
 
             # If deletion is enabled, wait another 2 seconds and delete
@@ -457,7 +466,10 @@ class ForumThreadMessage(commands.Cog):
 
                         # Edit the message to add the role button
                         view = RoleButtonView(role)
-                        await message.edit(view=view)
+                        await message.edit(
+                            view=view,
+                            allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+                        )
 
                         log.info(f"Added role button for {role.name} to message in thread {thread.name} ({thread.id})")
                     except discord.NotFound:
