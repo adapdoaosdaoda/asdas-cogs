@@ -24,6 +24,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
         self.config = Config.get_conf(self, identifier=817263540)
         self.config.register_guild(
             event_channels={},
+            thread_event_links={},  # Maps thread_id (str) -> event_id (str) for forum threads linked to events
             category_id=None,
             timezone="UTC",  # Default timezone
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format

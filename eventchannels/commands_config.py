@@ -645,42 +645,50 @@ class CommandsConfigMixin:
             await ctx.send(f"❌ No scheduled event found with ID: `{event_id}`")
             return
 
-        # Check if event has channels created
-        stored = await self.config.guild(ctx.guild).event_channels()
         event_id_str = str(event_id_int)
-
-        if event_id_str not in stored:
-            await ctx.send(
-                f"❌ Event **'{event.name}'** (ID: {event_id}) does not have channels created yet.\n"
-                f"Channels are created {await self.config.guild(ctx.guild).creation_minutes()} minutes before the event starts.\n"
-                f"Event start time: <t:{int(event.start_time.timestamp())}:F>"
-            )
-            return
 
         # Link the thread to the event
         async with self._config_lock:
-            current_stored = await self.config.guild(ctx.guild).event_channels()
-            if event_id_str in current_stored:
-                # Check if thread is already linked to a different event
-                for other_event_id, other_data in current_stored.items():
-                    if other_data.get("forum_thread") == thread.id and other_event_id != event_id_str:
-                        await ctx.send(
-                            f"⚠️ Warning: Thread **'{thread.name}'** was already linked to event ID {other_event_id}. "
-                            f"Unlinking from old event and linking to **'{event.name}'** (ID: {event_id})."
-                        )
-                        current_stored[other_event_id].pop("forum_thread", None)
+            # Store in thread_event_links (always, regardless of whether channels exist)
+            thread_links = await self.config.guild(ctx.guild).thread_event_links()
 
-                current_stored[event_id_str]["forum_thread"] = thread.id
-                await self.config.guild(ctx.guild).event_channels.set(current_stored)
+            # Check if thread is already linked to a different event
+            old_event_id = thread_links.get(str(thread.id))
+            if old_event_id and old_event_id != event_id_str:
+                await ctx.send(
+                    f"⚠️ Warning: Thread **'{thread.name}'** was already linked to event ID {old_event_id}. "
+                    f"Relinking to **'{event.name}'** (ID: {event_id})."
+                )
 
-                role_id = current_stored[event_id_str].get("role")
+            thread_links[str(thread.id)] = event_id_str
+            await self.config.guild(ctx.guild).thread_event_links.set(thread_links)
+
+            # Also add to event_channels if channels exist
+            event_channels = await self.config.guild(ctx.guild).event_channels()
+            role_id = None
+            role = None
+
+            if event_id_str in event_channels:
+                event_channels[event_id_str]["forum_thread"] = thread.id
+                await self.config.guild(ctx.guild).event_channels.set(event_channels)
+                role_id = event_channels[event_id_str].get("role")
                 role = ctx.guild.get_role(role_id) if role_id else None
+                log.info(f"Manually linked forum thread '{thread.name}' (ID: {thread.id}) to event '{event.name}' (ID: {event_id}) with existing channels by {ctx.author}")
 
                 await ctx.send(
                     f"✅ Successfully linked forum thread **'{thread.name}'** to event **'{event.name}'** (ID: {event_id})\n"
                     f"Event role: {role.mention if role else 'Not found'}\n"
                     f"Thread: {thread.mention}\n\n"
-                    f"You can now use `[p]forumthreadmessage addbutton {thread.id}` to add the role button to the thread message."
+                    f"Event channels exist. You can now use `[p]forumthreadmessage addbutton {thread.id}` to add the role button."
                 )
-                log.info(f"Manually linked forum thread '{thread.name}' (ID: {thread.id}) to event '{event.name}' (ID: {event_id}) by {ctx.author}")
+            else:
+                log.info(f"Manually linked forum thread '{thread.name}' (ID: {thread.id}) to event '{event.name}' (ID: {event_id}) (channels will be created later) by {ctx.author}")
+
+                await ctx.send(
+                    f"✅ Successfully linked forum thread **'{thread.name}'** to event **'{event.name}'** (ID: {event_id})\n"
+                    f"Thread: {thread.mention}\n"
+                    f"Event start time: <t:{int(event.start_time.timestamp())}:F>\n\n"
+                    f"Event channels will be created {await self.config.guild(ctx.guild).creation_minutes()} minutes before the event starts.\n"
+                    f"The role button will be added automatically when channels are created."
+                )
 

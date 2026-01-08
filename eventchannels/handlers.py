@@ -375,11 +375,28 @@ class HandlersMixin:
             # Store channel data (with lock to prevent race)
             async with self._config_lock:
                 stored = await self.config.guild(guild).event_channels()
+
+                # Check if there's a thread linked to this event
+                thread_links = await self.config.guild(guild).thread_event_links()
+                linked_thread_id = None
+                for thread_id, event_id in thread_links.items():
+                    if event_id == str(event.id):
+                        linked_thread_id = int(thread_id)
+                        log.info(f"Found pre-linked thread {thread_id} for event '{event.name}' (ID: {event.id})")
+                        break
+
+                # Create event channel entry
                 stored[str(event.id)] = {
                     "text": text_channel.id,
                     "voice": [vc.id for vc in voice_channels],  # Store list of voice channel IDs
                     "role": role.id,
                 }
+
+                # Add thread link if it exists
+                if linked_thread_id:
+                    stored[str(event.id)]["forum_thread"] = linked_thread_id
+                    log.info(f"Added forum_thread {linked_thread_id} to event channels for event '{event.name}'")
+
                 await self.config.guild(guild).event_channels.set(stored)
 
             # ---------- Event Start ----------
@@ -548,6 +565,14 @@ class HandlersMixin:
                 stored.pop(str(event.id), None)
                 await self.config.guild(guild).event_channels.set(stored)
 
+                # Also remove from thread_event_links
+                thread_id = data.get("forum_thread")
+                if thread_id:
+                    thread_links = await self.config.guild(guild).thread_event_links()
+                    thread_links.pop(str(thread_id), None)
+                    await self.config.guild(guild).thread_event_links.set(thread_links)
+                    log.info(f"Removed thread link for thread {thread_id} (event ended)")
+
             # Remove role from divider and delete role (outside lock, uses own lock)
             if role:
                 await self._update_divider_permissions(guild, role, add=False)
@@ -591,6 +616,14 @@ class HandlersMixin:
                     # Remove from stored config
                     stored.pop(str(event.id), None)
                     await self.config.guild(guild).event_channels.set(stored)
+
+                    # Also remove from thread_event_links
+                    thread_id = data.get("forum_thread")
+                    if thread_id:
+                        thread_links = await self.config.guild(guild).thread_event_links()
+                        thread_links.pop(str(thread_id), None)
+                        await self.config.guild(guild).thread_event_links.set(thread_links)
+                        log.info(f"Removed thread link for thread {thread_id} (event cancelled)")
 
             # Remove role from divider and clean up (outside lock, uses own locks)
             if data:
