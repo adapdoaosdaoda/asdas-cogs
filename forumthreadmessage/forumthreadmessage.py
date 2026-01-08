@@ -677,9 +677,6 @@ class ForumThreadMessage(commands.Cog):
 
         log.debug(f"Channel created: {channel.name} ({channel.id}) in {guild.name}")
 
-        # Wait a moment for eventchannels to finish setting up
-        await asyncio.sleep(1)
-
         # Try to get eventchannels cog
         try:
             eventchannels_cog = self.bot.get_cog("EventChannels")
@@ -687,21 +684,42 @@ class ForumThreadMessage(commands.Cog):
                 log.debug(f"EventChannels cog not loaded, skipping button logic for {channel.name}")
                 return
 
-            # Get eventchannels config
-            eventchannels_config = eventchannels_cog.config.guild(guild)
-            event_channels = await eventchannels_config.event_channels()
+            # Retry with delays to wait for eventchannels to finish setting up
+            # Retry intervals: 1s, 2s, 3s (total ~6s of retries)
+            retry_delays = [1, 2, 3]
 
-            # Find if this channel is an event channel
             matching_event_id = None
             matching_role_id = None
             matching_thread_id = None
 
-            for event_id, event_data in event_channels.items():
-                if event_data.get("text") == channel.id:
-                    matching_event_id = event_id
-                    matching_role_id = event_data.get("role")
-                    matching_thread_id = event_data.get("forum_thread")
-                    log.debug(f"Found matching event {event_id} for channel {channel.name}")
+            for attempt, delay in enumerate(retry_delays, start=1):
+                # Wait before checking
+                await asyncio.sleep(delay)
+
+                # Get eventchannels config
+                eventchannels_config = eventchannels_cog.config.guild(guild)
+                event_channels = await eventchannels_config.event_channels()
+
+                # Find if this channel is an event channel
+                for event_id, event_data in event_channels.items():
+                    if event_data.get("text") == channel.id:
+                        matching_event_id = event_id
+                        matching_role_id = event_data.get("role")
+                        matching_thread_id = event_data.get("forum_thread")
+                        log.debug(f"Found matching event {event_id} for channel {channel.name} on attempt {attempt}")
+                        break
+
+                # If we found the event and it has a forum thread, proceed
+                if matching_event_id and matching_thread_id:
+                    log.info(f"Found event {matching_event_id} with forum thread {matching_thread_id} on attempt {attempt}")
+                    break
+
+                # If we found the event but no forum thread yet, check if this is the last attempt
+                if matching_event_id and attempt < len(retry_delays):
+                    log.debug(f"Event {matching_event_id} found but no forum_thread yet on attempt {attempt}, will retry")
+                    matching_event_id = None  # Reset for next attempt
+                elif matching_event_id and attempt == len(retry_delays):
+                    log.debug(f"Event {matching_event_id} found but no forum_thread after {attempt} attempts")
                     break
 
             if not matching_event_id or not matching_role_id:
