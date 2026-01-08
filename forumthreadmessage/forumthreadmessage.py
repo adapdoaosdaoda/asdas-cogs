@@ -395,7 +395,7 @@ class ForumThreadMessage(commands.Cog):
         # Wait a moment for eventchannels to finish setting up
         await asyncio.sleep(1)
 
-        # Try to get eventchannels cog and its config
+        # Try to get eventchannels cog
         try:
             eventchannels_cog = self.bot.get_cog("EventChannels")
             if not eventchannels_cog:
@@ -408,11 +408,13 @@ class ForumThreadMessage(commands.Cog):
             # Find if this channel is an event channel
             matching_event_id = None
             matching_role_id = None
+            matching_thread_id = None
 
             for event_id, event_data in event_channels.items():
                 if event_data.get("text") == channel.id:
                     matching_event_id = event_id
                     matching_role_id = event_data.get("role")
+                    matching_thread_id = event_data.get("forum_thread")
                     break
 
             if not matching_event_id or not matching_role_id:
@@ -437,47 +439,40 @@ class ForumThreadMessage(commands.Cog):
 
             log.info(f"Event channel created for '{event.name}' with role {role.name}")
 
-            # Find matching threads by name
-            thread_messages = await self.config.guild(guild).thread_messages()
+            # Get the linked forum thread using the new helper method
+            if matching_thread_id:
+                thread = await eventchannels_cog.get_event_forum_thread(guild, int(matching_event_id))
+                if thread:
+                    # Get the stored message for this thread
+                    thread_messages = await self.config.guild(guild).thread_messages()
+                    thread_data = thread_messages.get(str(thread.id))
 
-            for thread_id_str, thread_data in thread_messages.items():
-                thread_name = thread_data.get("thread_name", "")
+                    if thread_data:
+                        message_id = thread_data.get("message_id")
 
-                # Match if the event name is in the thread name (case-insensitive)
-                if event.name.lower() in thread_name.lower():
-                    thread_id = int(thread_id_str)
-                    message_id = thread_data.get("message_id")
-
-                    # Get the thread and message
-                    thread = guild.get_thread(thread_id)
-                    if not thread:
-                        # Try fetching it
                         try:
-                            thread = await guild.fetch_channel(thread_id)
-                        except (discord.NotFound, discord.Forbidden):
-                            log.warning(f"Could not find thread {thread_id}")
-                            continue
+                            message = await thread.fetch_message(message_id)
 
-                    if not isinstance(thread, discord.Thread):
-                        continue
+                            # Edit the message to add the role button
+                            view = RoleButtonView(role)
+                            await message.edit(
+                                view=view,
+                                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+                            )
 
-                    try:
-                        message = await thread.fetch_message(message_id)
-
-                        # Edit the message to add the role button
-                        view = RoleButtonView(role)
-                        await message.edit(
-                            view=view,
-                            allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
-                        )
-
-                        log.info(f"Added role button for {role.name} to message in thread {thread.name} ({thread.id})")
-                    except discord.NotFound:
-                        log.warning(f"Could not find message {message_id} in thread {thread_id}")
-                    except discord.Forbidden:
-                        log.error(f"No permission to edit message in thread {thread_id}")
-                    except Exception as e:
-                        log.error(f"Error editing message in thread {thread_id}: {e}", exc_info=True)
+                            log.info(f"Added role button for {role.name} to message in thread {thread.name} ({thread.id})")
+                        except discord.NotFound:
+                            log.warning(f"Could not find message {message_id} in thread {thread.id}")
+                        except discord.Forbidden:
+                            log.error(f"No permission to edit message in thread {thread.id}")
+                        except Exception as e:
+                            log.error(f"Error editing message in thread {thread.id}: {e}", exc_info=True)
+                    else:
+                        log.info(f"No stored message found for thread {thread.id}")
+                else:
+                    log.info(f"Could not retrieve forum thread for event {matching_event_id}")
+            else:
+                log.info(f"No forum thread linked to event {matching_event_id}")
 
         except Exception as e:
             log.error(f"Error in on_guild_channel_create: {e}", exc_info=True)

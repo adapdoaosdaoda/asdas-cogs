@@ -94,6 +94,44 @@ class EventsMixin:
             await self._cleanup_divider_if_empty(guild)
 
     @commands.Cog.listener()
+    async def on_thread_create(self, thread: discord.Thread):
+        """Link forum threads to events when thread name matches event name."""
+        # Only process forum threads
+        if not isinstance(thread.parent, discord.ForumChannel):
+            return
+
+        guild = thread.guild
+        if not guild:
+            return
+
+        # Get all active events
+        stored = await self.config.guild(guild).event_channels()
+        if not stored:
+            return
+
+        # Get all scheduled events in the guild
+        scheduled_events = guild.scheduled_events
+
+        # Try to match thread name to an event
+        for scheduled_event in scheduled_events:
+            event_id_str = str(scheduled_event.id)
+
+            # Check if this event has channels created
+            if event_id_str not in stored:
+                continue
+
+            # Match if thread name matches event name (case-insensitive exact match)
+            if thread.name.lower() == scheduled_event.name.lower():
+                # Link the thread to the event
+                async with self._config_lock:
+                    current_stored = await self.config.guild(guild).event_channels()
+                    if event_id_str in current_stored:
+                        current_stored[event_id_str]["forum_thread"] = thread.id
+                        await self.config.guild(guild).event_channels.set(current_stored)
+                        log.info(f"Linked forum thread '{thread.name}' (ID: {thread.id}) to event '{scheduled_event.name}' (ID: {scheduled_event.id})")
+                break
+
+    @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
         """Clean up stored data when event channels are deleted externally."""
         guild = channel.guild
