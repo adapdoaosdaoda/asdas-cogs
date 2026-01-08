@@ -368,3 +368,71 @@ class UtilsMixin:
         )
 
         return member_count, is_reliable
+
+    async def get_event_forum_thread(self, guild: discord.Guild, event_id: int) -> discord.Thread | None:
+        """
+        Get the forum thread linked to an event.
+
+        This is a public method that other cogs can use to retrieve the forum thread
+        associated with a specific event.
+
+        Args:
+            guild: The Discord guild
+            event_id: The ID of the scheduled event
+
+        Returns:
+            The forum Thread object if linked, otherwise None
+        """
+        stored = await self.config.guild(guild).event_channels()
+        event_data = stored.get(str(event_id))
+
+        if not event_data:
+            return None
+
+        thread_id = event_data.get("forum_thread")
+        if not thread_id:
+            return None
+
+        # Try to get the thread from cache first
+        thread = guild.get_thread(thread_id)
+        if thread:
+            return thread
+
+        # If not in cache, try to fetch it
+        try:
+            thread = await guild.fetch_channel(thread_id)
+            if isinstance(thread, discord.Thread):
+                return thread
+        except (discord.NotFound, discord.Forbidden):
+            log.warning(f"Could not fetch forum thread {thread_id} for event {event_id}")
+
+        return None
+
+    async def get_event_data_by_role(self, guild: discord.Guild, role: discord.Role) -> dict | None:
+        """
+        Get event data by role ID.
+
+        This is a public method that other cogs can use to retrieve all event data
+        (including forum thread, text channel, voice channels) for a given role.
+
+        Args:
+            guild: The Discord guild
+            role: The role to look up
+
+        Returns:
+            Dictionary with keys: "event_id", "text", "voice", "role", "forum_thread" (if linked)
+            Returns None if no event is found for the role.
+        """
+        stored = await self.config.guild(guild).event_channels()
+
+        for event_id, data in stored.items():
+            if data.get("role") == role.id:
+                return {
+                    "event_id": event_id,
+                    "text": data.get("text"),
+                    "voice": data.get("voice"),
+                    "role": data.get("role"),
+                    "forum_thread": data.get("forum_thread"),
+                }
+
+        return None
