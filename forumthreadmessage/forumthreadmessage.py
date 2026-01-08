@@ -111,12 +111,17 @@ class ForumThreadMessage(commands.Cog):
             forum_channel_id=None,  # ID of the forum channel to monitor
             initial_message="Welcome to this thread!",  # Initial message content
             edited_message="Thread created successfully!",  # Message content after first edit
-            third_edited_message="Thread is ready!",  # Message content after second edit
+            third_edited_message="Thread is ready!",  # Message content after second edit (deprecated, use third_edited_default)
             delete_enabled=False,  # Whether to delete the message after editing
             thread_messages={},  # Store {thread_id: {"message_id": id, "thread_name": name}}
             role_button_enabled=True,  # Whether to automatically add role buttons
             role_button_emoji="🎫",  # Emoji for the role button
             role_button_text="Join Event Role",  # Text for the role button
+            # Third edited message conditional options
+            # Note: Role minimum thresholds come from EventChannels' voice_minimum_roles config
+            third_edited_role_min_met="✅ Thread is ready! {role_count} members have the event role!",
+            third_edited_role_min_not_met="⚠️ Thread is ready but only {role_count}/{role_minimum} members have joined!",
+            third_edited_default="Thread is ready!",
             # Conditional message updates based on event timing
             # Note: Role minimum thresholds come from EventChannels' voice_minimum_roles config
             event_15min_before_enabled=False,  # Enable 15-min-before updates
@@ -275,6 +280,93 @@ class ForumThreadMessage(commands.Cog):
             return message
         except KeyError as e:
             log.error(f"Invalid placeholder {e} in message template. Valid: {{role_count}}, {{role_minimum}}, {{event_name}}, {{role_mention}}")
+            return msg_default
+
+    async def _evaluate_third_edited_message(
+        self,
+        guild: discord.Guild,
+        event: Optional[discord.ScheduledEvent],
+        role: Optional[discord.Role],
+        thread_name: str
+    ) -> str:
+        """Evaluate conditions and return the appropriate third edited message.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : Optional[discord.ScheduledEvent]
+            The scheduled event (if any)
+        role : Optional[discord.Role]
+            The event role (if any)
+        thread_name : str
+            The thread name
+
+        Returns
+        -------
+        str
+            The message to use
+        """
+        config = self.config.guild(guild)
+
+        # Get message variants
+        msg_role_min_met = await config.third_edited_role_min_met()
+        msg_role_min_not_met = await config.third_edited_role_min_not_met()
+        msg_default = await config.third_edited_default()
+
+        # Default values
+        role_minimum = 0
+        role_count = 0
+        event_name = ""
+        role_mention = ""
+
+        # If we have an event and role, get the details
+        if event and role:
+            # Get minimum role requirement from EventChannels
+            eventchannels_cog = self.bot.get_cog("EventChannels")
+            if eventchannels_cog:
+                eventchannels_config = eventchannels_cog.config.guild(guild)
+                voice_minimum_roles = await eventchannels_config.voice_minimum_roles()
+
+                # Find the first matching keyword in the event name
+                event_name_lower = event.name.lower()
+                for keyword, minimum in voice_minimum_roles.items():
+                    if keyword in event_name_lower:
+                        role_minimum = minimum
+                        log.debug(f"Event '{event.name}' matched EventChannels keyword '{keyword}' with minimum {minimum}")
+                        break
+
+            # Get role member count
+            role_count = len(role.members)
+            event_name = event.name
+            role_mention = role.mention
+
+        # Choose message based on role count
+        message_template = None
+
+        if role_minimum > 0 and role_count >= role_minimum:
+            message_template = msg_role_min_met
+        elif role_minimum > 0 and role_count < role_minimum:
+            message_template = msg_role_min_not_met
+        else:
+            message_template = msg_default
+
+        # Final fallback to default
+        if not message_template:
+            message_template = msg_default
+
+        # Format the message with placeholders
+        try:
+            message = message_template.format(
+                thread_name=thread_name,
+                role_count=role_count,
+                role_minimum=role_minimum,
+                event_name=event_name,
+                role_mention=role_mention
+            )
+            return message
+        except KeyError as e:
+            log.error(f"Invalid placeholder {e} in third edited message template. Valid: {{thread_name}}, {{role_count}}, {{role_minimum}}, {{event_name}}, {{role_mention}}")
             return msg_default
 
     async def _update_event_thread_message(
@@ -549,6 +641,8 @@ class ForumThreadMessage(commands.Cog):
         - `{event_name}` - The scheduled event name (empty if no event linked)
         - `{role_mention}` - Mention the event role (empty if no event linked)
 
+        **Note:** This command sets the default message. Use `thirdedited` subcommands for conditional messages.
+
         Parameters
         ----------
         message : str
@@ -560,8 +654,81 @@ class ForumThreadMessage(commands.Cog):
         `[p]forumthreadmessage thirdeditedmessage Welcome to {thread_name}!`
         `[p]forumthreadmessage thirdeditedmessage {role_mention} - {role_count}/{role_minimum} ready`
         """
-        await self.config.guild(ctx.guild).third_edited_message.set(message)
-        await ctx.send(f"✅ Third edited message set to:\n```{message}```")
+        await self.config.guild(ctx.guild).third_edited_default.set(message)
+        await ctx.send(f"✅ Third edited message (default) set to:\n```{message}```")
+
+    @forumthreadmessage.group(name="thirdedited", invoke_without_command=True)
+    async def thirdedited_group(self, ctx):
+        """Configure conditional third edited message based on role minimum.
+
+        The third edited message can show different content based on whether
+        the event has a role minimum configured and whether it's been met.
+
+        Role minimums are configured via EventChannels' setminimumroles command.
+
+        Message types:
+        - met: Shown when role count >= role minimum
+        - notmet: Shown when role count < role minimum
+        - default: Shown when no role minimum is configured
+        """
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @thirdedited_group.command(name="met")
+    async def thirdedited_met(self, ctx, *, message: str):
+        """Set the third edited message shown when role minimum IS met.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}, {thread_name}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage thirdedited met ✅ Thread ready! {role_count} members joined!`
+        """
+        await self.config.guild(ctx.guild).third_edited_role_min_met.set(message)
+        await ctx.send(f"✅ Third edited message (role min met) set to:\n```{message}```")
+
+    @thirdedited_group.command(name="notmet")
+    async def thirdedited_notmet(self, ctx, *, message: str):
+        """Set the third edited message shown when role minimum is NOT met.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}, {thread_name}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage thirdedited notmet ⚠️ Thread ready but only {role_count}/{role_minimum} joined!`
+        """
+        await self.config.guild(ctx.guild).third_edited_role_min_not_met.set(message)
+        await ctx.send(f"✅ Third edited message (role min not met) set to:\n```{message}```")
+
+    @thirdedited_group.command(name="default")
+    async def thirdedited_default(self, ctx, *, message: str):
+        """Set the default third edited message.
+
+        This is shown when no role minimum is configured for the event.
+
+        Placeholders: {role_count}, {role_minimum}, {event_name}, {role_mention}, {thread_name}
+
+        Parameters
+        ----------
+        message : str
+            The message template
+
+        Examples
+        --------
+        `[p]forumthreadmessage thirdedited default Thread is ready!`
+        """
+        await self.config.guild(ctx.guild).third_edited_default.set(message)
+        await ctx.send(f"✅ Third edited default message set to:\n```{message}```")
 
     @forumthreadmessage.command(name="delete")
     async def set_delete(self, ctx, enabled: bool):
@@ -1025,8 +1192,18 @@ class ForumThreadMessage(commands.Cog):
             inline=False,
         )
         embed.add_field(
-            name="Second Edited Message (after 4s)",
-            value=f"```{guild_config['third_edited_message']}```",
+            name="Second Edited Message (after 4s) - Default",
+            value=f"```{guild_config['third_edited_default']}```",
+            inline=False,
+        )
+        embed.add_field(
+            name="Second Edited Message - Role Min Met",
+            value=f"```{guild_config['third_edited_role_min_met']}```",
+            inline=False,
+        )
+        embed.add_field(
+            name="Second Edited Message - Role Min Not Met",
+            value=f"```{guild_config['third_edited_role_min_not_met']}```",
             inline=False,
         )
         embed.add_field(
@@ -1420,6 +1597,8 @@ class ForumThreadMessage(commands.Cog):
         role_count = 0
         role_minimum = 0
         role_mention = ""
+        linked_event = None
+        linked_role = None
 
         try:
             # Get EventChannels cog to find linked event
@@ -1442,6 +1621,7 @@ class ForumThreadMessage(commands.Cog):
                     # Get the event
                     for scheduled_event in guild.scheduled_events:
                         if str(scheduled_event.id) == matching_event_id:
+                            linked_event = scheduled_event
                             event_name = scheduled_event.name
 
                             # Get role minimum from EventChannels voice_minimum_roles
@@ -1457,6 +1637,7 @@ class ForumThreadMessage(commands.Cog):
                     # Get the role and count
                     role = guild.get_role(matching_role_id)
                     if role:
+                        linked_role = role
                         role_count = len(role.members)
                         role_mention = role.mention
 
@@ -1484,11 +1665,10 @@ class ForumThreadMessage(commands.Cog):
             log.warning(f"Invalid placeholder {e} in edited message")
             formatted_edited = edited_message
 
-        try:
-            formatted_third = third_edited_message.format(**format_vars)
-        except KeyError as e:
-            log.warning(f"Invalid placeholder {e} in third edited message")
-            formatted_third = third_edited_message
+        # Use the evaluation method for third edited message
+        formatted_third = await self._evaluate_third_edited_message(
+            guild, linked_event, linked_role, thread.name
+        )
 
         try:
             # Send the initial message with suppressed notifications but allow all mentions
