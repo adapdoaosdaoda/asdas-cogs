@@ -24,6 +24,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
         self.config = Config.get_conf(self, identifier=817263540)
         self.config.register_guild(
             event_channels={},
+            thread_event_links={},  # Maps thread_id (str) -> event_id (str) for forum threads linked to events
             category_id=None,
             timezone="UTC",  # Default timezone
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
@@ -76,6 +77,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             f"`{prefix}eventchannels setstartmessage <message>` - Set message posted when event starts\n"
             f"`{prefix}eventchannels setdeletionwarning <message>` - Set warning message before channel deletion\n"
             f"`{prefix}eventchannels setchannelnamelimit <limit>` - Set maximum character limit for channel names (default: 100)\n"
+            f"`{prefix}eventchannels linkthread <thread> <event_id>` - Manually link a forum thread to an event\n"
         )
         embed.add_field(name="Configuration", value=config_commands, inline=False)
 
@@ -225,6 +227,11 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
     async def setdivider(self, ctx, enabled: bool, *, divider_name: str = None):
         """Wrapper for seteventdivider from CommandsConfigMixin."""
         await self.seteventdivider(ctx, enabled, divider_name=divider_name)
+
+    @eventchannels.command(name="linkthread")
+    async def linkthread(self, ctx, thread: discord.Thread, event_id: str):
+        """Wrapper for linkthreadtoevent from CommandsConfigMixin."""
+        await self.linkthreadtoevent(ctx, thread, event_id)
 
     # ---------- View Commands ----------
 

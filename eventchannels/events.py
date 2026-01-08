@@ -77,11 +77,23 @@ class EventsMixin:
                 self._cancel_event_tasks(int(event_id))
 
         # Remove events from storage
+        thread_ids_to_remove = []
         for event_id in events_to_remove:
+            event_data = stored.get(event_id)
+            if event_data and event_data.get("forum_thread"):
+                thread_ids_to_remove.append(str(event_data["forum_thread"]))
             stored.pop(event_id, None)
 
         if events_to_remove:
             await self.config.guild(guild).event_channels.set(stored)
+
+            # Also remove from thread_event_links
+            if thread_ids_to_remove:
+                thread_links = await self.config.guild(guild).thread_event_links()
+                for thread_id in thread_ids_to_remove:
+                    thread_links.pop(thread_id, None)
+                await self.config.guild(guild).thread_event_links.set(thread_links)
+                log.info(f"Removed {len(thread_ids_to_remove)} thread link(s) (role deleted)")
 
             # Remove role from divider permissions tracking
             divider_roles = await self.config.guild(guild).divider_roles()
@@ -104,54 +116,48 @@ class EventsMixin:
         if not guild:
             return
 
-        # Threads are often created before event channels, so we need to retry with exponential backoff
-        # Retry intervals: 2s, 5s, 10s, 20s, 30s (total ~67s of retries)
-        retry_delays = [2, 5, 10, 20, 30]
+        log.info(f"Forum thread created: '{thread.name}' (ID: {thread.id}) - attempting to link to event")
+
+        # Retry with delays in case scheduled_events cache isn't populated yet
+        # Retry intervals: 0s, 2s, 5s (total ~7s of retries)
+        retry_delays = [0, 2, 5]
 
         for attempt, delay in enumerate(retry_delays, start=1):
-            # Wait before checking (skip on first attempt if it's attempt 1)
+            # Wait before checking (skip on first attempt)
             if attempt > 1:
                 await asyncio.sleep(delay)
-                log.debug(f"Retry attempt {attempt} for thread '{thread.name}' after {delay}s delay")
-
-            # Get all active events
-            stored = await self.config.guild(guild).event_channels()
-            if not stored:
-                # No events with channels yet, continue to next retry
-                if attempt < len(retry_delays):
-                    log.debug(f"No event channels found yet for thread '{thread.name}', will retry in {retry_delays[attempt]}s")
-                    continue
-                else:
-                    log.debug(f"No event channels found for thread '{thread.name}' after all retries")
-                    return
+                log.info(f"Retry attempt {attempt} for thread '{thread.name}' after {delay}s delay")
 
             # Get all scheduled events in the guild
             scheduled_events = guild.scheduled_events
+            log.info(f"Checking {len(scheduled_events)} scheduled events for thread '{thread.name}' (attempt {attempt})")
 
-            # Try to match thread name to an event
+            # Try to match thread name to an event (case-insensitive exact match)
             for scheduled_event in scheduled_events:
-                event_id_str = str(scheduled_event.id)
-
-                # Check if this event has channels created
-                if event_id_str not in stored:
-                    continue
-
-                # Match if thread name matches event name (case-insensitive exact match)
                 if thread.name.lower() == scheduled_event.name.lower():
-                    # Link the thread to the event
+                    event_id_str = str(scheduled_event.id)
+
+                    # Store the link in thread_event_links (regardless of whether channels exist)
                     async with self._config_lock:
-                        current_stored = await self.config.guild(guild).event_channels()
-                        if event_id_str in current_stored:
-                            current_stored[event_id_str]["forum_thread"] = thread.id
-                            await self.config.guild(guild).event_channels.set(current_stored)
-                            log.info(f"Linked forum thread '{thread.name}' (ID: {thread.id}) to event '{scheduled_event.name}' (ID: {scheduled_event.id}) on attempt {attempt}")
+                        thread_links = await self.config.guild(guild).thread_event_links()
+                        thread_links[str(thread.id)] = event_id_str
+                        await self.config.guild(guild).thread_event_links.set(thread_links)
+                        log.info(f"✅ Linked forum thread '{thread.name}' (ID: {thread.id}) to event '{scheduled_event.name}' (ID: {scheduled_event.id}) on attempt {attempt}")
+
+                        # If event channels already exist, also add to event_channels
+                        event_channels = await self.config.guild(guild).event_channels()
+                        if event_id_str in event_channels:
+                            event_channels[event_id_str]["forum_thread"] = thread.id
+                            await self.config.guild(guild).event_channels.set(event_channels)
+                            log.info(f"✅ Also added thread link to existing event channels for event {scheduled_event.name}")
+
                     return  # Successfully linked, exit
 
             # No match found in this attempt
             if attempt < len(retry_delays):
-                log.debug(f"No matching event found for thread '{thread.name}' on attempt {attempt}, will retry in {retry_delays[attempt]}s")
+                log.info(f"No matching event found for thread '{thread.name}' on attempt {attempt}. Available events: {', '.join(f\"'{e.name}'\" for e in scheduled_events) if scheduled_events else 'none'}. Will retry in {retry_delays[attempt]}s")
             else:
-                log.debug(f"No matching event found for thread '{thread.name}' after {attempt} attempts")
+                log.warning(f"⚠️ No matching event found for thread '{thread.name}' after {attempt} attempts. Available events: {', '.join(f\"'{e.name}'\" for e in scheduled_events) if scheduled_events else 'none'}")
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
@@ -211,8 +217,19 @@ class EventsMixin:
 
         # Remove event from storage
         if event_to_remove:
+            # Get thread_id before removing from storage
+            event_data = stored.get(event_to_remove)
+            thread_id = event_data.get("forum_thread") if event_data else None
+
             stored.pop(event_to_remove, None)
             await self.config.guild(guild).event_channels.set(stored)
+
+            # Also remove from thread_event_links
+            if thread_id:
+                thread_links = await self.config.guild(guild).thread_event_links()
+                thread_links.pop(str(thread_id), None)
+                await self.config.guild(guild).thread_event_links.set(thread_links)
+                log.info(f"Removed thread link for thread {thread_id} (channels deleted)")
 
             # Check if divider should be deleted (no more event roles)
             await self._cleanup_divider_if_empty(guild)
