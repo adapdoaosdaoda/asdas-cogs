@@ -357,11 +357,12 @@ class CommandsConfigMixin:
         if the event role has at least this many members. If the minimum is not met,
         NO channels will be created at all.
 
-        This works in conjunction with voice multipliers. If both are configured for
-        the same keyword, the minimum role check happens first.
+        This works independently or in conjunction with voice multipliers. If a voice
+        multiplier is also configured for the same keyword, the minimum role check
+        happens first, then dynamic voice scaling is applied.
 
         **Parameters:**
-        - keyword: The keyword to enforce minimum on (case-insensitive, must match a configured multiplier)
+        - keyword: The keyword to enforce minimum on (case-insensitive)
         - minimum: Minimum number of role members required (1-999)
 
         **Examples:**
@@ -382,15 +383,15 @@ class CommandsConfigMixin:
             await ctx.send("❌ Minimum cannot exceed 999.")
             return
 
-        # Check if the keyword has a multiplier configured
+        # Check if the keyword has a multiplier configured (optional info)
         voice_multipliers = await self.config.guild(ctx.guild).voice_multipliers()
         keyword_lower = keyword.lower()
 
         if keyword_lower not in voice_multipliers:
             await ctx.send(
-                f"⚠️ Warning: Keyword **'{keyword}'** does not have a voice multiplier configured.\n"
-                f"The minimum role requirement will have no effect until you set a multiplier.\n"
-                f"Use `{ctx.clean_prefix}eventchannels setvoicemultiplier {keyword} <multiplier>` first."
+                f"ℹ️ Note: Keyword **'{keyword}'** does not have a voice multiplier configured.\n"
+                f"The minimum role requirement will work on its own (creating 1 voice channel if met).\n"
+                f"To enable dynamic voice scaling, also use `{ctx.clean_prefix}eventchannels setvoicemultiplier {keyword} <multiplier>`."
             )
 
         # Get current minimums dictionary

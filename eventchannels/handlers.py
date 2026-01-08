@@ -174,23 +174,32 @@ class HandlersMixin:
             # Now format with the limited base name
             text_channel_name = channel_format.format(name=base_name, type="text")
 
-            # Check for voice multipliers
+            # Check for voice multipliers and minimum role requirements
             voice_multipliers = await self.config.guild(guild).voice_multipliers()
+            voice_minimum_roles = await self.config.guild(guild).voice_minimum_roles()
 
-            # Find the first matching keyword in the event name
+            # Find the first matching keyword in the event name (check both configs)
             matched_keyword = None
             voice_multiplier_capacity = None
             event_name_lower = event.name.lower()
 
+            # First check voice_multipliers
             for keyword, multiplier in voice_multipliers.items():
                 if keyword in event_name_lower:
                     matched_keyword = keyword
                     voice_multiplier_capacity = multiplier
                     break
 
+            # If no multiplier matched, check voice_minimum_roles for a matching keyword
+            if not matched_keyword:
+                for keyword in voice_minimum_roles.keys():
+                    if keyword in event_name_lower:
+                        matched_keyword = keyword
+                        break
+
             # Check if matched keyword has a minimum role requirement
+            minimum_required = None
             if matched_keyword and role:
-                voice_minimum_roles = await self.config.guild(guild).voice_minimum_roles()
                 minimum_required = voice_minimum_roles.get(matched_keyword)
 
                 if minimum_required:
