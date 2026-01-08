@@ -188,7 +188,7 @@ class BorkedSince(commands.Cog):
 
         # Format the suffix
         days_formatted = self._format_days(days)
-        suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''} ago"
+        suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''}"
 
         # Combine and truncate to 190 chars
         full_bio = (base_bio + suffix)[:190]
@@ -212,7 +212,7 @@ class BorkedSince(commands.Cog):
             (is_valid, message)
         """
         # Test with 10.000 days as the sample
-        test_suffix = f"\n{last_borked_text} 10.000 days ago"
+        test_suffix = f"\n{last_borked_text} 10.000 days"
         test_full = base_bio + test_suffix
 
         if len(test_full) > 190:
@@ -258,7 +258,7 @@ class BorkedSince(commands.Cog):
             await ctx.send(
                 "❌ Please set a base bio first using `[p]borkedsince setbio <text>`\n\n"
                 "The base bio is the main text that will appear in your bot's About Me, "
-                "before the 'Last borked: X days ago' suffix is added."
+                "before the 'Last borked: X days' suffix is added."
             )
             return
 
@@ -317,7 +317,7 @@ class BorkedSince(commands.Cog):
         **Example:**
         - `[p]borkedsince setbio Serving Discord servers since 2024!`
 
-        **Note:** The suffix "Last borked: X days ago" will be automatically added.
+        **Note:** The suffix "Last borked: X days" will be automatically added.
         """
         # Validate length
         last_borked_text = await self.config.last_borked_text()
@@ -353,7 +353,7 @@ class BorkedSince(commands.Cog):
         - `[p]borkedsince settext Days without incident:`
         - `[p]borkedsince settext Uptime streak:`
 
-        **Note:** The format will be: "[prefix_text] X days ago"
+        **Note:** The format will be: "[prefix_text] X days"
         """
         # Validate the text isn't too long
         base_bio = await self.config.base_bio()
@@ -371,7 +371,7 @@ class BorkedSince(commands.Cog):
         # Show preview
         days = await self.config.days_since_borked()
         days_formatted = self._format_days(days)
-        preview = f"\n{prefix_text} {days_formatted} day{'s' if days != 1 else ''} ago"
+        preview = f"\n{prefix_text} {days_formatted} day{'s' if days != 1 else ''}"
 
         await ctx.send(
             f"✅ Prefix text updated!\n\n"
@@ -483,7 +483,7 @@ class BorkedSince(commands.Cog):
         # Bio preview
         if config["base_bio"]:
             last_borked_text = config["last_borked_text"]
-            suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''} ago"
+            suffix = f"\n{last_borked_text} {days_formatted} day{'s' if days != 1 else ''}"
             full_bio = (config["base_bio"] + suffix)[:190]
 
             is_valid, _ = self._validate_bio_length(config["base_bio"], last_borked_text)
@@ -544,7 +544,7 @@ class BorkedSince(commands.Cog):
 
         embed = discord.Embed(
             title="🏆 Bork History - Longest Streaks",
-            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borkening",
+            description=f"Showing top {min(limit, len(sorted_crashes))} longest streaks before borking",
             color=embed_color,
         )
 
@@ -576,7 +576,7 @@ class BorkedSince(commands.Cog):
         longest_formatted = self._format_days(longest)
 
         embed.set_footer(
-            text=f"Total borks recorded: {total_crashes} | "
+            text=f"Total borks on record: {total_crashes} | "
                  f"All-time longest: {longest_formatted} days"
         )
 
