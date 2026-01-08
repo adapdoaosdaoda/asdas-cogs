@@ -409,6 +409,85 @@ class ForumThreadMessage(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    async def add_role_button_to_thread(self, guild: discord.Guild, thread: discord.Thread) -> bool:
+        """Add role button to a thread's stored message.
+
+        This is a helper method that can be called from anywhere to add the role button.
+        Returns True if successful, False otherwise.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild containing the thread
+        thread : discord.Thread
+            The thread to add the button to
+
+        Returns
+        -------
+        bool
+            True if button was added successfully, False otherwise
+        """
+        try:
+            # Get stored message
+            thread_messages = await self.config.guild(guild).thread_messages()
+            thread_data = thread_messages.get(str(thread.id))
+
+            if not thread_data:
+                log.warning(f"No stored message found for thread {thread.id}")
+                return False
+
+            message_id = thread_data.get("message_id")
+
+            # Get EventChannels cog
+            eventchannels_cog = self.bot.get_cog("EventChannels")
+            if not eventchannels_cog:
+                log.warning("EventChannels cog is not loaded")
+                return False
+
+            # Find linked event
+            eventchannels_config = eventchannels_cog.config.guild(guild)
+            event_channels = await eventchannels_config.event_channels()
+
+            matching_event_id = None
+            matching_role_id = None
+
+            for event_id, event_data in event_channels.items():
+                if event_data.get("forum_thread") == thread.id:
+                    matching_event_id = event_id
+                    matching_role_id = event_data.get("role")
+                    break
+
+            if not matching_event_id or not matching_role_id:
+                log.warning(f"No event linked to thread {thread.id}")
+                return False
+
+            # Get the role
+            role = guild.get_role(matching_role_id)
+            if not role:
+                log.warning(f"Role {matching_role_id} not found")
+                return False
+
+            # Fetch and edit the message
+            message = await thread.fetch_message(message_id)
+            view = RoleButtonView(role)
+            await message.edit(
+                view=view,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+            )
+
+            log.info(f"✅ Added role button for {role.name} to thread {thread.name} ({thread.id})")
+            return True
+
+        except discord.NotFound:
+            log.warning(f"Message not found in thread {thread.id}")
+            return False
+        except discord.Forbidden:
+            log.error(f"No permission to edit message in thread {thread.id}")
+            return False
+        except Exception as e:
+            log.error(f"Error adding button to thread {thread.id}: {e}", exc_info=True)
+            return False
+
     @forumthreadmessage.command(name="addbutton")
     async def add_button_manual(self, ctx, thread: discord.Thread):
         """Manually add the role button to a thread's message.
@@ -425,63 +504,13 @@ class ForumThreadMessage(commands.Cog):
         --------
         `[p]forumthreadmessage addbutton <thread_link_or_id>`
         """
-        # Get stored message
-        thread_messages = await self.config.guild(ctx.guild).thread_messages()
-        thread_data = thread_messages.get(str(thread.id))
+        # Use the helper method
+        success = await self.add_role_button_to_thread(ctx.guild, thread)
 
-        if not thread_data:
-            await ctx.send(f"❌ No stored message found for thread {thread.mention}")
-            return
-
-        message_id = thread_data.get("message_id")
-
-        # Get EventChannels cog
-        eventchannels_cog = self.bot.get_cog("EventChannels")
-        if not eventchannels_cog:
-            await ctx.send("❌ EventChannels cog is not loaded. Load it with `[p]load eventchannels`")
-            return
-
-        # Find linked event
-        eventchannels_config = eventchannels_cog.config.guild(ctx.guild)
-        event_channels = await eventchannels_config.event_channels()
-
-        matching_event_id = None
-        matching_role_id = None
-
-        for event_id, event_data in event_channels.items():
-            if event_data.get("forum_thread") == thread.id:
-                matching_event_id = event_id
-                matching_role_id = event_data.get("role")
-                break
-
-        if not matching_event_id or not matching_role_id:
-            await ctx.send(f"❌ No event is linked to thread {thread.mention}")
-            return
-
-        # Get the role
-        role = ctx.guild.get_role(matching_role_id)
-        if not role:
-            await ctx.send(f"❌ Role with ID {matching_role_id} not found")
-            return
-
-        # Fetch and edit the message
-        try:
-            message = await thread.fetch_message(message_id)
-            view = RoleButtonView(role)
-            await message.edit(
-                view=view,
-                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
-            )
-            await ctx.send(f"✅ Successfully added {role.mention} button to message in {thread.mention}")
-            log.info(f"Manually added role button for {role.name} to thread {thread.name} ({thread.id})")
-
-        except discord.NotFound:
-            await ctx.send(f"❌ Message {message_id} not found in {thread.mention}. It may have been deleted.")
-        except discord.Forbidden:
-            await ctx.send(f"❌ I don't have permission to edit the message in {thread.mention}")
-        except Exception as e:
-            await ctx.send(f"❌ Error: {str(e)}")
-            log.error(f"Error manually adding button to thread {thread.id}: {e}", exc_info=True)
+        if success:
+            await ctx.send(f"✅ Successfully added role button to message in {thread.mention}")
+        else:
+            await ctx.send(f"❌ Failed to add button. Check logs for details or use `{ctx.prefix}forumthreadmessage debug {thread.id}` for more info.")
 
     @forumthreadmessage.command(name="test")
     async def test_flow(self, ctx, role: Optional[discord.Role] = None):
