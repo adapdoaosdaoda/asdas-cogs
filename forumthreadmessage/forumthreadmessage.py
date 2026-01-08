@@ -482,6 +482,9 @@ class ForumThreadMessage(commands.Cog):
 
         This message will be sent immediately when a new thread is created.
 
+        **Available placeholders:**
+        - `{thread_name}` - The forum thread title
+
         Parameters
         ----------
         message : str
@@ -490,6 +493,7 @@ class ForumThreadMessage(commands.Cog):
         Examples
         --------
         `[p]forumthreadmessage initialmessage Welcome to the thread!`
+        `[p]forumthreadmessage initialmessage New thread: {thread_name}`
         """
         await self.config.guild(ctx.guild).initial_message.set(message)
         await ctx.send(f"✅ Initial message set to:\n```{message}```")
@@ -500,6 +504,9 @@ class ForumThreadMessage(commands.Cog):
 
         The initial message will be edited to this content after 2 seconds.
 
+        **Available placeholders:**
+        - `{thread_name}` - The forum thread title
+
         Parameters
         ----------
         message : str
@@ -508,6 +515,7 @@ class ForumThreadMessage(commands.Cog):
         Examples
         --------
         `[p]forumthreadmessage editedmessage Thread created successfully!`
+        `[p]forumthreadmessage editedmessage Welcome to {thread_name}!`
         """
         await self.config.guild(ctx.guild).edited_message.set(message)
         await ctx.send(f"✅ Edited message set to:\n```{message}```")
@@ -518,6 +526,9 @@ class ForumThreadMessage(commands.Cog):
 
         The message will be edited to this content after another 2 seconds.
 
+        **Available placeholders:**
+        - `{thread_name}` - The forum thread title
+
         Parameters
         ----------
         message : str
@@ -526,6 +537,7 @@ class ForumThreadMessage(commands.Cog):
         Examples
         --------
         `[p]forumthreadmessage thirdeditedmessage Thread is ready!`
+        `[p]forumthreadmessage thirdeditedmessage Welcome to {thread_name}!`
         """
         await self.config.guild(ctx.guild).third_edited_message.set(message)
         await ctx.send(f"✅ Third edited message set to:\n```{message}```")
@@ -1376,10 +1388,26 @@ class ForumThreadMessage(commands.Cog):
         third_edited_message = guild_config["third_edited_message"]
         delete_enabled = guild_config["delete_enabled"]
 
+        # Format messages with placeholders
+        try:
+            formatted_initial = initial_message.format(thread_name=thread.name)
+        except KeyError:
+            formatted_initial = initial_message
+
+        try:
+            formatted_edited = edited_message.format(thread_name=thread.name)
+        except KeyError:
+            formatted_edited = edited_message
+
+        try:
+            formatted_third = third_edited_message.format(thread_name=thread.name)
+        except KeyError:
+            formatted_third = third_edited_message
+
         try:
             # Send the initial message with suppressed notifications but allow all mentions
             message = await thread.send(
-                initial_message,
+                formatted_initial,
                 silent=True,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
@@ -1400,7 +1428,7 @@ class ForumThreadMessage(commands.Cog):
 
             # Edit the message (first edit)
             await message.edit(
-                content=edited_message,
+                content=formatted_edited,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
             log.info(f"Edited message (first edit) in thread {thread.name} ({thread.id}) in guild {guild.name}")
@@ -1410,7 +1438,7 @@ class ForumThreadMessage(commands.Cog):
 
             # Edit the message again (second edit)
             await message.edit(
-                content=third_edited_message,
+                content=formatted_third,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
             log.info(f"Edited message (second edit) in thread {thread.name} ({thread.id}) in guild {guild.name}")

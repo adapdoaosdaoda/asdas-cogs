@@ -572,13 +572,8 @@ class BorkedSince(commands.Cog):
 
         # Add summary footer
         total_crashes = len(crash_history)
-        longest = await self.config.longest_streak()
-        longest_formatted = self._format_days(longest)
 
-        embed.set_footer(
-            text=f"Total borks on record: {total_crashes} | "
-                 f"All-time longest: {longest_formatted} days"
-        )
+        embed.set_footer(text=f"Borks on record: {total_crashes}")
 
         await ctx.send(embed=embed)
 
@@ -786,6 +781,7 @@ class BorkedSince(commands.Cog):
             f"✅ Counter restored to previous state!\n\n"
             f"**Restored streak:** {days_formatted} day{'s' if days_to_restore != 1 else ''}\n"
             f"**Reset was:** {reset_time_text}{reason_text}{bio_status}\n\n"
-            f"⚠️ **Note:** This undo can only be performed once. "
+            f"⚠️ **Note:** Each undo operation can only revert the most recent reset. "
+            f"If another false reset occurs, you can undo that as well. "
             f"The crash record has been removed from history."
         )
