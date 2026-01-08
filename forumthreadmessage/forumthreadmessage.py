@@ -11,7 +11,7 @@ log = logging.getLogger("red.asdas-cogs.forumthreadmessage")
 
 
 class RoleButtonView(discord.ui.View):
-    """View with a button to add the event role."""
+    """View with a button to toggle the event role."""
 
     def __init__(self, role: discord.Role, emoji: Optional[str] = "🎫", label: str = "Join Event Role"):
         super().__init__(timeout=None)  # Persistent view
@@ -21,7 +21,7 @@ class RoleButtonView(discord.ui.View):
 
 
 class RoleButton(discord.ui.Button):
-    """Button to add an event role to the user."""
+    """Button to toggle an event role for the user."""
 
     def __init__(self, role: discord.Role, emoji: Optional[str] = "🎫", label: str = "Join Event Role"):
         # Only include emoji if provided
@@ -37,7 +37,7 @@ class RoleButton(discord.ui.Button):
         self.role_id = role.id
 
     async def callback(self, interaction: discord.Interaction):
-        """Add the event role to the user who clicked the button."""
+        """Toggle the event role for the user who clicked the button."""
         try:
             member = interaction.user
             if not isinstance(member, discord.Member):
@@ -59,32 +59,34 @@ class RoleButton(discord.ui.Button):
 
             # Check if user already has the role
             if role in member.roles:
+                # Remove the role
+                await member.remove_roles(role, reason="User removed event role via button")
                 await interaction.response.send_message(
-                    f"You already have the {role.mention} role!",
+                    f"Successfully removed the {role.mention} role from you!",
                     ephemeral=True
                 )
-                return
-
-            # Add the role
-            await member.add_roles(role, reason="User requested event role via button")
-            await interaction.response.send_message(
-                f"Successfully added the {role.mention} role to you!",
-                ephemeral=True
-            )
-            log.info(f"Added role {role.name} to {member.name} ({member.id}) via button")
+                log.info(f"Removed role {role.name} from {member.name} ({member.id}) via button")
+            else:
+                # Add the role
+                await member.add_roles(role, reason="User requested event role via button")
+                await interaction.response.send_message(
+                    f"Successfully added the {role.mention} role to you!",
+                    ephemeral=True
+                )
+                log.info(f"Added role {role.name} to {member.name} ({member.id}) via button")
 
         except discord.Forbidden:
             await interaction.response.send_message(
-                "I don't have permission to add this role to you.",
+                "I don't have permission to manage this role for you.",
                 ephemeral=True
             )
-            log.error(f"Failed to add role {self.role_id} - missing permissions")
+            log.error(f"Failed to manage role {self.role_id} - missing permissions")
         except Exception as e:
             await interaction.response.send_message(
-                "An error occurred while adding the role.",
+                "An error occurred while managing the role.",
                 ephemeral=True
             )
-            log.error(f"Error adding role {self.role_id}: {e}", exc_info=True)
+            log.error(f"Error managing role {self.role_id}: {e}", exc_info=True)
 
 
 class ForumThreadMessage(commands.Cog):
