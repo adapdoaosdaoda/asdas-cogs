@@ -265,6 +265,224 @@ class ForumThreadMessage(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    @forumthreadmessage.command(name="debug")
+    async def debug_button(self, ctx, thread: discord.Thread):
+        """Debug why the role button isn't appearing on a thread message.
+
+        This command checks all conditions required for the role button to appear.
+
+        Parameters
+        ----------
+        thread : discord.Thread
+            The forum thread to debug.
+
+        Examples
+        --------
+        `[p]forumthreadmessage debug <thread_link_or_id>`
+        """
+        embed = discord.Embed(
+            title=f"RoleButton Debug: {thread.name}",
+            color=discord.Color.blue(),
+        )
+
+        issues = []
+        warnings = []
+        success = []
+
+        # Check 1: Is it a forum thread?
+        if not isinstance(thread.parent, discord.ForumChannel):
+            issues.append("❌ Not a forum thread")
+            embed.add_field(name="Thread Type", value="❌ Not a forum thread", inline=False)
+        else:
+            success.append("✅ Valid forum thread")
+            embed.add_field(name="Thread Type", value="✅ Valid forum thread", inline=False)
+
+        # Check 2: Is delete_enabled false?
+        guild_config = await self.config.guild(ctx.guild).all()
+        delete_enabled = guild_config["delete_enabled"]
+        if delete_enabled:
+            issues.append("❌ Delete is enabled - messages are deleted before button can be added")
+            embed.add_field(name="Delete Enabled", value="❌ True (messages get deleted)", inline=False)
+        else:
+            success.append("✅ Delete disabled")
+            embed.add_field(name="Delete Enabled", value="✅ False (messages persist)", inline=False)
+
+        # Check 3: Is message stored?
+        thread_messages = guild_config["thread_messages"]
+        thread_data = thread_messages.get(str(thread.id))
+        if not thread_data:
+            issues.append(f"❌ No stored message for thread {thread.id}")
+            embed.add_field(name="Stored Message", value="❌ Not found in storage", inline=False)
+        else:
+            message_id = thread_data.get("message_id")
+            success.append(f"✅ Message stored (ID: {message_id})")
+            embed.add_field(name="Stored Message", value=f"✅ Found (ID: {message_id})", inline=False)
+
+            # Check 3b: Can we fetch the message?
+            try:
+                message = await thread.fetch_message(message_id)
+                success.append("✅ Message exists in Discord")
+                embed.add_field(name="Message Exists", value="✅ Found in Discord", inline=False)
+            except discord.NotFound:
+                issues.append(f"❌ Message {message_id} not found in Discord")
+                embed.add_field(name="Message Exists", value="❌ Deleted or not found", inline=False)
+            except discord.Forbidden:
+                issues.append("❌ No permission to fetch message")
+                embed.add_field(name="Message Exists", value="❌ Permission denied", inline=False)
+
+        # Check 4: Is EventChannels cog loaded?
+        eventchannels_cog = self.bot.get_cog("EventChannels")
+        if not eventchannels_cog:
+            issues.append("❌ EventChannels cog not loaded")
+            embed.add_field(name="EventChannels Cog", value="❌ Not loaded", inline=False)
+        else:
+            success.append("✅ EventChannels cog loaded")
+            embed.add_field(name="EventChannels Cog", value="✅ Loaded", inline=False)
+
+            # Check 5: Is there a linked event?
+            try:
+                eventchannels_config = eventchannels_cog.config.guild(ctx.guild)
+                event_channels = await eventchannels_config.event_channels()
+
+                linked_event = None
+                for event_id, event_data in event_channels.items():
+                    if event_data.get("forum_thread") == thread.id:
+                        linked_event = event_id
+                        role_id = event_data.get("role")
+                        text_channel_id = event_data.get("text")
+
+                        embed.add_field(name="Linked Event", value=f"✅ Event ID: {event_id}", inline=False)
+
+                        # Check role
+                        role = ctx.guild.get_role(role_id)
+                        if role:
+                            success.append(f"✅ Role exists: {role.name}")
+                            embed.add_field(name="Event Role", value=f"✅ {role.mention}", inline=False)
+                        else:
+                            issues.append(f"❌ Role {role_id} not found")
+                            embed.add_field(name="Event Role", value=f"❌ Role {role_id} not found", inline=False)
+
+                        # Check text channel
+                        text_channel = ctx.guild.get_channel(text_channel_id)
+                        if text_channel:
+                            success.append(f"✅ Event channel exists: {text_channel.name}")
+                            embed.add_field(name="Event Channel", value=f"✅ {text_channel.mention}", inline=False)
+                        else:
+                            warnings.append(f"⚠️ Event channel {text_channel_id} not found")
+                            embed.add_field(name="Event Channel", value=f"⚠️ Not found (ID: {text_channel_id})", inline=False)
+
+                        break
+
+                if not linked_event:
+                    warnings.append("⚠️ No event linked to this thread")
+                    embed.add_field(name="Linked Event", value="⚠️ No event links to this thread", inline=False)
+
+            except Exception as e:
+                issues.append(f"❌ Error checking EventChannels: {e}")
+                embed.add_field(name="EventChannels Check", value=f"❌ Error: {str(e)[:100]}", inline=False)
+
+        # Summary
+        summary = []
+        if issues:
+            summary.append(f"**Issues ({len(issues)}):**\n" + "\n".join(issues))
+        if warnings:
+            summary.append(f"**Warnings ({len(warnings)}):**\n" + "\n".join(warnings))
+        if success:
+            summary.append(f"**Passing ({len(success)}):**\n" + "\n".join(success))
+
+        embed.add_field(
+            name="Summary",
+            value="\n\n".join(summary) if summary else "No checks performed",
+            inline=False
+        )
+
+        # Determine overall status
+        if issues:
+            embed.color = discord.Color.red()
+            embed.description = "⚠️ Issues found that prevent the button from appearing"
+        elif warnings:
+            embed.color = discord.Color.orange()
+            embed.description = "⚠️ Some warnings, button may not appear"
+        else:
+            embed.color = discord.Color.green()
+            embed.description = "✅ All checks passed! Button should appear when event channel is created"
+
+        await ctx.send(embed=embed)
+
+    @forumthreadmessage.command(name="addbutton")
+    async def add_button_manual(self, ctx, thread: discord.Thread):
+        """Manually add the role button to a thread's message.
+
+        This command finds the stored message in a thread and adds the event role button to it.
+        Useful for fixing threads where the button didn't appear automatically.
+
+        Parameters
+        ----------
+        thread : discord.Thread
+            The forum thread to add the button to.
+
+        Examples
+        --------
+        `[p]forumthreadmessage addbutton <thread_link_or_id>`
+        """
+        # Get stored message
+        thread_messages = await self.config.guild(ctx.guild).thread_messages()
+        thread_data = thread_messages.get(str(thread.id))
+
+        if not thread_data:
+            await ctx.send(f"❌ No stored message found for thread {thread.mention}")
+            return
+
+        message_id = thread_data.get("message_id")
+
+        # Get EventChannels cog
+        eventchannels_cog = self.bot.get_cog("EventChannels")
+        if not eventchannels_cog:
+            await ctx.send("❌ EventChannels cog is not loaded. Load it with `[p]load eventchannels`")
+            return
+
+        # Find linked event
+        eventchannels_config = eventchannels_cog.config.guild(ctx.guild)
+        event_channels = await eventchannels_config.event_channels()
+
+        matching_event_id = None
+        matching_role_id = None
+
+        for event_id, event_data in event_channels.items():
+            if event_data.get("forum_thread") == thread.id:
+                matching_event_id = event_id
+                matching_role_id = event_data.get("role")
+                break
+
+        if not matching_event_id or not matching_role_id:
+            await ctx.send(f"❌ No event is linked to thread {thread.mention}")
+            return
+
+        # Get the role
+        role = ctx.guild.get_role(matching_role_id)
+        if not role:
+            await ctx.send(f"❌ Role with ID {matching_role_id} not found")
+            return
+
+        # Fetch and edit the message
+        try:
+            message = await thread.fetch_message(message_id)
+            view = RoleButtonView(role)
+            await message.edit(
+                view=view,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+            )
+            await ctx.send(f"✅ Successfully added {role.mention} button to message in {thread.mention}")
+            log.info(f"Manually added role button for {role.name} to thread {thread.name} ({thread.id})")
+
+        except discord.NotFound:
+            await ctx.send(f"❌ Message {message_id} not found in {thread.mention}. It may have been deleted.")
+        except discord.Forbidden:
+            await ctx.send(f"❌ I don't have permission to edit the message in {thread.mention}")
+        except Exception as e:
+            await ctx.send(f"❌ Error: {str(e)}")
+            log.error(f"Error manually adding button to thread {thread.id}: {e}", exc_info=True)
+
     @forumthreadmessage.command(name="test")
     async def test_flow(self, ctx, role: Optional[discord.Role] = None):
         """Test the full message flow over 1 minute.
@@ -428,6 +646,8 @@ class ForumThreadMessage(commands.Cog):
         if not guild:
             return
 
+        log.debug(f"Channel created: {channel.name} ({channel.id}) in {guild.name}")
+
         # Wait a moment for eventchannels to finish setting up
         await asyncio.sleep(1)
 
@@ -435,6 +655,7 @@ class ForumThreadMessage(commands.Cog):
         try:
             eventchannels_cog = self.bot.get_cog("EventChannels")
             if not eventchannels_cog:
+                log.debug(f"EventChannels cog not loaded, skipping button logic for {channel.name}")
                 return
 
             # Get eventchannels config
@@ -451,9 +672,11 @@ class ForumThreadMessage(commands.Cog):
                     matching_event_id = event_id
                     matching_role_id = event_data.get("role")
                     matching_thread_id = event_data.get("forum_thread")
+                    log.debug(f"Found matching event {event_id} for channel {channel.name}")
                     break
 
             if not matching_event_id or not matching_role_id:
+                log.debug(f"Channel {channel.name} is not an event channel or missing role, skipping button logic")
                 return
 
             # Get the role
@@ -477,17 +700,22 @@ class ForumThreadMessage(commands.Cog):
 
             # Get the linked forum thread using the new helper method
             if matching_thread_id:
+                log.debug(f"Event {matching_event_id} has forum_thread link: {matching_thread_id}")
                 thread = await eventchannels_cog.get_event_forum_thread(guild, int(matching_event_id))
                 if thread:
+                    log.debug(f"Retrieved forum thread {thread.name} ({thread.id}) for event {matching_event_id}")
+
                     # Get the stored message for this thread
                     thread_messages = await self.config.guild(guild).thread_messages()
                     thread_data = thread_messages.get(str(thread.id))
 
                     if thread_data:
                         message_id = thread_data.get("message_id")
+                        log.debug(f"Found stored message ID {message_id} for thread {thread.id}")
 
                         try:
                             message = await thread.fetch_message(message_id)
+                            log.debug(f"Successfully fetched message {message_id} from thread {thread.id}")
 
                             # Edit the message to add the role button
                             view = RoleButtonView(role)
@@ -496,19 +724,19 @@ class ForumThreadMessage(commands.Cog):
                                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
                             )
 
-                            log.info(f"Added role button for {role.name} to message in thread {thread.name} ({thread.id})")
+                            log.info(f"✅ Added role button for {role.name} to message in thread {thread.name} ({thread.id})")
                         except discord.NotFound:
-                            log.warning(f"Could not find message {message_id} in thread {thread.id}")
+                            log.warning(f"❌ Could not find message {message_id} in thread {thread.id} - message may have been deleted")
                         except discord.Forbidden:
-                            log.error(f"No permission to edit message in thread {thread.id}")
+                            log.error(f"❌ No permission to edit message in thread {thread.id}")
                         except Exception as e:
-                            log.error(f"Error editing message in thread {thread.id}: {e}", exc_info=True)
+                            log.error(f"❌ Error editing message in thread {thread.id}: {e}", exc_info=True)
                     else:
-                        log.info(f"No stored message found for thread {thread.id}")
+                        log.warning(f"⚠️ No stored message found for thread {thread.id} - message may have been deleted or delete_enabled is True")
                 else:
-                    log.info(f"Could not retrieve forum thread for event {matching_event_id}")
+                    log.warning(f"⚠️ Could not retrieve forum thread for event {matching_event_id}")
             else:
-                log.info(f"No forum thread linked to event {matching_event_id}")
+                log.debug(f"No forum thread linked to event {matching_event_id}")
 
         except Exception as e:
             log.error(f"Error in on_guild_channel_create: {e}", exc_info=True)
