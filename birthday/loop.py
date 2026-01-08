@@ -347,19 +347,29 @@ class BirthdayLoop(MixinMeta):
                         log.trace("Member %s already announced today in guild %s, skipping", member.id, guild_id)
                         continue
 
-                    # Check if birthday has a year and calculate age
+                    # Check if birthday has a year and try to use message_w_year with age
                     if dt.year != 1:
-                        # Birthday has a year, calculate age and use message_w_year
                         message_template = guild_settings.get("message_w_year")
-                        if not message_template:
-                            log.warning(
-                                "message_w_year not configured for guild %s, skipping member %s",
+                        if message_template:
+                            # Birthday has a year and message_w_year is configured
+                            new_age = today_dt.year - dt.year
+                            message = format_bday_message(message_template, member, new_age)
+                        else:
+                            # Birthday has a year but message_w_year not configured, fallback to message_wo_year
+                            message_template = guild_settings.get("message_wo_year")
+                            if not message_template:
+                                log.warning(
+                                    "Neither message_w_year nor message_wo_year configured for guild %s, skipping member %s",
+                                    guild_id,
+                                    member.id,
+                                )
+                                continue
+                            log.trace(
+                                "message_w_year not configured for guild %s member %s, using message_wo_year",
                                 guild_id,
                                 member.id,
                             )
-                            continue
-                        new_age = today_dt.year - dt.year
-                        message = format_bday_message(message_template, member, new_age)
+                            message = format_bday_message(message_template, member)
                     else:
                         # Birthday doesn't have a year, use message_wo_year
                         message_template = guild_settings.get("message_wo_year")
