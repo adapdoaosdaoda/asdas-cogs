@@ -13,7 +13,7 @@ log = logging.getLogger("red.asdas-cogs.forumthreadmessage")
 class RoleButtonView(discord.ui.View):
     """View with a button to add the event role."""
 
-    def __init__(self, role: discord.Role, emoji: str = "🎫", label: str = "Join Event Role"):
+    def __init__(self, role: discord.Role, emoji: Optional[str] = "🎫", label: str = "Join Event Role"):
         super().__init__(timeout=None)  # Persistent view
         self.role = role
         # Add the button with role ID in custom_id
@@ -23,13 +23,17 @@ class RoleButtonView(discord.ui.View):
 class RoleButton(discord.ui.Button):
     """Button to add an event role to the user."""
 
-    def __init__(self, role: discord.Role, emoji: str = "🎫", label: str = "Join Event Role"):
-        super().__init__(
-            label=label,
-            emoji=emoji,
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"add_event_role:{role.id}"
-        )
+    def __init__(self, role: discord.Role, emoji: Optional[str] = "🎫", label: str = "Join Event Role"):
+        # Only include emoji if provided
+        button_kwargs = {
+            "label": label,
+            "style": discord.ButtonStyle.secondary,
+            "custom_id": f"add_event_role:{role.id}"
+        }
+        if emoji:
+            button_kwargs["emoji"] = emoji
+
+        super().__init__(**button_kwargs)
         self.role_id = role.id
 
     async def callback(self, interaction: discord.Interaction):
@@ -484,6 +488,10 @@ class ForumThreadMessage(commands.Cog):
 
         **Available placeholders:**
         - `{thread_name}` - The forum thread title
+        - `{role_count}` - Number of members with the event role (0 if no event linked)
+        - `{role_minimum}` - Required minimum members (0 if not configured)
+        - `{event_name}` - The scheduled event name (empty if no event linked)
+        - `{role_mention}` - Mention the event role (empty if no event linked)
 
         Parameters
         ----------
@@ -494,6 +502,7 @@ class ForumThreadMessage(commands.Cog):
         --------
         `[p]forumthreadmessage initialmessage Welcome to the thread!`
         `[p]forumthreadmessage initialmessage New thread: {thread_name}`
+        `[p]forumthreadmessage initialmessage Event: {event_name} | Members: {role_count}`
         """
         await self.config.guild(ctx.guild).initial_message.set(message)
         await ctx.send(f"✅ Initial message set to:\n```{message}```")
@@ -506,6 +515,10 @@ class ForumThreadMessage(commands.Cog):
 
         **Available placeholders:**
         - `{thread_name}` - The forum thread title
+        - `{role_count}` - Number of members with the event role (0 if no event linked)
+        - `{role_minimum}` - Required minimum members (0 if not configured)
+        - `{event_name}` - The scheduled event name (empty if no event linked)
+        - `{role_mention}` - Mention the event role (empty if no event linked)
 
         Parameters
         ----------
@@ -516,6 +529,7 @@ class ForumThreadMessage(commands.Cog):
         --------
         `[p]forumthreadmessage editedmessage Thread created successfully!`
         `[p]forumthreadmessage editedmessage Welcome to {thread_name}!`
+        `[p]forumthreadmessage editedmessage {event_name} | {role_count} members ready`
         """
         await self.config.guild(ctx.guild).edited_message.set(message)
         await ctx.send(f"✅ Edited message set to:\n```{message}```")
@@ -528,6 +542,10 @@ class ForumThreadMessage(commands.Cog):
 
         **Available placeholders:**
         - `{thread_name}` - The forum thread title
+        - `{role_count}` - Number of members with the event role (0 if no event linked)
+        - `{role_minimum}` - Required minimum members (0 if not configured)
+        - `{event_name}` - The scheduled event name (empty if no event linked)
+        - `{role_mention}` - Mention the event role (empty if no event linked)
 
         Parameters
         ----------
@@ -538,6 +556,7 @@ class ForumThreadMessage(commands.Cog):
         --------
         `[p]forumthreadmessage thirdeditedmessage Thread is ready!`
         `[p]forumthreadmessage thirdeditedmessage Welcome to {thread_name}!`
+        `[p]forumthreadmessage thirdeditedmessage {role_mention} - {role_count}/{role_minimum} ready`
         """
         await self.config.guild(ctx.guild).third_edited_message.set(message)
         await ctx.send(f"✅ Third edited message set to:\n```{message}```")
@@ -594,21 +613,26 @@ class ForumThreadMessage(commands.Cog):
         await ctx.send("✅ Role button creation has been disabled.")
 
     @rolebutton_group.command(name="emoji")
-    async def rolebutton_emoji(self, ctx, emoji: str):
+    async def rolebutton_emoji(self, ctx, emoji: Optional[str] = None):
         """Set the emoji for the role button.
 
         Parameters
         ----------
-        emoji : str
+        emoji : str, optional
             The emoji to use on the button (can be a unicode emoji or custom emoji).
+            Use without arguments to remove the emoji.
 
         Examples
         --------
         `[p]forumthreadmessage rolebutton emoji 🎉`
         `[p]forumthreadmessage rolebutton emoji :custom_emoji:`
+        `[p]forumthreadmessage rolebutton emoji` - Remove emoji
         """
         await self.config.guild(ctx.guild).role_button_emoji.set(emoji)
-        await ctx.send(f"✅ Role button emoji set to: {emoji}")
+        if emoji:
+            await ctx.send(f"✅ Role button emoji set to: {emoji}")
+        else:
+            await ctx.send("✅ Role button emoji removed")
 
     @rolebutton_group.command(name="text")
     async def rolebutton_text(self, ctx, *, text: str):
@@ -1243,7 +1267,8 @@ class ForumThreadMessage(commands.Cog):
 
             # Fetch and edit the message
             message = await thread.fetch_message(message_id)
-            view = RoleButtonView(role, emoji=button_emoji, label=button_text)
+            # Pass emoji even if None (RoleButtonView handles it)
+            view = RoleButtonView(role, emoji=button_emoji or None, label=button_text)
             await message.edit(
                 view=view,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
@@ -1388,20 +1413,79 @@ class ForumThreadMessage(commands.Cog):
         third_edited_message = guild_config["third_edited_message"]
         delete_enabled = guild_config["delete_enabled"]
 
-        # Format messages with placeholders
+        # Try to get event data for this thread
+        event_name = ""
+        role_count = 0
+        role_minimum = 0
+        role_mention = ""
+
         try:
-            formatted_initial = initial_message.format(thread_name=thread.name)
-        except KeyError:
+            # Get EventChannels cog to find linked event
+            eventchannels_cog = self.bot.get_cog("EventChannels")
+            if eventchannels_cog:
+                eventchannels_config = eventchannels_cog.config.guild(guild)
+                event_channels = await eventchannels_config.event_channels()
+
+                # Find event linked to this thread
+                matching_event_id = None
+                matching_role_id = None
+
+                for event_id, event_data in event_channels.items():
+                    if event_data.get("forum_thread") == thread.id:
+                        matching_event_id = event_id
+                        matching_role_id = event_data.get("role")
+                        break
+
+                if matching_event_id and matching_role_id:
+                    # Get the event
+                    for scheduled_event in guild.scheduled_events:
+                        if str(scheduled_event.id) == matching_event_id:
+                            event_name = scheduled_event.name
+
+                            # Get role minimum from EventChannels voice_minimum_roles
+                            voice_minimum_roles = await eventchannels_config.voice_minimum_roles()
+                            event_name_lower = scheduled_event.name.lower()
+                            for keyword, minimum in voice_minimum_roles.items():
+                                if keyword in event_name_lower:
+                                    role_minimum = minimum
+                                    break
+
+                            break
+
+                    # Get the role and count
+                    role = guild.get_role(matching_role_id)
+                    if role:
+                        role_count = len(role.members)
+                        role_mention = role.mention
+
+        except Exception as e:
+            log.debug(f"Could not get event data for thread {thread.id}: {e}")
+
+        # Format messages with all placeholders
+        format_vars = {
+            "thread_name": thread.name,
+            "event_name": event_name,
+            "role_count": role_count,
+            "role_minimum": role_minimum,
+            "role_mention": role_mention,
+        }
+
+        try:
+            formatted_initial = initial_message.format(**format_vars)
+        except KeyError as e:
+            log.warning(f"Invalid placeholder {e} in initial message")
             formatted_initial = initial_message
 
         try:
-            formatted_edited = edited_message.format(thread_name=thread.name)
-        except KeyError:
+            formatted_edited = edited_message.format(**format_vars)
+        except KeyError as e:
+            log.warning(f"Invalid placeholder {e} in edited message")
             formatted_edited = edited_message
 
         try:
-            formatted_third = third_edited_message.format(thread_name=thread.name)
-        except KeyError:
+            formatted_third = third_edited_message.format(**format_vars)
+        except KeyError as e:
+            log.warning(f"Invalid placeholder {e} in third edited message")
             formatted_third = third_edited_message
 
         try:
@@ -1565,7 +1649,8 @@ class ForumThreadMessage(commands.Cog):
                             button_text = await self.config.guild(guild).role_button_text()
 
                             # Edit the message to add the role button
-                            view = RoleButtonView(role, emoji=button_emoji, label=button_text)
+                            # Pass emoji even if None (RoleButtonView handles it)
+                            view = RoleButtonView(role, emoji=button_emoji or None, label=button_text)
                             await message.edit(
                                 view=view,
                                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
