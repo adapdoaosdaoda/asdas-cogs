@@ -2072,13 +2072,36 @@ class ForumThreadMessage(commands.Cog):
         )
 
         try:
-            # Send the initial message with suppressed notifications but allow all mentions
-            message = await thread.send(
-                formatted_initial,
-                silent=True,
-                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
-            )
-            log.info(f"Sent initial message in thread {thread.name} ({thread.id}) in guild {guild.name}")
+            # Discord requires the thread author to post first before bots can send messages
+            # Wait up to 30 seconds for the first message (with retries)
+            message = None
+            max_retries = 10  # 10 retries = ~30 seconds
+            retry_delay = 3  # 3 seconds between retries
+
+            for attempt in range(max_retries):
+                try:
+                    # Send the initial message with suppressed notifications but allow all mentions
+                    message = await thread.send(
+                        formatted_initial,
+                        silent=True,
+                        allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+                    )
+                    log.info(f"Sent initial message in thread {thread.name} ({thread.id}) in guild {guild.name}")
+                    break  # Success!
+                except discord.HTTPException as e:
+                    # Error 40058: Cannot message this thread until author posts first
+                    if e.code == 40058:
+                        if attempt < max_retries - 1:
+                            log.debug(f"Thread {thread.id} not ready yet (attempt {attempt + 1}/{max_retries}), waiting {retry_delay}s...")
+                            await asyncio.sleep(retry_delay)
+                        else:
+                            log.warning(f"Thread {thread.id} author never posted initial message after {max_retries * retry_delay}s")
+                            return  # Give up
+                    else:
+                        raise  # Re-raise other HTTP errors
+
+            if not message:
+                return  # Failed to send message after all retries
 
             # Store the message reference for later editing when eventchannels creates a channel
             if not delete_enabled:
