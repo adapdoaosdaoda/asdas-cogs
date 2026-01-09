@@ -745,28 +745,56 @@ class ForumThreadMessage(commands.Cog):
                                 role_minimum = minimum
                                 break
 
-                        # Calculate smart update interval based on role count vs minimum
+                        # Calculate smart update interval based on:
+                        # 1. Role count vs minimum
+                        # 2. Time until event start
                         role_count = len(role.members)
 
+                        # Base interval from role count distance
                         if role_minimum > 0:
-                            if role_count < role_minimum - 5:
-                                # Far from minimum: update every 5 minutes
-                                update_interval = 300
-                            elif role_count < role_minimum:
-                                # Close to minimum: update every 2 minutes (more urgent)
-                                update_interval = 120
-                            elif time_until_start > 0 and not event_data.get("text"):
-                                # Met minimum but channels not created yet: update every 3 minutes
-                                update_interval = 180
-                            elif event_data.get("text"):
-                                # Channels created: update every 10 minutes (less urgent)
-                                update_interval = 600
+                            role_distance = role_minimum - role_count
+                            if role_distance > 5:
+                                # Far from minimum: base 10 minutes
+                                base_interval = 600
+                            elif role_distance > 0:
+                                # Close to minimum: base 2 minutes (more urgent)
+                                base_interval = 120
+                            elif not event_data.get("text"):
+                                # Met minimum but no channels: base 5 minutes
+                                base_interval = 300
                             else:
-                                # Default case
-                                update_interval = 300
+                                # Channels created: base 15 minutes
+                                base_interval = 900
                         else:
-                            # No minimum set: update every 10 minutes
-                            update_interval = 600
+                            # No minimum set: base 15 minutes
+                            base_interval = 900
+
+                        # Adjust interval based on time until event start
+                        hours_until_start = time_until_start / 3600
+
+                        if hours_until_start > 48:
+                            # >2 days away: multiply by 3 (less frequent)
+                            time_multiplier = 3.0
+                        elif hours_until_start > 24:
+                            # 1-2 days away: multiply by 2
+                            time_multiplier = 2.0
+                        elif hours_until_start > 6:
+                            # 6-24 hours away: normal frequency
+                            time_multiplier = 1.0
+                        elif hours_until_start > 2:
+                            # 2-6 hours away: 75% of base (more frequent)
+                            time_multiplier = 0.75
+                        elif hours_until_start > 0:
+                            # <2 hours away: 50% of base (most frequent)
+                            time_multiplier = 0.5
+                        else:
+                            # Event started: back to normal or slower
+                            time_multiplier = 1.5
+
+                        update_interval = int(base_interval * time_multiplier)
+
+                        # Enforce minimum 1 minute, maximum 30 minutes
+                        update_interval = max(60, min(1800, update_interval))
 
                         # Check if it's time to update
                         if last_update is None:
@@ -779,6 +807,7 @@ class ForumThreadMessage(commands.Cog):
                         if should_update:
                             await self._update_third_edited_with_role_count(guild, event, role)
                             last_role_count_update[event.id] = now
+                            log.debug(f"Updated role count for '{event.name}': interval={update_interval}s, hours_until_start={hours_until_start:.1f}h, role_count={role_count}/{role_minimum}")
 
                     # Clean up old event IDs from tracking sets (events that have ended)
                     current_event_ids = {event.id for event in guild.scheduled_events}
