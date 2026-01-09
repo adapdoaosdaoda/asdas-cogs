@@ -336,7 +336,6 @@ class TradeCommission(commands.Cog):
 
     async def cog_load(self):
         """Start the background task when cog loads."""
-        await self.bot.wait_until_red_ready()
         self._ready = True
         self._task = asyncio.create_task(self._check_schedule_loop())
 
