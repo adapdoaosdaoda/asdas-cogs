@@ -33,7 +33,7 @@ class EventPolling(commands.Cog):
                 "duration": 30,  # 30 minutes
                 "slots": 1,
                 "color": discord.Color.greyple(),
-                "emoji": "🗡️"
+                "emoji": "🛡️"
             },
             "Sword Trial": {
                 "type": "fixed_days",
@@ -43,7 +43,7 @@ class EventPolling(commands.Cog):
                 "duration": 30,  # 30 minutes
                 "slots": 1,
                 "color": discord.Color.greyple(),
-                "emoji": "⚡"
+                "emoji": "⚔️"
             },
             "Party": {
                 "type": "daily",
@@ -61,7 +61,7 @@ class EventPolling(commands.Cog):
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.blue(),
-                "emoji": "⚔️"
+                "emoji": "⚡"
             },
             "Showdown": {
                 "type": "once",
@@ -73,6 +73,9 @@ class EventPolling(commands.Cog):
                 "emoji": "🏆"
             }
         }
+
+        # Guild Wars - blocked time event (Sat & Sun 20:30-22:00)
+        self.guild_wars_emoji = "🏰"
 
         self.days_of_week = [
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
@@ -264,12 +267,12 @@ class EventPolling(commands.Cog):
             embed.add_field(
                 name="📋 Events",
                 value=(
-                    "🗡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
-                    "⚡ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
+                    "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
+                    "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
                     "🎉 **Party** - Daily (10 min, 1 slot)\n"
-                    "⚔️ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
+                    "⚡ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
                     "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
-                    "⚠️ Sat & Sun 20:30-22:00 are blocked\n"
+                    "🏰 **Guild Wars** - Sat & Sun 20:30-22:00 (blocked)\n"
                     "⚠️ Events cannot have conflicting times"
                 ),
                 inline=False
@@ -405,6 +408,23 @@ class EventPolling(commands.Cog):
                             schedule[winner_time][winner_day].append(f"{emoji}{slot_index + 1}")
                         else:
                             schedule[winner_time][winner_day].append(emoji)
+
+        # Add Guild Wars emoji to blocked time slots
+        for blocked in self.blocked_times:
+            blocked_day = blocked["day"]
+            blocked_start = blocked["start"]
+            blocked_end = blocked["end"]
+
+            # Parse blocked times
+            start_time = datetime.strptime(blocked_start, "%H:%M")
+            end_time = datetime.strptime(blocked_end, "%H:%M")
+
+            # Add Guild Wars emoji to all time slots in the blocked range
+            for time_slot in times:
+                slot_time = datetime.strptime(time_slot, "%H:%M")
+                # Check if this time slot is within the blocked range (inclusive start, exclusive end)
+                if start_time <= slot_time < end_time:
+                    schedule[time_slot][blocked_day].append(self.guild_wars_emoji)
 
         # Build the table using code block for monospace formatting
         lines = []
