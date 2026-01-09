@@ -110,54 +110,49 @@ class DaySelectView(discord.ui.View):
         self.events = events
         self.days = days
 
-        # Create select menu for days
-        options = []
-        for day in days:
-            options.append(
-                discord.SelectOption(
-                    label=day,
-                    value=day,
-                    emoji="📅"
-                )
+        # Create 7 grey buttons for each day of the week
+        for idx, day in enumerate(days):
+            # Use abbreviated day names for button labels (3 letters)
+            button = discord.ui.Button(
+                label=day[:3],  # Mon, Tue, Wed, etc.
+                style=discord.ButtonStyle.secondary,  # Grey
+                custom_id=f"day_btn:{event_name}:{day}",
+                row=0  # All day buttons in first row
             )
+            button.callback = self._create_day_callback(day)
+            self.add_item(button)
 
-        select = discord.ui.Select(
-            placeholder="Choose a day...",
-            options=options,
-            custom_id=f"day_select:{event_name}"
-        )
-        select.callback = self._day_selected
-        self.add_item(select)
-
-        # Add cancel button
+        # Add cancel button in second row
         cancel_btn = discord.ui.Button(
             label="Cancel",
             style=discord.ButtonStyle.danger,
-            emoji="❌"
+            emoji="❌",
+            row=1
         )
         cancel_btn.callback = self._cancel
         self.add_item(cancel_btn)
 
-    async def _day_selected(self, interaction: discord.Interaction):
-        """Handle day selection"""
-        selected_day = interaction.data["values"][0]
+    def _create_day_callback(self, day: str):
+        """Create a callback for a specific day button"""
+        async def callback(interaction: discord.Interaction):
+            # Show time selector
+            view = TimeSelectView(
+                cog=self.cog,
+                guild_id=self.guild_id,
+                poll_id=self.poll_id,
+                user_id=self.user_id,
+                event_name=self.event_name,
+                day=day,
+                user_selections=self.user_selections,
+                events=self.events
+            )
 
-        # Show time selector
-        view = TimeSelectView(
-            cog=self.cog,
-            guild_id=self.guild_id,
-            poll_id=self.poll_id,
-            user_id=self.user_id,
-            event_name=self.event_name,
-            day=selected_day,
-            user_selections=self.user_selections,
-            events=self.events
-        )
+            await interaction.response.edit_message(
+                content=f"Select a time for **{self.event_name}** on **{day}**:",
+                view=view
+            )
 
-        await interaction.response.edit_message(
-            content=f"Select a time for **{self.event_name}** on **{selected_day}**:",
-            view=view
-        )
+        return callback
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
