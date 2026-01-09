@@ -30,38 +30,25 @@ class EventPolling(commands.Cog):
                 "time_range": (18, 24),  # 18:00 to 24:00
                 "interval": 30,  # 30 minute intervals
                 "duration": 10,  # 10 minutes
+                "slots": 1,  # Single time slot
                 "color": discord.Color.green(),
                 "emoji": "🎉"
             },
-            "Breaking Army #1": {
+            "Breaking Army": {
                 "type": "once",
                 "time_range": (18, 24),
                 "interval": 30,
                 "duration": 60,  # 1 hour
+                "slots": 2,  # Two weekly slots
                 "color": discord.Color.blue(),
                 "emoji": "⚔️"
             },
-            "Breaking Army #2": {
+            "Showdown": {
                 "type": "once",
                 "time_range": (18, 24),
                 "interval": 30,
                 "duration": 60,  # 1 hour
-                "color": discord.Color.blue(),
-                "emoji": "⚔️"
-            },
-            "Showdown #1": {
-                "type": "once",
-                "time_range": (18, 24),
-                "interval": 30,
-                "duration": 60,  # 1 hour
-                "color": discord.Color.red(),
-                "emoji": "🏆"
-            },
-            "Showdown #2": {
-                "type": "once",
-                "time_range": (18, 24),
-                "interval": 30,
-                "duration": 60,  # 1 hour
+                "slots": 2,  # Two weekly slots
                 "color": discord.Color.red(),
                 "emoji": "🏆"
             }
@@ -256,11 +243,9 @@ class EventPolling(commands.Cog):
             embed.add_field(
                 name="📋 Events",
                 value=(
-                    "🎉 **Party** - Daily (10 min)\n"
-                    "⚔️ **Breaking Army #1** - Weekly (1 hour)\n"
-                    "⚔️ **Breaking Army #2** - Weekly (1 hour)\n"
-                    "🏆 **Showdown #1** - Weekly (1 hour)\n"
-                    "🏆 **Showdown #2** - Weekly (1 hour)\n\n"
+                    "🎉 **Party** - Daily (10 min, 1 slot)\n"
+                    "⚔️ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
+                    "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
                     "⚠️ Saturday 20:30-22:30 is blocked\n"
                     "⚠️ Events cannot have conflicting times"
                 ),
@@ -268,27 +253,41 @@ class EventPolling(commands.Cog):
             )
             return embed
 
-        # Calculate winning times (most votes) for each event
+        # Calculate winning times (most votes) for each event and slot
         winning_times = {}
-        for event_name in self.events.keys():
-            vote_counts = {}
+        for event_name, event_info in self.events.items():
+            num_slots = event_info["slots"]
+            winning_times[event_name] = {}
 
-            for user_id, user_selections in selections.items():
-                if event_name in user_selections:
-                    selection = user_selections[event_name]
+            for slot_index in range(num_slots):
+                vote_counts = {}
 
-                    if self.events[event_name]["type"] == "daily":
-                        key = ("Daily", selection["time"])
-                    else:
-                        key = (selection.get("day", "Unknown"), selection["time"])
+                for user_id, user_selections in selections.items():
+                    if event_name in user_selections:
+                        selection = user_selections[event_name]
 
-                    vote_counts[key] = vote_counts.get(key, 0) + 1
+                        # Handle both list (multi-slot) and dict (single-slot) formats
+                        if isinstance(selection, list):
+                            if slot_index < len(selection) and selection[slot_index]:
+                                slot_data = selection[slot_index]
+                                if event_info["type"] == "daily":
+                                    key = ("Daily", slot_data["time"])
+                                else:
+                                    key = (slot_data.get("day", "Unknown"), slot_data["time"])
+                                vote_counts[key] = vote_counts.get(key, 0) + 1
+                        else:
+                            # Legacy single-slot format
+                            if slot_index == 0:
+                                if event_info["type"] == "daily":
+                                    key = ("Daily", selection["time"])
+                                else:
+                                    key = (selection.get("day", "Unknown"), selection["time"])
+                                vote_counts[key] = vote_counts.get(key, 0) + 1
 
-            if vote_counts:
-                # Get the selection(s) with most votes
-                max_votes = max(vote_counts.values())
-                winners = [k for k, v in vote_counts.items() if v == max_votes]
-                winning_times[event_name] = (winners, max_votes)
+                if vote_counts:
+                    max_votes = max(vote_counts.values())
+                    winners = [k for k, v in vote_counts.items() if v == max_votes]
+                    winning_times[event_name][slot_index] = (winners, max_votes)
 
         # Create calendar view
         calendar_lines = []
@@ -296,20 +295,19 @@ class EventPolling(commands.Cog):
             day_events = []
 
             for event_name, event_info in self.events.items():
-                if event_name not in winning_times:
-                    continue
-
-                winners, votes = winning_times[event_name]
                 emoji = event_info["emoji"]
 
-                # Check if this event has a winner on this day
-                for winner_day, winner_time in winners:
-                    if event_info["type"] == "daily" or winner_day == day:
-                        duration = event_info["duration"]
-                        if event_info["type"] == "daily":
-                            day_events.append(f"{emoji}{winner_time} ({votes}v)")
-                        else:
-                            day_events.append(f"{emoji}{winner_time} ({votes}v)")
+                # Check all slots for this event
+                for slot_index, slot_winners in winning_times.get(event_name, {}).items():
+                    winners, votes = slot_winners
+
+                    # Check if any winner is on this day
+                    for winner_day, winner_time in winners:
+                        if event_info["type"] == "daily" or winner_day == day:
+                            if event_info["slots"] > 1:
+                                day_events.append(f"{emoji}{winner_time}#{slot_index + 1} ({votes}v)")
+                            else:
+                                day_events.append(f"{emoji}{winner_time} ({votes}v)")
 
             if day_events:
                 calendar_lines.append(f"**{day[:3]}**: {' | '.join(day_events)}")
@@ -325,18 +323,32 @@ class EventPolling(commands.Cog):
 
         # Add summary of each event
         summary_lines = []
-        for event_name in self.events.keys():
-            emoji = self.events[event_name]["emoji"]
-            if event_name in winning_times:
-                winners, votes = winning_times[event_name]
-                if self.events[event_name]["type"] == "daily":
-                    time_str = winners[0][1]
-                    summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
-                else:
-                    winner_strs = [f"{day} {time}" for day, time in winners]
-                    summary_lines.append(f"{emoji} **{event_name}**: {winner_strs[0]} ({votes} votes)")
+        for event_name, event_info in self.events.items():
+            emoji = event_info["emoji"]
+            event_slots = winning_times.get(event_name, {})
+
+            if event_slots:
+                for slot_index in range(event_info["slots"]):
+                    if slot_index in event_slots:
+                        winners, votes = event_slots[slot_index]
+                        if event_info["type"] == "daily":
+                            time_str = winners[0][1]
+                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                        else:
+                            winner_strs = [f"{day} {time}" for day, time in winners]
+                            if event_info["slots"] > 1:
+                                summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: {winner_strs[0]} ({votes} votes)")
+                            else:
+                                summary_lines.append(f"{emoji} **{event_name}**: {winner_strs[0]} ({votes} votes)")
+                    else:
+                        if event_info["slots"] > 1:
+                            summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: No votes yet")
             else:
-                summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
+                if event_info["slots"] > 1:
+                    for slot_index in range(event_info["slots"]):
+                        summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: No votes yet")
+                else:
+                    summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
 
         embed.add_field(
             name="🏆 Current Winners",
@@ -408,9 +420,17 @@ class EventPolling(commands.Cog):
         user_selections: Dict,
         event_name: str,
         new_day: Optional[str],
-        new_time: str
+        new_time: str,
+        current_slot_index: Optional[int] = None
     ) -> Tuple[bool, Optional[str]]:
         """Check if a new selection conflicts with existing selections
+
+        Args:
+            user_selections: User's current selections
+            event_name: Event being selected
+            new_day: Day for new selection (None for daily events)
+            new_time: Time for new selection
+            current_slot_index: Index of current slot being edited (to skip self-check)
 
         Returns:
             (has_conflict: bool, conflict_message: Optional[str])
@@ -424,32 +444,45 @@ class EventPolling(commands.Cog):
         new_start, new_end = self._get_event_time_range(event_name, new_time)
 
         for existing_event, selection in user_selections.items():
-            if existing_event == event_name:
-                # Skip checking against itself
-                continue
-
-            existing_time = selection["time"]
-            existing_day = selection.get("day")
-            existing_start, existing_end = self._get_event_time_range(existing_event, existing_time)
-
-            # Party is daily, so it conflicts with any event on any day if times overlap
-            if self.events[event_name]["type"] == "daily":
-                # Party conflicts with all events if time ranges overlap
-                if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
-                    return True, f"This time conflicts with your {existing_event} selection"
-
-            elif self.events[existing_event]["type"] == "daily":
-                # Any event conflicts with Party if time ranges overlap
-                if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
-                    if new_day:
-                        return True, f"This time conflicts with your Party selection on {new_day}"
-                    else:
-                        return True, f"This time conflicts with your Party selection"
-
+            # Handle multi-slot selections
+            slots_to_check = []
+            if isinstance(selection, list):
+                # Multi-slot event
+                for idx, slot_data in enumerate(selection):
+                    if slot_data:  # Slot might be None if not yet selected
+                        # Skip checking current slot against itself
+                        if existing_event == event_name and current_slot_index is not None and idx == current_slot_index:
+                            continue
+                        slots_to_check.append((slot_data, f"{existing_event} slot {idx + 1}"))
             else:
-                # Both are weekly events - only conflict if same day and time ranges overlap
-                if new_day and existing_day and new_day == existing_day:
+                # Single slot event (legacy or Party)
+                if existing_event == event_name and current_slot_index is not None:
+                    continue  # Skip checking against itself
+                slots_to_check.append((selection, existing_event))
+
+            for slot_data, slot_label in slots_to_check:
+                existing_time = slot_data["time"]
+                existing_day = slot_data.get("day")
+                existing_start, existing_end = self._get_event_time_range(existing_event, existing_time)
+
+                # Party is daily, so it conflicts with any event on any day if times overlap
+                if self.events[event_name]["type"] == "daily":
+                    # Party conflicts with all events if time ranges overlap
                     if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
-                        return True, f"This conflicts with your {existing_event} selection on {existing_day}"
+                        return True, f"This time conflicts with your {slot_label} selection"
+
+                elif self.events[existing_event]["type"] == "daily":
+                    # Any event conflicts with Party if time ranges overlap
+                    if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                        if new_day:
+                            return True, f"This time conflicts with your {slot_label} selection on {new_day}"
+                        else:
+                            return True, f"This time conflicts with your {slot_label} selection"
+
+                else:
+                    # Both are weekly events - only conflict if same day and time ranges overlap
+                    if new_day and existing_day and new_day == existing_day:
+                        if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                            return True, f"This conflicts with your {slot_label} selection on {existing_day}"
 
         return False, None
