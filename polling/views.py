@@ -6,24 +6,35 @@ from datetime import datetime
 class EventPollView(discord.ui.View):
     """Main view with buttons for each event type"""
 
-    def __init__(self, cog, guild_id: int, creator_id: int, events: Dict, days: List[str]):
+    def __init__(self, cog, guild_id: int, creator_id: int, events: Dict, days: List[str], blocked_times: List[Dict]):
         super().__init__(timeout=None)
         self.cog = cog
         self.guild_id = guild_id
         self.creator_id = creator_id
         self.events = events
         self.days = days
+        self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Create buttons for each event
+        # Create buttons for each event - all in one horizontal row
         event_names = list(events.keys())
         for idx, event_name in enumerate(event_names):
+            # Determine button style based on event
+            if "Party" in event_name:
+                button_style = discord.ButtonStyle.success  # Green
+            elif "Breaking Army" in event_name:
+                button_style = discord.ButtonStyle.primary  # Blue
+            elif "Showdown" in event_name:
+                button_style = discord.ButtonStyle.danger  # Red
+            else:
+                button_style = discord.ButtonStyle.secondary  # Grey
+
             button = discord.ui.Button(
                 label=event_name,
-                style=discord.ButtonStyle.primary,
+                style=button_style,
                 emoji=events[event_name]["emoji"],
                 custom_id=f"event_poll:{event_name}",
-                row=idx
+                row=0  # All buttons in row 0 (horizontal)
             )
             button.callback = self._create_event_callback(event_name)
             self.add_item(button)
@@ -246,6 +257,7 @@ class TimeSelectView(discord.ui.View):
             return
 
         # Save the selection
+        poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
                 await interaction.response.send_message(
@@ -264,6 +276,7 @@ class TimeSelectView(discord.ui.View):
                 selection_data["day"] = self.day
 
             polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection_data
+            poll_data = polls[self.poll_id]
 
         # Create confirmation message
         if self.day:
@@ -279,8 +292,26 @@ class TimeSelectView(discord.ui.View):
             view=None
         )
 
+        # Update the poll embed to show updated results
+        if poll_data:
+            try:
+                channel = interaction.guild.get_channel(poll_data["channel_id"])
+                if channel:
+                    message = await channel.fetch_message(poll_data["message_id"])
+                    updated_embed = await self.cog._create_poll_embed(
+                        poll_data["title"],
+                        self.guild_id,
+                        self.poll_id
+                    )
+                    updated_embed.set_footer(text="Click the buttons below to set your preferences")
+                    await message.edit(embed=updated_embed)
+            except Exception:
+                # Silently fail if we can't update the poll message
+                pass
+
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
+        poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
                 await interaction.response.send_message(
@@ -294,12 +325,31 @@ class TimeSelectView(discord.ui.View):
                 if self.event_name in polls[self.poll_id]["selections"][user_id_str]:
                     del polls[self.poll_id]["selections"][user_id_str][self.event_name]
 
+            poll_data = polls[self.poll_id]
+
         current_selections = await self._get_user_selections_text()
 
         await interaction.response.edit_message(
             content=f"🗑️ Cleared your selection for **{self.event_name}**\n\n**Your current selections:**\n{current_selections}",
             view=None
         )
+
+        # Update the poll embed to show updated results
+        if poll_data:
+            try:
+                channel = interaction.guild.get_channel(poll_data["channel_id"])
+                if channel:
+                    message = await channel.fetch_message(poll_data["message_id"])
+                    updated_embed = await self.cog._create_poll_embed(
+                        poll_data["title"],
+                        self.guild_id,
+                        self.poll_id
+                    )
+                    updated_embed.set_footer(text="Click the buttons below to set your preferences")
+                    await message.edit(embed=updated_embed)
+            except Exception:
+                # Silently fail if we can't update the poll message
+                pass
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
