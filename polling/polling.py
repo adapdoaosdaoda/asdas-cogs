@@ -289,35 +289,12 @@ class EventPolling(commands.Cog):
                     winners = [k for k, v in vote_counts.items() if v == max_votes]
                     winning_times[event_name][slot_index] = (winners, max_votes)
 
-        # Create calendar view
-        calendar_lines = []
-        for day in self.days_of_week:
-            day_events = []
-
-            for event_name, event_info in self.events.items():
-                emoji = event_info["emoji"]
-
-                # Check all slots for this event
-                for slot_index, slot_winners in winning_times.get(event_name, {}).items():
-                    winners, votes = slot_winners
-
-                    # Check if any winner is on this day
-                    for winner_day, winner_time in winners:
-                        if event_info["type"] == "daily" or winner_day == day:
-                            if event_info["slots"] > 1:
-                                day_events.append(f"{emoji}{winner_time}#{slot_index + 1} ({votes}v)")
-                            else:
-                                day_events.append(f"{emoji}{winner_time} ({votes}v)")
-
-            if day_events:
-                calendar_lines.append(f"**{day[:3]}**: {' | '.join(day_events)}")
-            else:
-                calendar_lines.append(f"**{day[:3]}**: —")
-
-        if calendar_lines:
+        # Create visual calendar table
+        calendar_table = self._create_calendar_table(winning_times)
+        if calendar_table:
             embed.add_field(
-                name="📊 Current Leading Times (votes)",
-                value="\n".join(calendar_lines),
+                name="📊 Weekly Calendar View",
+                value=calendar_table,
                 inline=False
             )
 
@@ -359,6 +336,68 @@ class EventPolling(commands.Cog):
         embed.set_footer(text=f"Total voters: {len(selections)}")
 
         return embed
+
+    def _create_calendar_table(self, winning_times: Dict) -> str:
+        """Create a visual Unicode calendar table showing the weekly schedule"""
+        # Build a data structure: {time: {day: [emojis]}}
+        schedule = {}
+        times = self.generate_time_options(18, 24, 30)
+
+        for time_slot in times:
+            schedule[time_slot] = {day: [] for day in self.days_of_week}
+
+        # Populate schedule with winning events
+        for event_name, event_info in self.events.items():
+            emoji = event_info["emoji"]
+            event_slots = winning_times.get(event_name, {})
+
+            for slot_index, slot_winners in event_slots.items():
+                winners, votes = slot_winners
+
+                for winner_day, winner_time in winners:
+                    if event_info["type"] == "daily":
+                        # Daily events appear on all days
+                        for day in self.days_of_week:
+                            if event_info["slots"] > 1:
+                                schedule[winner_time][day].append(f"{emoji}{slot_index + 1}")
+                            else:
+                                schedule[winner_time][day].append(emoji)
+                    else:
+                        # Weekly events appear only on their specific day
+                        if event_info["slots"] > 1:
+                            schedule[winner_time][winner_day].append(f"{emoji}{slot_index + 1}")
+                        else:
+                            schedule[winner_time][winner_day].append(emoji)
+
+        # Build the table using code block for monospace formatting
+        lines = []
+
+        # Header row
+        lines.append("```")
+        header = "Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun"
+        lines.append(header)
+        lines.append("─" * len(header))
+
+        # Data rows - only show rows with events
+        for time_slot in times:
+            row_data = schedule[time_slot]
+            has_events = any(row_data.values())
+
+            if has_events:
+                row = f"{time_slot} │"
+                for day in self.days_of_week:
+                    events = row_data[day]
+                    if events:
+                        # Join multiple events with space
+                        cell = "".join(events[:2])  # Limit to 2 events per cell
+                    else:
+                        cell = "  "
+                    row += f" {cell:3} │"
+                lines.append(row)
+
+        lines.append("```")
+
+        return "\n".join(lines) if len(lines) > 3 else ""
 
     def generate_time_options(self, start_hour: int = 18, end_hour: int = 24, interval: int = 30) -> List[str]:
         """Generate time options in HH:MM format"""
