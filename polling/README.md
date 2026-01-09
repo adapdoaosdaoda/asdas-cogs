@@ -112,27 +112,32 @@ Users receive clear, specific error messages when conflicts occur:
 
 ## Calendar View
 
-The poll embed displays a **live calendar** showing the current winning times:
+The poll embed displays a **visual Unicode calendar table** showing the weekly schedule:
 
 ```
-📊 Current Leading Times (votes)
-Mon: ⚔️20:00#1 (3v) | 🏆21:00#2 (2v)
-Tue: —
-Wed: 🎉20:00 (5v) | ⚔️19:00#2 (2v)
-Thu: —
-Fri: 🏆20:30#1 (4v)
-Sat: —
-Sun: ⚔️21:00#2 (3v)
+📊 Weekly Calendar View
+Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun
+──────────────────────────────────────────────────
+18:00 │ 🎉  │ 🎉  │ 🎉  │ 🎉  │ 🎉  │ 🎉  │ 🎉
+20:00 │ ⚔️1 │     │     │     │     │     │
+20:30 │     │     │     │     │ 🏆1 │     │
+21:00 │ 🏆2 │     │ ⚔️2 │     │     │     │
 
 🏆 Current Winners
-🎉 Party: 20:00 (5 votes)
+🎉 Party: 18:00 (5 votes)
 ⚔️ Breaking Army #1: Monday 20:00 (3 votes)
-⚔️ Breaking Army #2: Wednesday 19:00 (2 votes)
+⚔️ Breaking Army #2: Wednesday 21:00 (2 votes)
 🏆 Showdown #1: Friday 20:30 (4 votes)
 🏆 Showdown #2: Monday 21:00 (2 votes)
-
-Note: #1 and #2 indicate slot numbers for multi-slot events
 ```
+
+**Calendar Features:**
+- **Grid Layout**: Easy to see which events are scheduled when at a glance
+- **Monospace Font**: Uses code block for proper alignment
+- **Compact View**: Only shows time slots with scheduled events
+- **Slot Numbers**: Multi-slot events show as ⚔️1, ⚔️2, 🏆1, 🏆2
+- **Daily Events**: Party (🎉) appears across all days
+- **Weekly Events**: Appear only on their scheduled day
 
 ## Permissions
 
