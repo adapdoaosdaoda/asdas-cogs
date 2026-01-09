@@ -16,7 +16,7 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Create buttons for each event - all in one horizontal row
+        # Create buttons for each event - spread across rows if needed
         event_names = list(events.keys())
         for idx, event_name in enumerate(event_names):
             # Determine button style based on event
@@ -26,15 +26,22 @@ class EventPollView(discord.ui.View):
                 button_style = discord.ButtonStyle.primary  # Blue
             elif "Showdown" in event_name:
                 button_style = discord.ButtonStyle.danger  # Red
+            elif "Hero's Realm" in event_name:
+                button_style = discord.ButtonStyle.primary  # Purple (using blue for now as Discord doesn't have purple button style)
+            elif "Sword Trial" in event_name:
+                button_style = discord.ButtonStyle.danger  # Orange (using red for now as Discord doesn't have orange button style)
             else:
                 button_style = discord.ButtonStyle.secondary  # Grey
+
+            # Discord allows max 5 buttons per row
+            row = idx // 5
 
             button = discord.ui.Button(
                 label=event_name,
                 style=button_style,
                 emoji=events[event_name]["emoji"],
                 custom_id=f"event_poll:{event_name}",
-                row=0  # All buttons in row 0 (horizontal)
+                row=row
             )
             button.callback = self._create_event_callback(event_name)
             self.add_item(button)
@@ -58,7 +65,7 @@ class EventPollView(discord.ui.View):
             event_info = self.events[event_name]
 
             if event_info["type"] == "daily":
-                # Party event - show time selector directly
+                # Daily event - show time selector directly (single slot, no day)
                 view = TimeSelectView(
                     cog=self.cog,
                     guild_id=self.guild_id,
@@ -66,6 +73,7 @@ class EventPollView(discord.ui.View):
                     user_id=interaction.user.id,
                     event_name=event_name,
                     day=None,  # No day for daily events
+                    slot_index=0,  # Single slot
                     user_selections=user_selections,
                     events=self.events
                 )
@@ -74,29 +82,68 @@ class EventPollView(discord.ui.View):
                     view=view,
                     ephemeral=True
                 )
-            else:
-                # Weekly event - show day selector first
-                view = DaySelectView(
+            elif event_info["type"] == "fixed_days":
+                # Fixed-day event - show time selector directly (no day selection needed)
+                view = TimeSelectView(
                     cog=self.cog,
                     guild_id=self.guild_id,
                     poll_id=self.poll_id,
                     user_id=interaction.user.id,
                     event_name=event_name,
+                    day=None,  # No day selection for fixed-day events
+                    slot_index=0,  # Single slot
                     user_selections=user_selections,
-                    events=self.events,
-                    days=self.days
+                    events=self.events
                 )
+                days_str = ", ".join([d[:3] for d in event_info["days"]])
                 await interaction.response.send_message(
-                    f"Select a day for **{event_name}**:",
+                    f"Select a time for **{event_name}** on {days_str} (18:00-24:00):",
                     view=view,
                     ephemeral=True
                 )
+            else:
+                # Weekly event - check if multi-slot
+                if event_info["slots"] > 1:
+                    # Show slot selector first
+                    view = SlotSelectView(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=self.poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        user_selections=user_selections,
+                        events=self.events,
+                        days=self.days
+                    )
+                    await interaction.response.send_message(
+                        f"Select slot for **{event_name}** (2 slots available):",
+                        view=view,
+                        ephemeral=True
+                    )
+                else:
+                    # Single slot weekly event - show day selector
+                    view = DaySelectView(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=self.poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        slot_index=0,
+                        user_selections=user_selections,
+                        events=self.events,
+                        days=self.days
+                    )
+                    await interaction.response.send_message(
+                        f"Select a day for **{event_name}**:",
+                        view=view,
+                        ephemeral=True
+                    )
 
         return callback
 
 
-class DaySelectView(discord.ui.View):
-    """View for selecting a day of the week"""
+class SlotSelectView(discord.ui.View):
+    """View for selecting which slot to configure (for multi-slot events)"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
                  event_name: str, user_selections: Dict, events: Dict, days: List[str]):
@@ -110,54 +157,125 @@ class DaySelectView(discord.ui.View):
         self.events = events
         self.days = days
 
-        # Create select menu for days
-        options = []
-        for day in days:
-            options.append(
-                discord.SelectOption(
-                    label=day,
-                    value=day,
-                    emoji="📅"
-                )
-            )
+        num_slots = events[event_name]["slots"]
 
-        select = discord.ui.Select(
-            placeholder="Choose a day...",
-            options=options,
-            custom_id=f"day_select:{event_name}"
-        )
-        select.callback = self._day_selected
-        self.add_item(select)
+        # Create buttons for each slot
+        for slot_index in range(num_slots):
+            button = discord.ui.Button(
+                label=f"Slot {slot_index + 1}",
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"slot_btn:{event_name}:{slot_index}",
+                row=0
+            )
+            button.callback = self._create_slot_callback(slot_index)
+            self.add_item(button)
 
         # Add cancel button
         cancel_btn = discord.ui.Button(
             label="Cancel",
             style=discord.ButtonStyle.danger,
-            emoji="❌"
+            emoji="❌",
+            row=1
         )
         cancel_btn.callback = self._cancel
         self.add_item(cancel_btn)
 
-    async def _day_selected(self, interaction: discord.Interaction):
-        """Handle day selection"""
-        selected_day = interaction.data["values"][0]
+    def _create_slot_callback(self, slot_index: int):
+        """Create a callback for a specific slot button"""
+        async def callback(interaction: discord.Interaction):
+            # Show day selector for this slot
+            view = DaySelectView(
+                cog=self.cog,
+                guild_id=self.guild_id,
+                poll_id=self.poll_id,
+                user_id=self.user_id,
+                event_name=self.event_name,
+                slot_index=slot_index,
+                user_selections=self.user_selections,
+                events=self.events,
+                days=self.days
+            )
 
-        # Show time selector
-        view = TimeSelectView(
-            cog=self.cog,
-            guild_id=self.guild_id,
-            poll_id=self.poll_id,
-            user_id=self.user_id,
-            event_name=self.event_name,
-            day=selected_day,
-            user_selections=self.user_selections,
-            events=self.events
-        )
+            await interaction.response.edit_message(
+                content=f"Select a day for **{self.event_name}** slot {slot_index + 1}:",
+                view=view
+            )
 
+        return callback
+
+    async def _cancel(self, interaction: discord.Interaction):
+        """Handle cancel"""
         await interaction.response.edit_message(
-            content=f"Select a time for **{self.event_name}** on **{selected_day}**:",
-            view=view
+            content="Selection cancelled.",
+            view=None
         )
+
+    async def on_timeout(self):
+        """Handle timeout"""
+        pass
+
+
+class DaySelectView(discord.ui.View):
+    """View for selecting a day of the week"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
+                 event_name: str, slot_index: int, user_selections: Dict, events: Dict, days: List[str]):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.user_id = user_id
+        self.event_name = event_name
+        self.slot_index = slot_index
+        self.user_selections = user_selections
+        self.events = events
+        self.days = days
+
+        # Create 7 grey buttons for each day of the week
+        for idx, day in enumerate(days):
+            # Use abbreviated day names for button labels (3 letters)
+            button = discord.ui.Button(
+                label=day[:3],  # Mon, Tue, Wed, etc.
+                style=discord.ButtonStyle.secondary,  # Grey
+                custom_id=f"day_btn:{event_name}:{day}",
+                row=0  # All day buttons in first row
+            )
+            button.callback = self._create_day_callback(day)
+            self.add_item(button)
+
+        # Add cancel button in second row
+        cancel_btn = discord.ui.Button(
+            label="Cancel",
+            style=discord.ButtonStyle.danger,
+            emoji="❌",
+            row=1
+        )
+        cancel_btn.callback = self._cancel
+        self.add_item(cancel_btn)
+
+    def _create_day_callback(self, day: str):
+        """Create a callback for a specific day button"""
+        async def callback(interaction: discord.Interaction):
+            # Show time selector
+            view = TimeSelectView(
+                cog=self.cog,
+                guild_id=self.guild_id,
+                poll_id=self.poll_id,
+                user_id=self.user_id,
+                event_name=self.event_name,
+                day=day,
+                slot_index=self.slot_index,
+                user_selections=self.user_selections,
+                events=self.events
+            )
+
+            slot_text = f" slot {self.slot_index + 1}" if self.events[self.event_name]["slots"] > 1 else ""
+            await interaction.response.edit_message(
+                content=f"Select a time for **{self.event_name}**{slot_text} on **{day}**:",
+                view=view
+            )
+
+        return callback
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
@@ -175,7 +293,7 @@ class TimeSelectView(discord.ui.View):
     """View for selecting a time"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
-                 event_name: str, day: Optional[str], user_selections: Dict, events: Dict):
+                 event_name: str, day: Optional[str], slot_index: int, user_selections: Dict, events: Dict):
         super().__init__(timeout=180)
         self.cog = cog
         self.guild_id = guild_id
@@ -183,6 +301,7 @@ class TimeSelectView(discord.ui.View):
         self.user_id = user_id
         self.event_name = event_name
         self.day = day
+        self.slot_index = slot_index
         self.user_selections = user_selections
         self.events = events
 
@@ -246,7 +365,8 @@ class TimeSelectView(discord.ui.View):
             self.user_selections,
             self.event_name,
             self.day,
-            selected_time
+            selected_time,
+            self.slot_index
         )
 
         if has_conflict:
@@ -275,14 +395,30 @@ class TimeSelectView(discord.ui.View):
             if self.day:
                 selection_data["day"] = self.day
 
-            polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection_data
+            # For multi-slot events, store as list; for single-slot, store as dict
+            event_info = self.events[self.event_name]
+            if event_info["slots"] > 1:
+                # Multi-slot event - use list format
+                if self.event_name not in polls[self.poll_id]["selections"][user_id_str]:
+                    # Initialize with None for each slot
+                    polls[self.poll_id]["selections"][user_id_str][self.event_name] = [None] * event_info["slots"]
+
+                polls[self.poll_id]["selections"][user_id_str][self.event_name][self.slot_index] = selection_data
+            else:
+                # Single-slot event - use dict format
+                polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection_data
+
             poll_data = polls[self.poll_id]
 
         # Create confirmation message
+        slot_text = f" slot {self.slot_index + 1}" if event_info["slots"] > 1 else ""
         if self.day:
-            selection_text = f"**{self.event_name}** on **{self.day}** at **{selected_time}**"
+            selection_text = f"**{self.event_name}**{slot_text} on **{self.day}** at **{selected_time}**"
+        elif event_info["type"] == "fixed_days":
+            days_str = ", ".join([d[:3] for d in event_info["days"]])
+            selection_text = f"**{self.event_name}**{slot_text} at **{selected_time}** ({days_str})"
         else:
-            selection_text = f"**{self.event_name}** at **{selected_time}** (daily)"
+            selection_text = f"**{self.event_name}**{slot_text} at **{selected_time}** (daily)"
 
         # Show user's current selections
         current_selections = await self._get_user_selections_text()
@@ -373,12 +509,31 @@ class TimeSelectView(discord.ui.View):
         lines = []
         for event_name, selection in selections.items():
             emoji = self.events[event_name]["emoji"]
-            if "day" in selection:
-                lines.append(f"{emoji} {event_name}: {selection['day']} at {selection['time']}")
-            else:
-                lines.append(f"{emoji} {event_name}: {selection['time']} (daily)")
+            event_type = self.events[event_name]["type"]
 
-        return "\n".join(lines)
+            # Handle both list (multi-slot) and dict (single-slot) formats
+            if isinstance(selection, list):
+                # Multi-slot event
+                for idx, slot_data in enumerate(selection):
+                    if slot_data:  # Slot might be None if not yet selected
+                        if "day" in slot_data:
+                            lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['day']} at {slot_data['time']}")
+                        elif event_type == "fixed_days":
+                            days_str = ", ".join([d[:3] for d in self.events[event_name]["days"]])
+                            lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['time']} ({days_str})")
+                        else:
+                            lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['time']} (daily)")
+            else:
+                # Single-slot event
+                if "day" in selection:
+                    lines.append(f"{emoji} {event_name}: {selection['day']} at {selection['time']}")
+                elif event_type == "fixed_days":
+                    days_str = ", ".join([d[:3] for d in self.events[event_name]["days"]])
+                    lines.append(f"{emoji} {event_name}: {selection['time']} ({days_str})")
+                else:
+                    lines.append(f"{emoji} {event_name}: {selection['time']} (daily)")
+
+        return "\n".join(lines) if lines else "None"
 
     async def on_timeout(self):
         """Handle timeout"""
