@@ -9,13 +9,29 @@ A Discord cog for creating event scheduling polls with dropdown menus, automatic
 - **Fixed-Day Events**: Hero's Realm and Sword Trial automatically appear on Wed/Fri/Sat/Sun
 - **Interactive Buttons**: Grey buttons for day selection, dropdowns for time selection
 - **Duration-Aware Conflict Detection**: Prevents users from selecting overlapping event times based on event durations
-- **Blocked Time Slots**: Saturday 20:30-22:30 is blocked from selection
+- **Blocked Time Slots**: Saturday & Sunday 20:30-22:00 are blocked from selection
 - **Calendar View**: Real-time calendar-style display showing current winning times with slot numbers
-- **Color-Coded Buttons**: Green for Party, Blue for Breaking Army/Hero's Realm, Red for Showdown/Sword Trial
+- **Color-Coded Buttons**: Grey for Hero's Realm/Sword Trial, Green for Party, Blue for Breaking Army, Red for Showdown
 - **Editable Selections**: Users can freely change or clear their choices
 - **Live Updates**: Poll embed updates automatically when users vote
 
 ## Events
+
+### Hero's Realm (Fixed-Day Event) 🗡️
+- **Duration**: 30 minutes
+- **Frequency**: Wed, Fri, Sat, Sun only
+- **Slots**: 1
+- **Time selection**: 18:00 - 24:00 (30-minute intervals)
+- **No day selection needed** (automatically appears on Wed/Fri/Sat/Sun)
+- **Button color**: Grey
+
+### Sword Trial (Fixed-Day Event) ⚡
+- **Duration**: 30 minutes
+- **Frequency**: Wed, Fri, Sat, Sun only
+- **Slots**: 1
+- **Time selection**: 18:00 - 24:00 (30-minute intervals)
+- **No day selection needed** (automatically appears on Wed/Fri/Sat/Sun)
+- **Button color**: Grey
 
 ### Party (Daily Event) 🎉
 - **Duration**: 10 minutes
@@ -39,22 +55,6 @@ A Discord cog for creating event scheduling polls with dropdown menus, automatic
 - **Selection flow**: Choose slot → Choose day → Choose time
 - **Day selection**: 7 grey buttons (Mon-Sun)
 - **Time selection**: 18:00 - 24:00 (30-minute intervals)
-- **Button color**: Red
-
-### Hero's Realm (Fixed-Day Event) 🗡️
-- **Duration**: 30 minutes
-- **Frequency**: Wed, Fri, Sat, Sun only
-- **Slots**: 1
-- **Time selection**: 18:00 - 24:00 (30-minute intervals)
-- **No day selection needed** (automatically appears on Wed/Fri/Sat/Sun)
-- **Button color**: Blue
-
-### Sword Trial (Fixed-Day Event) ⚡
-- **Duration**: 30 minutes
-- **Frequency**: Wed, Fri, Sat, Sun only
-- **Slots**: 1
-- **Time selection**: 18:00 - 24:00 (30-minute intervals)
-- **No day selection needed** (automatically appears on Wed/Fri/Sat/Sun)
 - **Button color**: Red
 
 ## Commands
@@ -95,11 +95,11 @@ Clear a specific user's votes from a poll.
 
 1. Admin creates a poll using `[p]eventpoll create`
 2. Users click on color-coded event buttons to make their selections:
+   - For **Hero's Realm** (🗡️ Grey): Select a time directly (appears on Wed/Fri/Sat/Sun)
+   - For **Sword Trial** (⚡ Grey): Select a time directly (appears on Wed/Fri/Sat/Sun)
    - For **Party** (🎉 Green): Select a time directly
    - For **Breaking Army** (⚔️ Blue): Select slot (1 or 2) → Select day (Mon-Sun) → Select time
    - For **Showdown** (🏆 Red): Select slot (1 or 2) → Select day (Mon-Sun) → Select time
-   - For **Hero's Realm** (🗡️ Blue): Select a time directly (appears on Wed/Fri/Sat/Sun)
-   - For **Sword Trial** (⚡ Red): Select a time directly (appears on Wed/Fri/Sat/Sun)
 3. The system checks for duration-based conflicts and blocked times across all slots
 4. The poll embed updates automatically showing the current winning times in a calendar view with slot numbers
 5. Users can edit or clear their selections anytime by clicking the event button again
@@ -125,14 +125,15 @@ The cog uses **duration-aware conflict detection** to prevent overlapping events
   - Example: Hero's Realm at 20:00-20:30 conflicts with Sword Trial at 20:15-20:45 (on any of Wed/Fri/Sat/Sun)
   - Example: Hero's Realm at 20:00-20:30 conflicts with Breaking Army slot 1 at 20:00-21:00 on Wednesday
   - Example: Hero's Realm at 20:00-20:30 does NOT conflict with Breaking Army slot 1 at 20:00-21:00 on Monday
-- **Blocked time**: Saturday 20:30-22:30 cannot be selected for any event
+- **Blocked time**: Saturday & Sunday 20:30-22:00 cannot be selected for any event
   - Events that would overlap with this period are prevented
+  - 22:00 is available for selection
 
 ### Error Messages:
 Users receive clear, specific error messages when conflicts occur:
 - "This time conflicts with your Party selection"
 - "This conflicts with your Breaking Army #1 selection on Monday"
-- "This time conflicts with a blocked period (Sat 20:30-22:30)"
+- "This time conflicts with a blocked period (Sat & Sun 20:30-22:00)"
 
 ## Calendar View
 
@@ -175,7 +176,7 @@ Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun
 ```
 User: [p]eventpoll create This Week's Events
 Bot: *Creates interactive poll with 5 color-coded buttons and calendar view*
-     [🎉 Party] [⚔️ Breaking Army] [🏆 Showdown] [🗡️ Hero's Realm] [⚡ Sword Trial]
+     [🗡️ Hero's Realm] [⚡ Sword Trial] [🎉 Party] [⚔️ Breaking Army] [🏆 Showdown]
 ```
 
 **User voting example 1 - Single slot event (Party):**
@@ -205,7 +206,7 @@ Bot: *Creates interactive poll with 5 color-coded buttons and calendar view*
 6. ✅ Selection saved! (20:10-21:10 doesn't overlap with 20:00-20:10)
 
 **User voting example 4 - Fixed-day event (Hero's Realm):**
-1. Click "🗡️ Hero's Realm" (Blue) button
+1. Click "🗡️ Hero's Realm" (Grey) button
 2. See message: "Select a time for Hero's Realm on Wed, Fri, Sat, Sun (18:00-24:00)"
 3. Select "19:30" from time dropdown
 4. ✅ Selection saved! Hero's Realm at 19:30 (Wed, Fri, Sat, Sun)
@@ -213,9 +214,10 @@ Bot: *Creates interactive poll with 5 color-coded buttons and calendar view*
 
 **User voting example 5 - Blocked time:**
 1. Click "🏆 Showdown" (Red) button
-2. Select "Slot 1" → "Saturday" → "21:00"
-3. ⚠️ Conflict detected! This time conflicts with a blocked period (Sat 20:30-22:30)
-4. User selects different day or time
+2. Select "Slot 1" → "Sunday" → "21:00"
+3. ⚠️ Conflict detected! This time conflicts with a blocked period (Sat & Sun 20:30-22:00)
+4. User selects "22:00" instead (22:00 is available)
+5. ✅ Selection saved!
 
 ## Technical Details
 

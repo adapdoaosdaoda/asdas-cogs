@@ -23,8 +23,28 @@ class EventPolling(commands.Cog):
             polls={},  # poll_id -> poll data
         )
 
-        # Event definitions
+        # Event definitions (ordered: Hero's Realm, Sword Trial, Party, Breaking Army, Showdown)
         self.events = {
+            "Hero's Realm": {
+                "type": "fixed_days",
+                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
+                "time_range": (18, 24),
+                "interval": 30,
+                "duration": 30,  # 30 minutes
+                "slots": 1,
+                "color": discord.Color.greyple(),
+                "emoji": "🗡️"
+            },
+            "Sword Trial": {
+                "type": "fixed_days",
+                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
+                "time_range": (18, 24),
+                "interval": 30,
+                "duration": 30,  # 30 minutes
+                "slots": 1,
+                "color": discord.Color.greyple(),
+                "emoji": "⚡"
+            },
             "Party": {
                 "type": "daily",
                 "time_range": (18, 24),  # 18:00 to 24:00
@@ -51,26 +71,6 @@ class EventPolling(commands.Cog):
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.red(),
                 "emoji": "🏆"
-            },
-            "Hero's Realm": {
-                "type": "fixed_days",
-                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
-                "time_range": (18, 24),
-                "interval": 30,
-                "duration": 30,  # 30 minutes
-                "slots": 1,
-                "color": discord.Color.purple(),
-                "emoji": "🗡️"
-            },
-            "Sword Trial": {
-                "type": "fixed_days",
-                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
-                "time_range": (18, 24),
-                "interval": 30,
-                "duration": 30,  # 30 minutes
-                "slots": 1,
-                "color": discord.Color.orange(),
-                "emoji": "⚡"
             }
         }
 
@@ -78,9 +78,10 @@ class EventPolling(commands.Cog):
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Saturday 20:30 - 22:30
+        # Blocked time slots: Saturday and Sunday 20:30 - 22:00
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "22:30"}
+            {"day": "Saturday", "start": "20:30", "end": "22:00"},
+            {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
     @commands.group(name="eventpoll")
@@ -263,12 +264,12 @@ class EventPolling(commands.Cog):
             embed.add_field(
                 name="📋 Events",
                 value=(
+                    "🗡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
+                    "⚡ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
                     "🎉 **Party** - Daily (10 min, 1 slot)\n"
                     "⚔️ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
-                    "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n"
-                    "🗡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
-                    "⚡ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n\n"
-                    "⚠️ Saturday 20:30-22:30 is blocked\n"
+                    "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
+                    "⚠️ Sat & Sun 20:30-22:00 are blocked\n"
                     "⚠️ Events cannot have conflicting times"
                 ),
                 inline=False
@@ -486,7 +487,7 @@ class EventPolling(commands.Cog):
                     event_start, event_end = self._get_event_time_range(event_name, time_str)
 
                     if self._time_ranges_overlap(event_start, event_end, blocked_start, blocked_end):
-                        return True, f"This time conflicts with a blocked period (Sat 20:30-22:30)"
+                        return True, f"This time conflicts with a blocked period (Sat & Sun 20:30-22:00)"
 
         return False, None
 

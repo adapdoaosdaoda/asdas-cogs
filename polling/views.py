@@ -20,16 +20,16 @@ class EventPollView(discord.ui.View):
         event_names = list(events.keys())
         for idx, event_name in enumerate(event_names):
             # Determine button style based on event
-            if "Party" in event_name:
+            if "Hero's Realm" in event_name:
+                button_style = discord.ButtonStyle.secondary  # Grey
+            elif "Sword Trial" in event_name:
+                button_style = discord.ButtonStyle.secondary  # Grey
+            elif "Party" in event_name:
                 button_style = discord.ButtonStyle.success  # Green
             elif "Breaking Army" in event_name:
                 button_style = discord.ButtonStyle.primary  # Blue
             elif "Showdown" in event_name:
                 button_style = discord.ButtonStyle.danger  # Red
-            elif "Hero's Realm" in event_name:
-                button_style = discord.ButtonStyle.primary  # Purple (using blue for now as Discord doesn't have purple button style)
-            elif "Sword Trial" in event_name:
-                button_style = discord.ButtonStyle.danger  # Orange (using red for now as Discord doesn't have orange button style)
             else:
                 button_style = discord.ButtonStyle.secondary  # Grey
 
