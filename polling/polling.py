@@ -51,6 +51,26 @@ class EventPolling(commands.Cog):
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.red(),
                 "emoji": "🏆"
+            },
+            "Hero's Realm": {
+                "type": "fixed_days",
+                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
+                "time_range": (18, 24),
+                "interval": 30,
+                "duration": 30,  # 30 minutes
+                "slots": 1,
+                "color": discord.Color.purple(),
+                "emoji": "🗡️"
+            },
+            "Sword Trial": {
+                "type": "fixed_days",
+                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
+                "time_range": (18, 24),
+                "interval": 30,
+                "duration": 30,  # 30 minutes
+                "slots": 1,
+                "color": discord.Color.orange(),
+                "emoji": "⚡"
             }
         }
 
@@ -245,7 +265,9 @@ class EventPolling(commands.Cog):
                 value=(
                     "🎉 **Party** - Daily (10 min, 1 slot)\n"
                     "⚔️ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
-                    "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
+                    "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n"
+                    "🗡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
+                    "⚡ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n\n"
                     "⚠️ Saturday 20:30-22:30 is blocked\n"
                     "⚠️ Events cannot have conflicting times"
                 ),
@@ -272,6 +294,8 @@ class EventPolling(commands.Cog):
                                 slot_data = selection[slot_index]
                                 if event_info["type"] == "daily":
                                     key = ("Daily", slot_data["time"])
+                                elif event_info["type"] == "fixed_days":
+                                    key = ("Fixed", slot_data["time"])
                                 else:
                                     key = (slot_data.get("day", "Unknown"), slot_data["time"])
                                 vote_counts[key] = vote_counts.get(key, 0) + 1
@@ -280,6 +304,8 @@ class EventPolling(commands.Cog):
                             if slot_index == 0:
                                 if event_info["type"] == "daily":
                                     key = ("Daily", selection["time"])
+                                elif event_info["type"] == "fixed_days":
+                                    key = ("Fixed", selection["time"])
                                 else:
                                     key = (selection.get("day", "Unknown"), selection["time"])
                                 vote_counts[key] = vote_counts.get(key, 0) + 1
@@ -309,6 +335,9 @@ class EventPolling(commands.Cog):
                     if slot_index in event_slots:
                         winners, votes = event_slots[slot_index]
                         if event_info["type"] == "daily":
+                            time_str = winners[0][1]
+                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                        elif event_info["type"] == "fixed_days":
                             time_str = winners[0][1]
                             summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
                         else:
@@ -358,6 +387,13 @@ class EventPolling(commands.Cog):
                     if event_info["type"] == "daily":
                         # Daily events appear on all days
                         for day in self.days_of_week:
+                            if event_info["slots"] > 1:
+                                schedule[winner_time][day].append(f"{emoji}{slot_index + 1}")
+                            else:
+                                schedule[winner_time][day].append(emoji)
+                    elif event_info["type"] == "fixed_days":
+                        # Fixed-day events appear on their configured days
+                        for day in event_info["days"]:
                             if event_info["slots"] > 1:
                                 schedule[winner_time][day].append(f"{emoji}{slot_index + 1}")
                             else:
@@ -504,19 +540,44 @@ class EventPolling(commands.Cog):
                 existing_day = slot_data.get("day")
                 existing_start, existing_end = self._get_event_time_range(existing_event, existing_time)
 
-                # Party is daily, so it conflicts with any event on any day if times overlap
-                if self.events[event_name]["type"] == "daily":
-                    # Party conflicts with all events if time ranges overlap
+                new_event_type = self.events[event_name]["type"]
+                existing_event_type = self.events[existing_event]["type"]
+
+                # Daily events conflict with all events if times overlap
+                if new_event_type == "daily":
                     if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
                         return True, f"This time conflicts with your {slot_label} selection"
 
-                elif self.events[existing_event]["type"] == "daily":
-                    # Any event conflicts with Party if time ranges overlap
+                elif existing_event_type == "daily":
+                    # Any event conflicts with daily events if time ranges overlap
                     if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
                         if new_day:
                             return True, f"This time conflicts with your {slot_label} selection on {new_day}"
                         else:
                             return True, f"This time conflicts with your {slot_label} selection"
+
+                # Fixed-day events conflict with weekly/fixed-day events on shared days
+                elif new_event_type == "fixed_days":
+                    new_event_days = self.events[event_name]["days"]
+
+                    if existing_event_type == "fixed_days":
+                        # Check if any days overlap
+                        existing_event_days = self.events[existing_event]["days"]
+                        shared_days = set(new_event_days) & set(existing_event_days)
+                        if shared_days and self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                            return True, f"This time conflicts with your {slot_label} selection"
+                    elif existing_event_type == "once":
+                        # Check if the existing weekly event's day is in our fixed days
+                        if existing_day in new_event_days:
+                            if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                                return True, f"This time conflicts with your {slot_label} selection on {existing_day}"
+
+                elif existing_event_type == "fixed_days":
+                    # Weekly event vs fixed-day event
+                    existing_event_days = self.events[existing_event]["days"]
+                    if new_day in existing_event_days:
+                        if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                            return True, f"This conflicts with your {slot_label} selection on {new_day}"
 
                 else:
                     # Both are weekly events - only conflict if same day and time ranges overlap
