@@ -662,3 +662,422 @@ class HandlersMixin:
             if retry_task and not retry_task.done():
                 retry_task.cancel()
             self.active_tasks.pop(retry_key, None)
+
+    async def _force_create_event_channels(self, guild: discord.Guild, event: discord.ScheduledEvent, requested_by: str):
+        """Force create event channels immediately, bypassing minimum role requirements.
+
+        This method is called when an admin uses the force create button.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : discord.ScheduledEvent
+            The scheduled event
+        requested_by : str
+            Name of the user who requested the force create
+        """
+        try:
+            start_time = event.start_time.astimezone(timezone.utc)
+
+            # Check if event already has channels (with lock to prevent race)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
+                if str(event.id) in stored:
+                    log.warning(f"Force create requested but channels already exist for event '{event.name}'")
+                    return
+
+            category_id = await self.config.guild(guild).category_id()
+            category = guild.get_channel(category_id) if category_id else None
+
+            # Get server timezone and convert event time
+            from zoneinfo import ZoneInfo
+            tz_name = await self.config.guild(guild).timezone()
+            server_tz = ZoneInfo(tz_name)
+            event_local_time = event.start_time.astimezone(server_tz)
+
+            # Build the expected role name using the configured format
+            role_format = await self.config.guild(guild).role_format()
+
+            day_abbrev = event_local_time.strftime("%a")  # Sun, Mon, etc.
+            day = event_local_time.strftime("%d").lstrip("0")  # 28 (no leading zero)
+            month_abbrev = event_local_time.strftime("%b")  # Dec, Jan, etc.
+            time_str = event_local_time.strftime("%H:%M")  # 21:00
+
+            expected_role_name = role_format.format(
+                name=event.name,
+                day_abbrev=day_abbrev,
+                day=day,
+                month_abbrev=month_abbrev,
+                time=time_str
+            )
+
+            # Check for role
+            role = discord.utils.get(guild.roles, name=expected_role_name)
+            if not role:
+                log.warning(f"Force create: No matching role found for event '{event.name}'. Expected role: '{expected_role_name}'")
+                return
+
+            log.info(f"Force create: Found matching role '{expected_role_name}' for event '{event.name}' (requested by {requested_by})")
+
+            # Get channel format and prepare channel names
+            channel_format = await self.config.guild(guild).channel_format()
+            space_replacer = await self.config.guild(guild).space_replacer()
+            channel_name_limit = await self.config.guild(guild).channel_name_limit()
+            channel_name_limit_char = await self.config.guild(guild).channel_name_limit_char()
+            base_name = event.name.lower().replace(" ", space_replacer)
+
+            # Apply character limit to base name only
+            if channel_name_limit_char:
+                char_index = base_name.find(channel_name_limit_char)
+                if char_index != -1:
+                    base_name = base_name[:char_index]
+                elif len(base_name) > channel_name_limit:
+                    base_name = base_name[:channel_name_limit]
+            elif len(base_name) > channel_name_limit:
+                base_name = base_name[:channel_name_limit]
+
+            text_channel_name = channel_format.format(name=base_name, type="text")
+
+            # Check for voice multipliers (but NOT minimum role requirements - force create bypasses that)
+            voice_multipliers = await self.config.guild(guild).voice_multipliers()
+            matched_keyword = None
+            voice_multiplier_capacity = None
+            event_name_lower = event.name.lower()
+
+            for keyword, multiplier in voice_multipliers.items():
+                if keyword in event_name_lower:
+                    matched_keyword = keyword
+                    voice_multiplier_capacity = multiplier
+                    break
+
+            # Calculate number of voice channels based on role member count
+            if matched_keyword and voice_multiplier_capacity and role:
+                role_member_count, count_is_reliable = await self._get_role_member_count(guild, role, event.name)
+                voice_count = max(1, role_member_count // voice_multiplier_capacity)
+                user_limit = voice_multiplier_capacity + 1
+                log.info(f"Force create: Voice multiplier active for keyword '{matched_keyword}': {role_member_count} members / {voice_multiplier_capacity} = {voice_count} channel(s) with limit {user_limit}")
+            else:
+                voice_count = 1
+                user_limit = 0  # 0 = unlimited
+
+            # Set up permissions
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                guild.me: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                ),
+                role: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    connect=True,
+                    speak=True,
+                ),
+            }
+
+            # Add whitelisted roles to overwrites
+            whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+            for whitelisted_role_id in whitelisted_role_ids:
+                whitelisted_role = guild.get_role(whitelisted_role_id)
+                if whitelisted_role:
+                    overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        connect=True,
+                        speak=True,
+                    )
+
+            text_channel = None
+            voice_channels = []
+
+            # Ensure divider channel exists before creating event channels
+            await self._ensure_divider_channel(guild, category)
+
+            try:
+                # Create text channel
+                text_channel = await guild.create_text_channel(
+                    name=text_channel_name,
+                    category=category,
+                    reason=f"Force created by {requested_by} for scheduled event '{event.name}'",
+                )
+                log.info(f"Force create: Created text channel: {text_channel.name}")
+
+                # Create voice channel(s)
+                for i in range(voice_count):
+                    if voice_count > 1:
+                        voice_channel_name = channel_format.format(name=base_name, type="voice")
+                        voice_channel_name = f"{voice_channel_name} {i + 1}"
+                    else:
+                        voice_channel_name = channel_format.format(name=base_name, type="voice")
+
+                    voice_channel = await guild.create_voice_channel(
+                        name=voice_channel_name,
+                        category=category,
+                        user_limit=user_limit,
+                        reason=f"Force created by {requested_by} for scheduled event '{event.name}'",
+                    )
+                    voice_channels.append(voice_channel)
+                    log.info(f"Force create: Created voice channel: {voice_channel.name}")
+
+                # Apply permission overwrites
+                await text_channel.edit(overwrites=overwrites)
+                for voice_channel in voice_channels:
+                    await voice_channel.edit(overwrites=overwrites)
+                log.info(f"Force create: Applied permissions to {len(voice_channels) + 1} channel(s) for event '{event.name}'")
+
+                # Add role to divider permissions
+                await self._update_divider_permissions(guild, role, add=True)
+
+                # Send announcement message if configured
+                announcement_template = await self.config.guild(guild).announcement_message()
+                if announcement_template:
+                    unix_timestamp = int(event.start_time.timestamp())
+                    discord_timestamp = f"<t:{unix_timestamp}:R>"
+
+                    try:
+                        announcement = announcement_template.format(
+                            role=role.mention,
+                            event=event.name,
+                            time=discord_timestamp
+                        )
+                    except KeyError as e:
+                        log.error(f"Invalid placeholder {e} in announcement message template")
+                        announcement = None
+
+                    if announcement:
+                        try:
+                            await text_channel.send(
+                                f"⚡ **Channels force created by {requested_by}**\n\n{announcement}",
+                                allowed_mentions=discord.AllowedMentions(roles=True)
+                            )
+                            log.info(f"Force create: Sent announcement to {text_channel.name}")
+                        except discord.Forbidden:
+                            log.warning(f"Force create: Could not send announcement - missing permissions")
+
+            except discord.Forbidden as e:
+                log.error(f"Force create: Permission error while creating channels for event '{event.name}': {e}")
+                # Clean up any created channels
+                if text_channel:
+                    try:
+                        await text_channel.delete(reason="Force create failed")
+                    except:
+                        pass
+                for voice_channel in voice_channels:
+                    try:
+                        await voice_channel.delete(reason="Force create failed")
+                    except:
+                        pass
+                return
+            except Exception as e:
+                log.error(f"Force create: Failed to create channels for event '{event.name}': {e}")
+                # Clean up
+                if text_channel:
+                    try:
+                        await text_channel.delete(reason="Force create failed")
+                    except:
+                        pass
+                for voice_channel in voice_channels:
+                    try:
+                        await voice_channel.delete(reason="Force create failed")
+                    except:
+                        pass
+                return
+
+            # Store channel data (with lock)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
+
+                # Check if there's a thread linked to this event
+                thread_links = await self.config.guild(guild).thread_event_links()
+                linked_thread_id = None
+                for thread_id, event_id in thread_links.items():
+                    if event_id == str(event.id):
+                        linked_thread_id = int(thread_id)
+                        log.info(f"Force create: Found pre-linked thread {thread_id} for event '{event.name}'")
+                        break
+
+                # Create event channel entry
+                stored[str(event.id)] = {
+                    "text": text_channel.id,
+                    "voice": [vc.id for vc in voice_channels],
+                    "role": role.id,
+                }
+
+                # Add thread link if it exists
+                if linked_thread_id:
+                    stored[str(event.id)]["forum_thread"] = linked_thread_id
+                    log.info(f"Force create: Added forum_thread {linked_thread_id} to event channels")
+
+                await self.config.guild(guild).event_channels.set(stored)
+
+            log.info(f"✅ Force create successful for event '{event.name}' by {requested_by}")
+
+            # Now schedule the normal cleanup task (event start message, deletion warning, cleanup)
+            deletion_hours = await self.config.guild(guild).deletion_hours()
+            delete_time = start_time + timedelta(hours=deletion_hours)
+            now = datetime.now(timezone.utc)
+
+            # Wait until event starts
+            await asyncio.sleep(max(0, (start_time - now).total_seconds()))
+
+            # Send event start message if configured
+            event_start_template = await self.config.guild(guild).event_start_message()
+            if event_start_template:
+                try:
+                    event_start_msg = event_start_template.format(
+                        role=role.mention,
+                        event=event.name
+                    )
+                    await text_channel.send(event_start_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+                    log.info(f"Force create: Sent event start message")
+                except KeyError as e:
+                    log.error(f"Invalid placeholder {e} in event start message template")
+                except discord.Forbidden:
+                    log.warning(f"Force create: Could not send event start message - missing permissions")
+
+            # Calculate when to send deletion warning (15 minutes before deletion)
+            warning_time = delete_time - timedelta(minutes=15)
+            await asyncio.sleep(max(0, (warning_time - datetime.now(timezone.utc)).total_seconds()))
+
+            # Send deletion warning and lock channels
+            deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
+            if deletion_warning_template:
+                try:
+                    last_message = None
+                    async for message in text_channel.history(limit=1):
+                        last_message = message
+                        break
+
+                    should_send_warning = False
+                    if last_message:
+                        time_since_last_message = datetime.now(timezone.utc) - last_message.created_at
+                        if time_since_last_message <= timedelta(minutes=15):
+                            should_send_warning = True
+
+                    if should_send_warning:
+                        try:
+                            deletion_warning_msg = deletion_warning_template.format(
+                                role=role.mention,
+                                event=event.name
+                            )
+                            await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+                            log.info(f"Force create: Sent deletion warning")
+                        except KeyError as e:
+                            log.error(f"Invalid placeholder {e} in deletion warning message template")
+                        except discord.Forbidden:
+                            log.warning(f"Force create: Could not send deletion warning - missing permissions")
+                except Exception as e:
+                    log.error(f"Force create: Error checking message history: {e}")
+
+            # Lock channels
+            stored_data = await self.config.guild(guild).event_channels()
+            event_data = stored_data.get(str(event.id))
+            if event_data:
+                text_channel = guild.get_channel(event_data.get("text"))
+                voice_channel_ids = event_data.get("voice", [])
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+                voice_channels = [guild.get_channel(vc_id) for vc_id in voice_channel_ids if guild.get_channel(vc_id)]
+                role = guild.get_role(event_data.get("role"))
+
+                if text_channel and voice_channels and role:
+                    try:
+                        locked_overwrites = {
+                            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                            guild.me: discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=True,
+                                manage_channels=True,
+                            ),
+                            role: discord.PermissionOverwrite(
+                                view_channel=True,
+                                send_messages=False,
+                                connect=True,
+                                speak=False,
+                            ),
+                        }
+
+                        whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
+                        for whitelisted_role_id in whitelisted_role_ids:
+                            whitelisted_role = guild.get_role(whitelisted_role_id)
+                            if whitelisted_role:
+                                locked_overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                                    view_channel=True,
+                                    send_messages=False,
+                                    connect=True,
+                                    speak=False,
+                                )
+
+                        await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
+                        for voice_channel in voice_channels:
+                            await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
+                        log.info(f"Force create: Locked channels")
+                    except discord.Forbidden:
+                        log.warning(f"Force create: Could not lock channels - missing permissions")
+                    except Exception as e:
+                        log.error(f"Force create: Failed to lock channels: {e}")
+
+            # Wait until deletion time
+            await asyncio.sleep(max(0, (delete_time - datetime.now(timezone.utc)).total_seconds()))
+
+            # Delete channels and clean up (with lock)
+            async with self._config_lock:
+                stored = await self.config.guild(guild).event_channels()
+                data = stored.get(str(event.id))
+                if not data:
+                    return
+
+                # Delete text channel
+                text_channel = guild.get_channel(data.get("text"))
+                if text_channel:
+                    try:
+                        await text_channel.delete(reason="Scheduled event ended")
+                    except discord.NotFound:
+                        pass
+
+                # Delete all voice channels
+                voice_channel_ids = data.get("voice", [])
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+
+                for vc_id in voice_channel_ids:
+                    voice_channel = guild.get_channel(vc_id)
+                    if voice_channel:
+                        try:
+                            await voice_channel.delete(reason="Scheduled event ended")
+                        except discord.NotFound:
+                            pass
+
+                role = guild.get_role(data["role"])
+
+                # Remove from stored config before role deletion
+                stored.pop(str(event.id), None)
+                await self.config.guild(guild).event_channels.set(stored)
+
+                # Also remove from thread_event_links
+                thread_id = data.get("forum_thread")
+                if thread_id:
+                    thread_links = await self.config.guild(guild).thread_event_links()
+                    thread_links.pop(str(thread_id), None)
+                    await self.config.guild(guild).thread_event_links.set(thread_links)
+                    log.info(f"Force create: Removed thread link (event ended)")
+
+            # Remove role from divider and delete role
+            if role:
+                await self._update_divider_permissions(guild, role, add=False)
+                try:
+                    await role.delete(reason="Scheduled event ended")
+                except discord.Forbidden:
+                    pass
+
+            # Check if divider should be deleted
+            await self._cleanup_divider_if_empty(guild)
+
+            log.info(f"Force create: Cleanup complete for event '{event.name}'")
+
+        except asyncio.CancelledError:
+            log.info(f"Force create task cancelled for event '{event.name}'")
+            raise
+        except Exception as e:
+            log.error(f"Force create: Unexpected error for event '{event.name}': {e}", exc_info=True)

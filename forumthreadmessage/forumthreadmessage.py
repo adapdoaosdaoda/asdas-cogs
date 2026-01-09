@@ -11,13 +11,18 @@ log = logging.getLogger("red.asdas-cogs.forumthreadmessage")
 
 
 class RoleButtonView(discord.ui.View):
-    """View with a button to toggle the event role."""
+    """View with buttons to toggle the event role and optionally force create channels."""
 
-    def __init__(self, role: discord.Role, emoji: Optional[str] = "🎫", label: str = "Join Event Role"):
+    def __init__(self, role: discord.Role, emoji: Optional[str] = "🎫", label: str = "Join Event Role",
+                 event_id: Optional[int] = None, bot = None, config = None, include_force_create: bool = False):
         super().__init__(timeout=None)  # Persistent view
         self.role = role
-        # Add the button with role ID in custom_id
+        # Add the role toggle button
         self.add_item(RoleButton(role, emoji, label))
+
+        # Add force create button if requested and we have the necessary data
+        if include_force_create and event_id is not None and bot is not None and config is not None:
+            self.add_item(ForceCreateButton(event_id, bot, config))
 
 
 class RoleButton(discord.ui.Button):
@@ -89,6 +94,108 @@ class RoleButton(discord.ui.Button):
             log.error(f"Error managing role {self.role_id}: {e}", exc_info=True)
 
 
+class ForceCreateButton(discord.ui.Button):
+    """Button to force create event channels (admin only)."""
+
+    def __init__(self, event_id: int, bot, config):
+        super().__init__(
+            label="Force Create Channels",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"force_create_channels:{event_id}",
+            emoji="⚡"
+        )
+        self.event_id = event_id
+        self.bot = bot
+        self.config = config
+
+    async def callback(self, interaction: discord.Interaction):
+        """Force create event channels if user has permission."""
+        try:
+            member = interaction.user
+            if not isinstance(member, discord.Member):
+                await interaction.response.send_message(
+                    "This button can only be used in a server.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if user has permission (admin roles)
+            force_create_roles = await self.config.guild(interaction.guild).force_create_roles()
+            has_permission = False
+
+            # Check if user has any of the allowed roles
+            if force_create_roles:
+                for role_id in force_create_roles:
+                    if any(r.id == role_id for r in member.roles):
+                        has_permission = True
+                        break
+
+            # Also allow guild administrators
+            if member.guild_permissions.administrator:
+                has_permission = True
+
+            if not has_permission:
+                await interaction.response.send_message(
+                    "You don't have permission to force create channels.",
+                    ephemeral=True
+                )
+                log.warning(f"User {member.name} ({member.id}) attempted to force create channels without permission")
+                return
+
+            # Get EventChannels cog
+            eventchannels_cog = self.bot.get_cog("EventChannels")
+            if not eventchannels_cog:
+                await interaction.response.send_message(
+                    "EventChannels cog is not loaded.",
+                    ephemeral=True
+                )
+                return
+
+            # Get the event
+            event = None
+            for scheduled_event in interaction.guild.scheduled_events:
+                if scheduled_event.id == self.event_id:
+                    event = scheduled_event
+                    break
+
+            if not event:
+                await interaction.response.send_message(
+                    "Event not found or no longer exists.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if channels already exist
+            stored = await eventchannels_cog.config.guild(interaction.guild).event_channels()
+            if str(self.event_id) in stored:
+                await interaction.response.send_message(
+                    f"Event channels for '{event.name}' already exist!",
+                    ephemeral=True
+                )
+                return
+
+            await interaction.response.send_message(
+                f"Forcing creation of event channels for '{event.name}'...",
+                ephemeral=True
+            )
+
+            # Force create channels by calling _handle_event with retry_count = 999 (bypass minimum checks)
+            # Actually, we need a different approach - let's create a new method
+            task = self.bot.loop.create_task(
+                eventchannels_cog._force_create_event_channels(interaction.guild, event, member.display_name)
+            )
+            eventchannels_cog.active_tasks[f"{event.id}_force"] = task
+
+            log.info(f"User {member.name} ({member.id}) forced creation of channels for event '{event.name}' ({event.id})")
+
+        except Exception as e:
+            await interaction.response.send_message(
+                "An error occurred while forcing channel creation.",
+                ephemeral=True
+            )
+            log.error(f"Error forcing channel creation for event {self.event_id}: {e}", exc_info=True)
+
+
 class ForumThreadMessage(commands.Cog):
     """Automatically send messages in newly created forum threads.
 
@@ -117,6 +224,8 @@ class ForumThreadMessage(commands.Cog):
             role_button_enabled=True,  # Whether to automatically add role buttons
             role_button_emoji="🎫",  # Emoji for the role button
             role_button_text="Join Event Role",  # Text for the role button
+            force_create_button_enabled=True,  # Whether to show the force create channels button
+            force_create_roles=[],  # List of role IDs that can use the force create button
             # Third edited message conditional options
             # Note: Role minimum thresholds come from EventChannels' voice_minimum_roles config
             third_edited_role_min_met="✅ Thread is ready! {role_count} members have the event role!",
@@ -218,6 +327,9 @@ class ForumThreadMessage(commands.Cog):
             msg_keyword_default = await config.event_start_keyword_default()
 
         # Get minimum role requirement from EventChannels
+        # Note: The config is called "voice_minimum_roles" but it contains the minimum
+        # number of role members required before creating event channels (per keyword).
+        # This is the correct config to use for role minimum checks.
         role_minimum = 0
         matched_keyword = None
         eventchannels_cog = self.bot.get_cog("EventChannels")
@@ -323,6 +435,9 @@ class ForumThreadMessage(commands.Cog):
         # If we have an event and role, get the details
         if event and role:
             # Get minimum role requirement from EventChannels
+            # Note: The config is called "voice_minimum_roles" but it contains the minimum
+            # number of role members required before creating event channels (per keyword).
+            # This is the correct config to use for role minimum checks.
             eventchannels_cog = self.bot.get_cog("EventChannels")
             if eventchannels_cog:
                 eventchannels_config = eventchannels_cog.config.guild(guild)
@@ -446,6 +561,92 @@ class ForumThreadMessage(commands.Cog):
         except Exception as e:
             log.error(f"Error updating message in thread {thread_id}: {e}", exc_info=True)
 
+    async def _update_third_edited_with_role_count(
+        self,
+        guild: discord.Guild,
+        event: discord.ScheduledEvent,
+        role: discord.Role
+    ):
+        """Update the thread message with current role count information.
+
+        This is called periodically (every 5 minutes) to keep role counts up-to-date
+        before event channels are created.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : discord.ScheduledEvent
+            The scheduled event
+        role : discord.Role
+            The event role
+        """
+        # Get EventChannels cog to find the linked thread
+        eventchannels_cog = self.bot.get_cog("EventChannels")
+        if not eventchannels_cog:
+            return
+
+        # Get event channels data to find the thread
+        eventchannels_config = eventchannels_cog.config.guild(guild)
+        event_channels = await eventchannels_config.event_channels()
+        event_data = event_channels.get(str(event.id))
+
+        if not event_data:
+            # No event data yet, try to find thread from thread_event_links
+            thread_links = await eventchannels_config.thread_event_links()
+            thread_id = None
+            for tid, eid in thread_links.items():
+                if eid == str(event.id):
+                    thread_id = int(tid)
+                    break
+
+            if not thread_id:
+                log.debug(f"No thread linked to event {event.name} ({event.id}) yet")
+                return
+        else:
+            thread_id = event_data.get("forum_thread")
+            if not thread_id:
+                log.debug(f"No forum thread linked to event {event.name} ({event.id})")
+                return
+
+        # Get the thread
+        thread = guild.get_thread(thread_id)
+        if not thread:
+            try:
+                thread = await guild.fetch_channel(thread_id)
+            except (discord.NotFound, discord.Forbidden):
+                log.warning(f"Could not fetch thread {thread_id} for event {event.name}")
+                return
+
+        # Get the stored message
+        thread_messages = await self.config.guild(guild).thread_messages()
+        thread_data = thread_messages.get(str(thread_id))
+
+        if not thread_data:
+            log.debug(f"No stored message found for thread {thread_id}")
+            return
+
+        message_id = thread_data.get("message_id")
+
+        # Evaluate the third edited message with current role count
+        message_content = await self._evaluate_third_edited_message(guild, event, role, thread.name)
+
+        # Fetch and update the message
+        try:
+            message = await thread.fetch_message(message_id)
+            await message.edit(
+                content=message_content,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+            )
+            role_count = len(role.members)
+            log.info(f"🔄 Updated role count for event '{event.name}' ({role_count} members)")
+        except discord.NotFound:
+            log.warning(f"Message {message_id} not found in thread {thread_id}")
+        except discord.Forbidden:
+            log.error(f"No permission to edit message in thread {thread_id}")
+        except Exception as e:
+            log.error(f"Error updating role count in thread {thread_id}: {e}", exc_info=True)
+
     async def _event_monitor_loop(self):
         """Background task that monitors events and updates messages at appropriate times."""
         await self.bot.wait_until_ready()
@@ -454,11 +655,13 @@ class ForumThreadMessage(commands.Cog):
         # Track which events we've already updated (to avoid duplicate updates)
         updated_15min = set()  # event_id
         updated_start = set()  # event_id
+        last_role_count_update = {}  # event_id -> last_update_time
 
         while True:
             try:
                 # Check every 30 seconds
                 await asyncio.sleep(30)
+                now = datetime.now(timezone.utc)
 
                 # Iterate through all guilds
                 for guild in self.bot.guilds:
@@ -525,10 +728,92 @@ class ForumThreadMessage(commands.Cog):
                                 await self._update_event_thread_message(guild, event, role, "start")
                                 updated_start.add(event.id)
 
+                        # Smart role count updates with variable frequency
+                        # Continue updating until the role is deleted (even after channels are created)
+                        last_update = last_role_count_update.get(event.id)
+                        should_update = False
+                        update_interval = 300  # Default: 5 minutes
+
+                        # Get role minimum to determine update frequency
+                        # Note: voice_minimum_roles config contains role minimums per keyword
+                        eventchannels_config = eventchannels_cog.config.guild(guild)
+                        voice_minimum_roles = await eventchannels_config.voice_minimum_roles()
+                        role_minimum = 0
+                        event_name_lower = event.name.lower()
+                        for keyword, minimum in voice_minimum_roles.items():
+                            if keyword in event_name_lower:
+                                role_minimum = minimum
+                                break
+
+                        # Calculate smart update interval based on:
+                        # 1. Role count vs minimum
+                        # 2. Time until event start
+                        role_count = len(role.members)
+
+                        # Base interval from role count distance
+                        if role_minimum > 0:
+                            role_distance = role_minimum - role_count
+                            if role_distance > 5:
+                                # Far from minimum: base 10 minutes
+                                base_interval = 600
+                            elif role_distance > 0:
+                                # Close to minimum: base 2 minutes (more urgent)
+                                base_interval = 120
+                            elif not event_data.get("text"):
+                                # Met minimum but no channels: base 5 minutes
+                                base_interval = 300
+                            else:
+                                # Channels created: base 15 minutes
+                                base_interval = 900
+                        else:
+                            # No minimum set: base 15 minutes
+                            base_interval = 900
+
+                        # Adjust interval based on time until event start
+                        hours_until_start = time_until_start / 3600
+
+                        if hours_until_start > 48:
+                            # >2 days away: multiply by 3 (less frequent)
+                            time_multiplier = 3.0
+                        elif hours_until_start > 24:
+                            # 1-2 days away: multiply by 2
+                            time_multiplier = 2.0
+                        elif hours_until_start > 6:
+                            # 6-24 hours away: normal frequency
+                            time_multiplier = 1.0
+                        elif hours_until_start > 2:
+                            # 2-6 hours away: 75% of base (more frequent)
+                            time_multiplier = 0.75
+                        elif hours_until_start > 0:
+                            # <2 hours away: 50% of base (most frequent)
+                            time_multiplier = 0.5
+                        else:
+                            # Event started: back to normal or slower
+                            time_multiplier = 1.5
+
+                        update_interval = int(base_interval * time_multiplier)
+
+                        # Enforce minimum 1 minute, maximum 30 minutes
+                        update_interval = max(60, min(1800, update_interval))
+
+                        # Check if it's time to update
+                        if last_update is None:
+                            should_update = True  # First update
+                        else:
+                            time_since_update = (now - last_update).total_seconds()
+                            if time_since_update >= update_interval:
+                                should_update = True
+
+                        if should_update:
+                            await self._update_third_edited_with_role_count(guild, event, role)
+                            last_role_count_update[event.id] = now
+                            log.debug(f"Updated role count for '{event.name}': interval={update_interval}s, hours_until_start={hours_until_start:.1f}h, role_count={role_count}/{role_minimum}")
+
                     # Clean up old event IDs from tracking sets (events that have ended)
                     current_event_ids = {event.id for event in guild.scheduled_events}
                     updated_15min = {eid for eid in updated_15min if eid in current_event_ids}
                     updated_start = {eid for eid in updated_start if eid in current_event_ids}
+                    last_role_count_update = {eid: ts for eid, ts in last_role_count_update.items() if eid in current_event_ids}
 
             except asyncio.CancelledError:
                 log.info("Event monitor loop cancelled")
@@ -819,6 +1104,105 @@ class ForumThreadMessage(commands.Cog):
         """
         await self.config.guild(ctx.guild).role_button_text.set(text)
         await ctx.send(f"✅ Role button text set to: `{text}`")
+
+    @forumthreadmessage.group(name="forcecreate", invoke_without_command=True)
+    async def forcecreate_group(self, ctx):
+        """Configure force create channels button settings.
+
+        The force create button allows specific roles to bypass minimum role requirements
+        and create event channels immediately.
+        """
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @forcecreate_group.command(name="enable")
+    async def forcecreate_enable(self, ctx):
+        """Enable the force create channels button on event threads.
+
+        Examples
+        --------
+        `[p]forumthreadmessage forcecreate enable`
+        """
+        await self.config.guild(ctx.guild).force_create_button_enabled.set(True)
+        await ctx.send("✅ Force create channels button has been enabled.")
+
+    @forcecreate_group.command(name="disable")
+    async def forcecreate_disable(self, ctx):
+        """Disable the force create channels button on event threads.
+
+        Examples
+        --------
+        `[p]forumthreadmessage forcecreate disable`
+        """
+        await self.config.guild(ctx.guild).force_create_button_enabled.set(False)
+        await ctx.send("✅ Force create channels button has been disabled.")
+
+    @forcecreate_group.command(name="addrole")
+    async def forcecreate_addrole(self, ctx, role: discord.Role):
+        """Add a role that can use the force create channels button.
+
+        Parameters
+        ----------
+        role : discord.Role
+            The role to allow force create permission.
+
+        Examples
+        --------
+        `[p]forumthreadmessage forcecreate addrole @EventAdmin`
+        """
+        force_create_roles = await self.config.guild(ctx.guild).force_create_roles()
+        if role.id in force_create_roles:
+            await ctx.send(f"❌ {role.mention} already has force create permission.")
+            return
+
+        force_create_roles.append(role.id)
+        await self.config.guild(ctx.guild).force_create_roles.set(force_create_roles)
+        await ctx.send(f"✅ {role.mention} can now use the force create channels button.")
+
+    @forcecreate_group.command(name="removerole")
+    async def forcecreate_removerole(self, ctx, role: discord.Role):
+        """Remove a role from the force create channels permission list.
+
+        Parameters
+        ----------
+        role : discord.Role
+            The role to remove force create permission from.
+
+        Examples
+        --------
+        `[p]forumthreadmessage forcecreate removerole @EventAdmin`
+        """
+        force_create_roles = await self.config.guild(ctx.guild).force_create_roles()
+        if role.id not in force_create_roles:
+            await ctx.send(f"❌ {role.mention} doesn't have force create permission.")
+            return
+
+        force_create_roles.remove(role.id)
+        await self.config.guild(ctx.guild).force_create_roles.set(force_create_roles)
+        await ctx.send(f"✅ {role.mention} can no longer use the force create channels button.")
+
+    @forcecreate_group.command(name="listroles")
+    async def forcecreate_listroles(self, ctx):
+        """List all roles that can use the force create channels button.
+
+        Examples
+        --------
+        `[p]forumthreadmessage forcecreate listroles`
+        """
+        force_create_roles = await self.config.guild(ctx.guild).force_create_roles()
+        if not force_create_roles:
+            await ctx.send("No roles are currently configured for force create permissions.")
+            return
+
+        role_mentions = []
+        for role_id in force_create_roles:
+            role = ctx.guild.get_role(role_id)
+            if role:
+                role_mentions.append(role.mention)
+            else:
+                role_mentions.append(f"Unknown Role (ID: {role_id})")
+
+        await ctx.send(f"**Roles with force create permission:**\n" + "\n".join(role_mentions))
 
     @forumthreadmessage.group(name="eventmessage", aliases=["eventmsg"], invoke_without_command=True)
     async def eventmessage_group(self, ctx):
@@ -1443,11 +1827,28 @@ class ForumThreadMessage(commands.Cog):
             # Get button customization settings
             button_emoji = await self.config.guild(guild).role_button_emoji()
             button_text = await self.config.guild(guild).role_button_text()
+            force_create_enabled = await self.config.guild(guild).force_create_button_enabled()
+
+            # Check if event channels already exist
+            eventchannels_cog = self.bot.get_cog("EventChannels")
+            channels_exist = False
+            if eventchannels_cog:
+                stored = await eventchannels_cog.config.guild(guild).event_channels()
+                channels_exist = str(matching_event_id) in stored
 
             # Fetch and edit the message
             message = await thread.fetch_message(message_id)
             # Pass emoji even if None (RoleButtonView handles it)
-            view = RoleButtonView(role, emoji=button_emoji or None, label=button_text)
+            # Include force create button if enabled and channels don't exist yet
+            view = RoleButtonView(
+                role,
+                emoji=button_emoji or None,
+                label=button_text,
+                event_id=int(matching_event_id),
+                bot=self.bot,
+                config=self.config,
+                include_force_create=(force_create_enabled and not channels_exist)
+            )
             await message.edit(
                 view=view,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
@@ -1671,13 +2072,36 @@ class ForumThreadMessage(commands.Cog):
         )
 
         try:
-            # Send the initial message with suppressed notifications but allow all mentions
-            message = await thread.send(
-                formatted_initial,
-                silent=True,
-                allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
-            )
-            log.info(f"Sent initial message in thread {thread.name} ({thread.id}) in guild {guild.name}")
+            # Discord requires the thread author to post first before bots can send messages
+            # Wait up to 30 seconds for the first message (with retries)
+            message = None
+            max_retries = 10  # 10 retries = ~30 seconds
+            retry_delay = 3  # 3 seconds between retries
+
+            for attempt in range(max_retries):
+                try:
+                    # Send the initial message with suppressed notifications but allow all mentions
+                    message = await thread.send(
+                        formatted_initial,
+                        silent=True,
+                        allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
+                    )
+                    log.info(f"Sent initial message in thread {thread.name} ({thread.id}) in guild {guild.name}")
+                    break  # Success!
+                except discord.HTTPException as e:
+                    # Error 40058: Cannot message this thread until author posts first
+                    if e.code == 40058:
+                        if attempt < max_retries - 1:
+                            log.debug(f"Thread {thread.id} not ready yet (attempt {attempt + 1}/{max_retries}), waiting {retry_delay}s...")
+                            await asyncio.sleep(retry_delay)
+                        else:
+                            log.warning(f"Thread {thread.id} author never posted initial message after {max_retries * retry_delay}s")
+                            return  # Give up
+                    else:
+                        raise  # Re-raise other HTTP errors
+
+            if not message:
+                return  # Failed to send message after all retries
 
             # Store the message reference for later editing when eventchannels creates a channel
             if not delete_enabled:
