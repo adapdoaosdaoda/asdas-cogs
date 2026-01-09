@@ -1,36 +1,45 @@
 # Event Polling Cog
 
-A Discord cog for creating event scheduling polls with dropdown menus and automatic conflict detection.
+A Discord cog for creating event scheduling polls with dropdown menus, automatic conflict detection, and duration-aware scheduling.
 
 ## Features
 
-- **5 Event Types**: Party (daily), Breaking Army #1/#2, and Showdown #1/#2 (weekly)
+- **5 Event Types**: Party (daily, 10 min), Breaking Army #1/#2 (weekly, 1 hour), and Showdown #1/#2 (weekly, 1 hour)
 - **Interactive Dropdowns**: Easy-to-use select menus for day and time selection
-- **Conflict Detection**: Prevents users from selecting overlapping event times
+- **Duration-Aware Conflict Detection**: Prevents users from selecting overlapping event times based on event durations
+- **Blocked Time Slots**: Saturday 20:30-22:30 is blocked from selection
+- **Calendar View**: Real-time calendar-style display showing current winning times
+- **Color-Coded Buttons**: Green for Party, Blue for Breaking Army, Red for Showdown
 - **Editable Selections**: Users can freely change or clear their choices
-- **Results Display**: View aggregated results showing who voted for each time slot
+- **Live Updates**: Poll embed updates automatically when users vote
 
 ## Events
 
-### Party (Daily Event)
-- Occurs every day
-- Time selection: 18:00 - 24:00 (30-minute intervals)
-- No day selection needed
+### Party (Daily Event) 🎉
+- **Duration**: 10 minutes
+- **Frequency**: Daily
+- **Time selection**: 18:00 - 24:00 (30-minute intervals)
+- **No day selection needed**
+- **Button color**: Green
 
-### Breaking Army #1 & #2 (Weekly Events)
-- Occur once per week
-- First select a day (Monday-Sunday)
-- Then select a time (18:00 - 24:00, 30-minute intervals)
+### Breaking Army #1 & #2 (Weekly Events) ⚔️
+- **Duration**: 1 hour
+- **Frequency**: Once per week
+- **First select a day** (Monday-Sunday)
+- **Then select a time** (18:00 - 24:00, 30-minute intervals)
+- **Button color**: Blue
 
-### Showdown #1 & #2 (Weekly Events)
-- Occur once per week
-- First select a day (Monday-Sunday)
-- Then select a time (18:00 - 24:00, 30-minute intervals)
+### Showdown #1 & #2 (Weekly Events) 🏆
+- **Duration**: 1 hour
+- **Frequency**: Once per week
+- **First select a day** (Monday-Sunday)
+- **Then select a time** (18:00 - 24:00, 30-minute intervals)
+- **Button color**: Red
 
 ## Commands
 
 ### `[p]eventpoll create [title]`
-Create a new event scheduling poll.
+Create a new event scheduling poll with live calendar view.
 
 **Example:**
 ```
@@ -64,20 +73,60 @@ Clear a specific user's votes from a poll.
 ## Usage Flow
 
 1. Admin creates a poll using `[p]eventpoll create`
-2. Users click on event buttons to make their selections:
-   - For **Party**: Select a time directly
-   - For other events: Select a day, then a time
-3. The system checks for conflicts and prevents overlapping times
-4. Users can edit or clear their selections anytime
-5. Admin can view results using `[p]eventpoll results`
+2. Users click on color-coded event buttons to make their selections:
+   - For **Party** (🎉 Green): Select a time directly
+   - For **Breaking Army** (⚔️ Blue): Select a day, then a time
+   - For **Showdown** (🏆 Red): Select a day, then a time
+3. The system checks for duration-based conflicts and blocked times
+4. The poll embed updates automatically showing the current winning times in a calendar view
+5. Users can edit or clear their selections anytime
+6. Admin can view detailed results using `[p]eventpoll results`
 
 ## Conflict Detection
 
-The cog automatically prevents conflicting selections:
+The cog uses **duration-aware conflict detection** to prevent overlapping events:
 
-- **Party (daily)** conflicts with any other event at the same time
-- **Weekly events** only conflict if they're on the same day at the same time
-- Users receive a clear error message if they try to select a conflicting time
+### Duration Rules:
+- **Party**: 10 minutes (e.g., 20:00 Party ends at 20:10)
+- **Weekly Events**: 1 hour (e.g., 20:00 Breaking Army ends at 21:00)
+
+### Conflict Rules:
+- **Party (daily)** conflicts with any other event if their time ranges overlap
+  - Example: Party at 20:00-20:10 conflicts with Breaking Army at 20:05-21:05
+  - Example: Party at 20:00-20:10 does NOT conflict with Breaking Army at 20:10-21:10
+- **Weekly events** only conflict if they're on the same day AND time ranges overlap
+  - Example: Breaking Army #1 (Mon 20:00-21:00) does NOT conflict with Breaking Army #2 (Tue 20:00-21:00)
+  - Example: Breaking Army #1 (Mon 20:00-21:00) conflicts with Showdown #1 (Mon 20:30-21:30)
+- **Blocked time**: Saturday 20:30-22:30 cannot be selected for any event
+  - Events that would overlap with this period are prevented
+
+### Error Messages:
+Users receive clear, specific error messages when conflicts occur:
+- "This time conflicts with your Party selection"
+- "This conflicts with your Breaking Army #1 selection on Monday"
+- "This time conflicts with a blocked period (Sat 20:30-22:30)"
+
+## Calendar View
+
+The poll embed displays a **live calendar** showing the current winning times:
+
+```
+📊 Current Leading Times (votes)
+Mon: ⚔️20:00 (3v) | 🏆21:00 (2v)
+Tue: —
+Wed: 🎉20:00 (5v) | ⚔️19:00 (2v)
+Thu: —
+Fri: 🏆20:30 (4v)
+Sat: —
+Sun: ⚔️21:00 (3v)
+
+🏆 Current Winners
+🎉 Party: 20:00 (5 votes)
+⚔️ Breaking Army #1: 20:00 (3 votes)
+⚔️ Breaking Army #2: 19:00 (2 votes)
+🏆 Showdown #1: 21:00 (2 votes)
+🏆 Showdown #2: 20:30 (4 votes)
+```
 
 ## Permissions
 
@@ -90,24 +139,36 @@ The cog automatically prevents conflicting selections:
 **Creating a poll:**
 ```
 User: [p]eventpoll create This Week's Events
-Bot: *Creates interactive poll with 5 event buttons*
+Bot: *Creates interactive poll with 5 color-coded buttons and calendar view*
 ```
 
-**User voting:**
-1. Click "🎉 Party" button
+**User voting example 1 - Success:**
+1. Click "🎉 Party" (Green) button
 2. Select "20:00" from dropdown
-3. ✅ Selection saved!
+3. ✅ Selection saved! Party at 20:00 (daily)
+4. Poll calendar updates automatically
 
-**Viewing results:**
-```
-User: [p]eventpoll results 987654321
-Bot: *Shows embed with all votes organized by event and time*
-```
+**User voting example 2 - Conflict:**
+1. User has Party at 20:00 (ends 20:10)
+2. Click "⚔️ Breaking Army #1" (Blue) button
+3. Select "Monday", then "20:05"
+4. ⚠️ Conflict detected! This time conflicts with your Party selection on Monday
+5. User selects "20:10" instead
+6. ✅ Selection saved! (20:10-21:10 doesn't overlap with 20:00-20:10)
+
+**User voting example 3 - Blocked time:**
+1. Click "🏆 Showdown #1" (Red) button
+2. Select "Saturday", then "21:00"
+3. ⚠️ Conflict detected! This time conflicts with a blocked period (Sat 20:30-22:30)
+4. User selects different day or time
 
 ## Technical Details
 
 - Uses persistent Discord UI components (Views, Buttons, Select menus)
 - Stores poll data in Red-Discord Bot's Config system
+- Duration-aware time range overlap detection
+- Real-time poll embed updates when users vote
 - Supports multiple active polls per server
 - 3-minute timeout on dropdown interactions
-- Automatic conflict validation before saving selections
+- Automatic conflict and blocked time validation before saving selections
+- Horizontal button layout (all 5 buttons in one row)

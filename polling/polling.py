@@ -2,7 +2,7 @@ from redbot.core import commands, Config
 from redbot.core.bot import Red
 import discord
 from typing import Optional, Dict, List, Tuple
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 
 from .views import EventPollView
 
@@ -29,41 +29,51 @@ class EventPolling(commands.Cog):
                 "type": "daily",
                 "time_range": (18, 24),  # 18:00 to 24:00
                 "interval": 30,  # 30 minute intervals
-                "color": discord.Color.purple(),
+                "duration": 10,  # 10 minutes
+                "color": discord.Color.green(),
                 "emoji": "🎉"
             },
             "Breaking Army #1": {
                 "type": "once",
                 "time_range": (18, 24),
                 "interval": 30,
-                "color": discord.Color.red(),
+                "duration": 60,  # 1 hour
+                "color": discord.Color.blue(),
                 "emoji": "⚔️"
             },
             "Breaking Army #2": {
                 "type": "once",
                 "time_range": (18, 24),
                 "interval": 30,
-                "color": discord.Color.red(),
+                "duration": 60,  # 1 hour
+                "color": discord.Color.blue(),
                 "emoji": "⚔️"
             },
             "Showdown #1": {
                 "type": "once",
                 "time_range": (18, 24),
                 "interval": 30,
-                "color": discord.Color.orange(),
+                "duration": 60,  # 1 hour
+                "color": discord.Color.red(),
                 "emoji": "🏆"
             },
             "Showdown #2": {
                 "type": "once",
                 "time_range": (18, 24),
                 "interval": 30,
-                "color": discord.Color.orange(),
+                "duration": 60,  # 1 hour
+                "color": discord.Color.red(),
                 "emoji": "🏆"
             }
         }
 
         self.days_of_week = [
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+        ]
+
+        # Blocked time slots: Saturday 20:30 - 22:30
+        self.blocked_times = [
+            {"day": "Saturday", "start": "20:30", "end": "22:30"}
         ]
 
     @commands.group(name="eventpoll")
@@ -83,23 +93,10 @@ class EventPolling(commands.Cog):
             title = "Event Schedule Poll"
 
         # Create the poll view
-        view = EventPollView(self, ctx.guild.id, ctx.author.id, self.events, self.days_of_week)
+        view = EventPollView(self, ctx.guild.id, ctx.author.id, self.events, self.days_of_week, self.blocked_times)
 
-        # Create the initial embed
-        embed = discord.Embed(
-            title=f"📅 {title}",
-            description=(
-                "Select your preferred time for each event using the buttons below.\n\n"
-                "**Events:**\n"
-                "🎉 **Party** - Daily event (18:00-24:00)\n"
-                "⚔️ **Breaking Army #1** - Weekly event\n"
-                "⚔️ **Breaking Army #2** - Weekly event\n"
-                "🏆 **Showdown #1** - Weekly event\n"
-                "🏆 **Showdown #2** - Weekly event\n\n"
-                "⚠️ You cannot select conflicting times for different events!"
-            ),
-            color=discord.Color.blue()
-        )
+        # Create the initial embed with calendar view
+        embed = await self._create_poll_embed(title, ctx.guild.id, str(0))
         embed.set_footer(text="Click the buttons below to set your preferences")
 
         message = await ctx.send(embed=embed, view=view)
@@ -240,6 +237,117 @@ class EventPolling(commands.Cog):
             else:
                 await ctx.send(f"{user.mention} hasn't voted in this poll.")
 
+    async def _create_poll_embed(self, title: str, guild_id: int, poll_id: str) -> discord.Embed:
+        """Create calendar-style embed showing winning times"""
+        embed = discord.Embed(
+            title=f"📅 {title}",
+            description="Vote for your preferred times by clicking the buttons below!",
+            color=discord.Color.blue()
+        )
+
+        # Get poll data if it exists
+        polls = await self.config.guild_from_id(guild_id).polls()
+        selections = {}
+        if poll_id and poll_id in polls:
+            selections = polls[poll_id].get("selections", {})
+
+        if not selections:
+            # No votes yet, show event info
+            embed.add_field(
+                name="📋 Events",
+                value=(
+                    "🎉 **Party** - Daily (10 min)\n"
+                    "⚔️ **Breaking Army #1** - Weekly (1 hour)\n"
+                    "⚔️ **Breaking Army #2** - Weekly (1 hour)\n"
+                    "🏆 **Showdown #1** - Weekly (1 hour)\n"
+                    "🏆 **Showdown #2** - Weekly (1 hour)\n\n"
+                    "⚠️ Saturday 20:30-22:30 is blocked\n"
+                    "⚠️ Events cannot have conflicting times"
+                ),
+                inline=False
+            )
+            return embed
+
+        # Calculate winning times (most votes) for each event
+        winning_times = {}
+        for event_name in self.events.keys():
+            vote_counts = {}
+
+            for user_id, user_selections in selections.items():
+                if event_name in user_selections:
+                    selection = user_selections[event_name]
+
+                    if self.events[event_name]["type"] == "daily":
+                        key = ("Daily", selection["time"])
+                    else:
+                        key = (selection.get("day", "Unknown"), selection["time"])
+
+                    vote_counts[key] = vote_counts.get(key, 0) + 1
+
+            if vote_counts:
+                # Get the selection(s) with most votes
+                max_votes = max(vote_counts.values())
+                winners = [k for k, v in vote_counts.items() if v == max_votes]
+                winning_times[event_name] = (winners, max_votes)
+
+        # Create calendar view
+        calendar_lines = []
+        for day in self.days_of_week:
+            day_events = []
+
+            for event_name, event_info in self.events.items():
+                if event_name not in winning_times:
+                    continue
+
+                winners, votes = winning_times[event_name]
+                emoji = event_info["emoji"]
+
+                # Check if this event has a winner on this day
+                for winner_day, winner_time in winners:
+                    if event_info["type"] == "daily" or winner_day == day:
+                        duration = event_info["duration"]
+                        if event_info["type"] == "daily":
+                            day_events.append(f"{emoji}{winner_time} ({votes}v)")
+                        else:
+                            day_events.append(f"{emoji}{winner_time} ({votes}v)")
+
+            if day_events:
+                calendar_lines.append(f"**{day[:3]}**: {' | '.join(day_events)}")
+            else:
+                calendar_lines.append(f"**{day[:3]}**: —")
+
+        if calendar_lines:
+            embed.add_field(
+                name="📊 Current Leading Times (votes)",
+                value="\n".join(calendar_lines),
+                inline=False
+            )
+
+        # Add summary of each event
+        summary_lines = []
+        for event_name in self.events.keys():
+            emoji = self.events[event_name]["emoji"]
+            if event_name in winning_times:
+                winners, votes = winning_times[event_name]
+                if self.events[event_name]["type"] == "daily":
+                    time_str = winners[0][1]
+                    summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                else:
+                    winner_strs = [f"{day} {time}" for day, time in winners]
+                    summary_lines.append(f"{emoji} **{event_name}**: {winner_strs[0]} ({votes} votes)")
+            else:
+                summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
+
+        embed.add_field(
+            name="🏆 Current Winners",
+            value="\n".join(summary_lines),
+            inline=False
+        )
+
+        embed.set_footer(text=f"Total voters: {len(selections)}")
+
+        return embed
+
     def generate_time_options(self, start_hour: int = 18, end_hour: int = 24, interval: int = 30) -> List[str]:
         """Generate time options in HH:MM format"""
         times = []
@@ -256,6 +364,45 @@ class EventPolling(commands.Cog):
 
         return times
 
+    def _time_ranges_overlap(self, start1: dt_time, end1: dt_time, start2: dt_time, end2: dt_time) -> bool:
+        """Check if two time ranges overlap"""
+        return start1 < end2 and start2 < end1
+
+    def _get_event_time_range(self, event_name: str, start_time_str: str) -> Tuple[dt_time, dt_time]:
+        """Get the start and end time for an event based on its duration"""
+        start_time = datetime.strptime(start_time_str, "%H:%M").time()
+        duration = self.events[event_name]["duration"]
+
+        # Convert to datetime for calculation
+        start_dt = datetime.combine(datetime.today(), start_time)
+        end_dt = start_dt + timedelta(minutes=duration)
+
+        return start_time, end_dt.time()
+
+    def is_time_blocked(self, day: Optional[str], time_str: str, event_name: str) -> Tuple[bool, Optional[str]]:
+        """Check if a time is in the blocked times list"""
+        if not day:
+            # For daily events, check all days
+            for blocked in self.blocked_times:
+                blocked_start = datetime.strptime(blocked["start"], "%H:%M").time()
+                blocked_end = datetime.strptime(blocked["end"], "%H:%M").time()
+                event_start, event_end = self._get_event_time_range(event_name, time_str)
+
+                if self._time_ranges_overlap(event_start, event_end, blocked_start, blocked_end):
+                    return True, f"This time conflicts with a blocked period on {blocked['day']}"
+        else:
+            # For weekly events, only check the selected day
+            for blocked in self.blocked_times:
+                if blocked["day"] == day:
+                    blocked_start = datetime.strptime(blocked["start"], "%H:%M").time()
+                    blocked_end = datetime.strptime(blocked["end"], "%H:%M").time()
+                    event_start, event_end = self._get_event_time_range(event_name, time_str)
+
+                    if self._time_ranges_overlap(event_start, event_end, blocked_start, blocked_end):
+                        return True, f"This time conflicts with a blocked period (Sat 20:30-22:30)"
+
+        return False, None
+
     def check_time_conflict(
         self,
         user_selections: Dict,
@@ -268,8 +415,13 @@ class EventPolling(commands.Cog):
         Returns:
             (has_conflict: bool, conflict_message: Optional[str])
         """
-        # For Party (daily event), we need to check if the time conflicts with any other event
-        # For weekly events, we need to check if day+time conflicts
+        # First check if the time is blocked
+        is_blocked, block_msg = self.is_time_blocked(new_day, new_time, event_name)
+        if is_blocked:
+            return True, block_msg
+
+        # Get time range for new event
+        new_start, new_end = self._get_event_time_range(event_name, new_time)
 
         for existing_event, selection in user_selections.items():
             if existing_event == event_name:
@@ -278,28 +430,26 @@ class EventPolling(commands.Cog):
 
             existing_time = selection["time"]
             existing_day = selection.get("day")
+            existing_start, existing_end = self._get_event_time_range(existing_event, existing_time)
 
-            # Convert times to comparable format
-            new_time_obj = datetime.strptime(new_time, "%H:%M").time()
-            existing_time_obj = datetime.strptime(existing_time, "%H:%M").time()
-
-            # Party is daily, so it conflicts with any event on any day at the same time
+            # Party is daily, so it conflicts with any event on any day if times overlap
             if self.events[event_name]["type"] == "daily":
-                # Party conflicts with all events at the same time
-                if new_time == existing_time:
+                # Party conflicts with all events if time ranges overlap
+                if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
                     return True, f"This time conflicts with your {existing_event} selection"
 
             elif self.events[existing_event]["type"] == "daily":
-                # Any event conflicts with Party if same time
-                if new_time == existing_time:
+                # Any event conflicts with Party if time ranges overlap
+                if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
                     if new_day:
                         return True, f"This time conflicts with your Party selection on {new_day}"
                     else:
                         return True, f"This time conflicts with your Party selection"
 
             else:
-                # Both are weekly events - only conflict if same day and same time
-                if new_day and existing_day and new_day == existing_day and new_time == existing_time:
-                    return True, f"This conflicts with your {existing_event} selection on {existing_day}"
+                # Both are weekly events - only conflict if same day and time ranges overlap
+                if new_day and existing_day and new_day == existing_day:
+                    if self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                        return True, f"This conflicts with your {existing_event} selection on {existing_day}"
 
         return False, None
