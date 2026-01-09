@@ -1,0 +1,15 @@
+{
+    "author": ["adapdoaosdaoda"],
+    "description": "Event scheduling polling system with dropdown menus and conflict detection. Allows users to vote for preferred times for various events (Party, Breaking Army, Showdown) while preventing conflicting time selections.",
+    "install_msg": "Thank you for installing EventPolling! Use `[p]eventpoll create` to create your first event poll.",
+    "short": "Event scheduling polls with conflict detection",
+    "tags": [
+        "polling",
+        "events",
+        "scheduling",
+        "dropdown",
+        "utility"
+    ],
+    "type": "COG",
+    "end_user_data_statement": "This cog stores user selections for event scheduling polls. Users can clear their data by having an admin use the `[p]eventpoll clear` command."
+}
