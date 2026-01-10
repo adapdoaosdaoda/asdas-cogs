@@ -32,7 +32,7 @@ class EventPolling(commands.Cog):
             "Hero's Realm": {
                 "type": "fixed_days",
                 "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
-                "time_range": (18, 24),
+                "time_range": (17, 26),  # 17:00 to 02:00 (26 = 02:00 next day)
                 "interval": 30,
                 "duration": 30,  # 30 minutes
                 "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
@@ -43,7 +43,7 @@ class EventPolling(commands.Cog):
             "Sword Trial": {
                 "type": "fixed_days",
                 "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
-                "time_range": (18, 24),
+                "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,
                 "duration": 30,  # 30 minutes
                 "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
@@ -53,7 +53,7 @@ class EventPolling(commands.Cog):
             },
             "Party": {
                 "type": "daily",
-                "time_range": (18, 24),  # 18:00 to 24:00
+                "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,  # 30 minute intervals
                 "duration": 10,  # 10 minutes
                 "slots": 1,  # Single time slot
@@ -63,7 +63,7 @@ class EventPolling(commands.Cog):
             },
             "Breaking Army": {
                 "type": "once",
-                "time_range": (18, 24),
+                "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
@@ -73,7 +73,7 @@ class EventPolling(commands.Cog):
             },
             "Showdown": {
                 "type": "once",
-                "time_range": (18, 24),
+                "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
@@ -622,7 +622,7 @@ class EventPolling(commands.Cog):
         """Create a visual Unicode calendar table showing the weekly schedule"""
         # Build a data structure: {time: {day: [(priority, emoji)]}}
         schedule = {}
-        times = self.generate_time_options(18, 24, 30)
+        times = self.generate_time_options(17, 26, 30)
 
         for time_slot in times:
             schedule[time_slot] = {day: [] for day in self.days_of_week}
@@ -740,7 +740,7 @@ class EventPolling(commands.Cog):
         winning_times = {}
 
         # Generate all possible times
-        all_times = self.generate_time_options(18, 24, 30)
+        all_times = self.generate_time_options(17, 26, 30)
 
         for event_name, event_info in self.events.items():
             num_slots = event_info["slots"]
@@ -843,13 +843,22 @@ class EventPolling(commands.Cog):
         Returns:
             Points: 5 for exact match, 3 for ±30min, 1 for ±60min, 0 otherwise
         """
-        from datetime import datetime, timedelta
+        # Convert time strings to minutes since midnight (handles wrap-around)
+        def time_to_minutes(time_str: str) -> int:
+            """Convert HH:MM to minutes since midnight"""
+            parts = time_str.split(":")
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            # Handle times after midnight (00:00, 01:00, etc.) as next day
+            if hours < 17:  # Times 00:00-16:59 are considered next day
+                hours += 24
+            return hours * 60 + minutes
 
-        voted_dt = datetime.strptime(voted_time, "%H:%M")
-        target_dt = datetime.strptime(target_time, "%H:%M")
+        voted_mins = time_to_minutes(voted_time)
+        target_mins = time_to_minutes(target_time)
 
         # Calculate absolute difference in minutes
-        diff_minutes = abs((target_dt - voted_dt).total_seconds() / 60)
+        diff_minutes = abs(target_mins - voted_mins)
 
         if diff_minutes == 0:
             return 5  # Exact match
@@ -860,26 +869,28 @@ class EventPolling(commands.Cog):
         else:
             return 0  # Too far off
 
-    def generate_time_options(self, start_hour: int = 18, end_hour: int = 24, interval: int = 30, duration: int = 0) -> List[str]:
+    def generate_time_options(self, start_hour: int = 17, end_hour: int = 26, interval: int = 30, duration: int = 0) -> List[str]:
         """Generate time options in HH:MM format
 
         Args:
-            start_hour: Starting hour (default 18)
-            end_hour: Ending hour (default 24)
+            start_hour: Starting hour (default 17)
+            end_hour: Ending hour (default 26, which represents 02:00 next day)
             interval: Interval in minutes (default 30)
-            duration: Event duration in minutes (default 0). If > 0, filters out times that would extend past midnight.
+            duration: Event duration in minutes (default 0). If > 0, filters out times that would extend past end_hour.
 
         Returns:
-            List of time strings in HH:MM format
+            List of time strings in HH:MM format (handles times past midnight as 00:00, 00:30, etc.)
         """
         times = []
         current_hour = start_hour
         current_minute = 0
 
-        while current_hour < end_hour or (current_hour == end_hour and current_minute == 0):
-            time_str = f"{current_hour:02d}:{current_minute:02d}"
+        while current_hour < end_hour:
+            # Convert hours >= 24 to next-day format (24 -> 00, 25 -> 01, etc.)
+            display_hour = current_hour if current_hour < 24 else current_hour - 24
+            time_str = f"{display_hour:02d}:{current_minute:02d}"
 
-            # If duration is specified, check if event would complete before midnight
+            # If duration is specified, check if event would complete before end_hour
             if duration > 0:
                 # Calculate end time
                 end_minute = current_minute + duration
@@ -888,8 +899,8 @@ class EventPolling(commands.Cog):
                     end_minute -= 60
                     end_hour_calc += 1
 
-                # Only include time if event ends at or before midnight (24:00)
-                if end_hour_calc < 24 or (end_hour_calc == 24 and end_minute == 0):
+                # Only include time if event ends at or before end_hour
+                if end_hour_calc < end_hour or (end_hour_calc == end_hour and end_minute == 0):
                     times.append(time_str)
             else:
                 times.append(time_str)

@@ -191,12 +191,13 @@ class CalendarRenderer:
 
                 schedule[time_str][short_day].append((priority, event_name, slot_num))
 
-        # Generate all time slots from 18:00 to 24:00 (30 min intervals)
+        # Generate all time slots from 17:00 to 02:00 (30 min intervals)
         all_times = []
-        hour = 18
+        hour = 17
         minute = 0
-        while hour < 24:
-            all_times.append(f"{hour:02d}:{minute:02d}")
+        while hour < 26:  # 26 represents 02:00 next day
+            display_hour = hour if hour < 24 else hour - 24
+            all_times.append(f"{display_hour:02d}:{minute:02d}")
             minute += 30
             if minute >= 60:
                 minute = 0
