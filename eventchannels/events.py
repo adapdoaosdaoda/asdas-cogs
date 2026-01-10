@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 import discord
 from redbot.core import commands
@@ -168,6 +169,87 @@ class EventsMixin:
                 log.info(f"No matching event found for thread '{thread.name}' on attempt {attempt}. Available events: {event_names}. Will retry in {retry_delays[attempt]}s")
             else:
                 log.warning(f"⚠️ No matching event found for thread '{thread.name}' after {attempt} attempts. Available events: {event_names}")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        """Handle reactions on deletion warning messages to extend deletion time."""
+        # Ignore bot reactions
+        if payload.user_id == self.bot.user.id:
+            return
+
+        # Check if this is the extend emoji (⏰)
+        if str(payload.emoji) != "⏰":
+            return
+
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+
+        # Check if this reaction is on a deletion warning message
+        async with self._config_lock:
+            deletion_extensions = await self.config.guild(guild).deletion_extensions()
+
+            # Find which event this message belongs to
+            event_id_str = None
+            for event_id, data in deletion_extensions.items():
+                if data.get("warning_message_id") == payload.message_id:
+                    event_id_str = event_id
+                    break
+
+            if not event_id_str:
+                return  # Not a deletion warning message
+
+            # Get the current deletion time
+            current_delete_time = datetime.fromtimestamp(
+                deletion_extensions[event_id_str]["delete_time"],
+                tz=timezone.utc
+            )
+
+            # Extend by 4 hours
+            from datetime import timedelta
+            new_delete_time = current_delete_time + timedelta(hours=4)
+
+            # Update the stored deletion time
+            deletion_extensions[event_id_str]["delete_time"] = new_delete_time.timestamp()
+            await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
+
+            log.info(f"Extended deletion time for event {event_id_str} by 4 hours to {new_delete_time}")
+
+        # Get the channel and update the warning message
+        text_channel_id = deletion_extensions[event_id_str].get("text_channel_id")
+        if text_channel_id:
+            text_channel = guild.get_channel(text_channel_id)
+            if text_channel:
+                try:
+                    warning_message = await text_channel.fetch_message(payload.message_id)
+                    # Get the user who reacted
+                    user = guild.get_member(payload.user_id)
+                    user_mention = user.mention if user else "Someone"
+
+                    # Update the message to show the extension
+                    time_until_deletion = new_delete_time - datetime.now(timezone.utc)
+                    hours = int(time_until_deletion.total_seconds() // 3600)
+                    minutes = int((time_until_deletion.total_seconds() % 3600) // 60)
+
+                    extension_msg = f"\n\n⏰ **Extended by {user_mention}**: Deletion postponed by 4 hours. Channels will now be deleted in approximately {hours}h {minutes}m."
+
+                    # Check if message already has an extension notification
+                    if "⏰ **Extended by" in warning_message.content:
+                        # Find the last extension and replace it
+                        lines = warning_message.content.split("\n\n")
+                        # Keep only the first line (original warning)
+                        original_warning = lines[0]
+                        await warning_message.edit(content=f"{original_warning}{extension_msg}")
+                    else:
+                        await warning_message.edit(content=f"{warning_message.content}{extension_msg}")
+
+                    log.info(f"Updated deletion warning message with extension notification")
+                except discord.NotFound:
+                    log.warning(f"Could not find deletion warning message {payload.message_id}")
+                except discord.Forbidden:
+                    log.warning(f"Could not edit deletion warning message - missing permissions")
+                except Exception as e:
+                    log.error(f"Error updating deletion warning message: {e}")
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
