@@ -239,22 +239,25 @@ class DaySelectView(discord.ui.View):
         self.days = days
 
         # Create 7 grey buttons for each day of the week
+        # Discord allows max 5 buttons per row, so split across 2 rows
         for idx, day in enumerate(days):
             # Use abbreviated day names for button labels (3 letters)
+            # Row 0: Mon-Fri (5 buttons), Row 1: Sat-Sun (2 buttons)
+            button_row = 0 if idx < 5 else 1
             button = discord.ui.Button(
                 label=day[:3],  # Mon, Tue, Wed, etc.
                 style=discord.ButtonStyle.secondary,  # Grey
-                row=0  # All day buttons in first row
+                row=button_row
             )
             button.callback = self._create_day_callback(day)
             self.add_item(button)
 
-        # Add cancel button in second row
+        # Add cancel button in third row
         cancel_btn = discord.ui.Button(
             label="Cancel",
             style=discord.ButtonStyle.danger,
             emoji="❌",
-            row=1
+            row=2
         )
         cancel_btn.callback = self._cancel
         self.add_item(cancel_btn)

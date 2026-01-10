@@ -93,6 +93,10 @@ class EventPolling(commands.Cog):
             {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
+        # Timezone display - customize this to match your server's timezone
+        # Examples: "UTC", "UTC+1", "UTC-5", "EST", "PST", "Server Time"
+        self.timezone_display = "Server Time"  # Change this to your timezone (e.g., "UTC+1")
+
     @commands.group(name="eventpoll")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
@@ -629,7 +633,7 @@ class EventPolling(commands.Cog):
 
         # Header row with timezone
         lines.append("```")
-        lines.append("All times in Server Time")
+        lines.append(f"All times in {self.timezone_display}")
         lines.append("")
         header = "Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun"
         lines.append(header)
@@ -662,7 +666,8 @@ class EventPolling(commands.Cog):
                     else:
                         # Empty cell - use braille blank pattern to match emoji width
                         # ⠀ (braille blank U+2800) +   (hair space U+200A) + ⠀ (braille blank)
-                        row += " ⠀ ⠀ │"
+                        # Pattern: " ⠀ ⠀  │" = 1 + 2 + 2 spaces = 5 chars (matches single emoji cell)
+                        row += " ⠀ ⠀  │"
                 lines.append(row)
 
         lines.append("```")

@@ -62,6 +62,29 @@ A Discord cog for creating event scheduling polls with dropdown menus, automatic
 - **Not selectable** - This is a blocked time period
 - **Appears in calendar** as 🏰 during blocked hours
 
+## Configuration
+
+### Timezone Display
+You can customize the timezone display shown in calendar headers by editing `polling.py`:
+
+```python
+# In the __init__ method, around line 98:
+self.timezone_display = "Server Time"  # Change this to your timezone
+```
+
+**Examples:**
+- `"UTC"` - Coordinated Universal Time
+- `"UTC+1"` - Central European Time
+- `"UTC-5"` - Eastern Standard Time
+- `"EST"` - Eastern Standard Time
+- `"PST"` - Pacific Standard Time
+- `"Server Time"` - Generic server time (default)
+
+The timezone appears at the top of all calendar displays:
+```
+All times in UTC+1
+```
+
 ## Commands
 
 ### `[p]eventpoll create [title]`
