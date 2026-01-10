@@ -3,8 +3,11 @@ from redbot.core.bot import Red
 import discord
 from typing import Optional, Dict, List, Tuple
 from datetime import datetime, time as dt_time, timedelta
+import os
+import tempfile
 
 from .views import EventPollView
+from .calendar_renderer import CalendarRenderer
 
 
 class EventPolling(commands.Cog):
@@ -96,6 +99,49 @@ class EventPolling(commands.Cog):
         # Timezone display - customize this to match your server's timezone
         # Examples: "UTC", "UTC+1", "UTC-5", "EST", "PST", "Server Time"
         self.timezone_display = "Server Time"  # Change this to your timezone (e.g., "UTC+1")
+
+        # Initialize calendar renderer
+        self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+
+    def _prepare_calendar_data(self, winning_times: Dict) -> Dict[str, Dict[str, str]]:
+        """Convert winning_times format to calendar renderer format
+
+        Args:
+            winning_times: {event_name: {slot_index: ([(day, time), ...], votes)}}
+
+        Returns:
+            {event_name: {day: time}}
+        """
+        calendar_data = {}
+
+        for event_name, event_info in self.events.items():
+            calendar_data[event_name] = {}
+            event_slots = winning_times.get(event_name, {})
+
+            for slot_index, slot_winners in event_slots.items():
+                winners, votes = slot_winners
+
+                for winner_day, winner_time in winners:
+                    if event_info["type"] == "daily":
+                        # Daily events appear on all days
+                        for day in self.days_of_week:
+                            calendar_data[event_name][day] = winner_time
+                    elif event_info["type"] == "fixed_days":
+                        # Fixed-day events
+                        if event_info["slots"] > 1:
+                            # Multi-slot: each slot corresponds to one specific day
+                            if slot_index < len(event_info["days"]):
+                                specific_day = event_info["days"][slot_index]
+                                calendar_data[event_name][specific_day] = winner_time
+                        else:
+                            # Single slot: appears on all configured days
+                            for day in event_info["days"]:
+                                calendar_data[event_name][day] = winner_time
+                    else:
+                        # Weekly events appear only on their specific day
+                        calendar_data[event_name][winner_day] = winner_time
+
+        return calendar_data
 
     @commands.group(name="eventpoll")
     @commands.guild_only()
@@ -295,11 +341,11 @@ class EventPolling(commands.Cog):
 
         poll_data = polls[poll_id]
 
-        # Create calendar embed
-        embed = await self._create_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        # Create calendar embed and image
+        embed, calendar_file = await self._create_calendar_embed(poll_data, ctx.guild.id, poll_id)
 
-        # Send the calendar message
-        calendar_msg = await ctx.send(embed=embed)
+        # Send the calendar message with image
+        calendar_msg = await ctx.send(embed=embed, file=calendar_file)
 
         # Store calendar message ID in poll data for auto-updating
         async with self.config.guild(ctx.guild).polls() as polls:
@@ -313,8 +359,12 @@ class EventPolling(commands.Cog):
 
         await ctx.tick()
 
-    async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> discord.Embed:
-        """Create a calendar-only embed with legend and poll link"""
+    async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
+        """Create a calendar-only embed with image and poll link
+
+        Returns:
+            Tuple of (embed, file) where file is the calendar image
+        """
         title = poll_data["title"]
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
@@ -368,14 +418,17 @@ class EventPolling(commands.Cog):
                     winners = [k for k, v in vote_counts.items() if v == max_votes]
                     winning_times[event_name][slot_index] = (winners, max_votes)
 
-        # Create calendar table
-        calendar_table = self._create_calendar_table(winning_times)
-        if calendar_table:
-            embed.add_field(
-                name="📊 Weekly Schedule",
-                value=calendar_table,
-                inline=False
-            )
+        # Generate calendar image
+        calendar_data = self._prepare_calendar_data(winning_times)
+        image_buffer = self.calendar_renderer.render_calendar(
+            calendar_data,
+            self.events,
+            self.blocked_times
+        )
+
+        # Create file attachment
+        calendar_file = discord.File(image_buffer, filename="calendar.png")
+        embed.set_image(url="attachment://calendar.png")
 
         # Add legend
         legend = (
@@ -434,7 +487,7 @@ class EventPolling(commands.Cog):
 
         embed.set_footer(text=f"Total voters: {len(selections)}")
 
-        return embed
+        return embed, calendar_file
 
     async def _update_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
         """Update all calendar messages associated with this poll"""
@@ -445,8 +498,8 @@ class EventPolling(commands.Cog):
                 channel = guild.get_channel(cal_msg_data["channel_id"])
                 if channel:
                     message = await channel.fetch_message(cal_msg_data["message_id"])
-                    updated_embed = await self._create_calendar_embed(poll_data, guild.id, poll_id)
-                    await message.edit(embed=updated_embed)
+                    updated_embed, calendar_file = await self._create_calendar_embed(poll_data, guild.id, poll_id)
+                    await message.edit(embed=updated_embed, attachments=[calendar_file])
             except Exception:
                 # Silently fail if we can't update a calendar message
                 pass
@@ -833,11 +886,18 @@ class EventPolling(commands.Cog):
                     new_event_days = self.events[event_name]["days"]
 
                     if existing_event_type == "fixed_days":
-                        # Check if any days overlap
-                        existing_event_days = self.events[existing_event]["days"]
-                        shared_days = set(new_event_days) & set(existing_event_days)
-                        if shared_days and self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
-                            return True, f"This time conflicts with your {slot_label} selection"
+                        # For multi-slot fixed-day events, compare the specific days for each slot
+                        # (new_day is the day for the slot being selected, existing_day is from the existing slot)
+                        if new_day and existing_day:
+                            # Both have specific days - only conflict if same day and times overlap
+                            if new_day == existing_day and self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                                return True, f"This time conflicts with your {slot_label} selection"
+                        else:
+                            # Fallback to checking event day lists if specific days aren't set
+                            existing_event_days = self.events[existing_event]["days"]
+                            shared_days = set(new_event_days) & set(existing_event_days)
+                            if shared_days and self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                                return True, f"This time conflicts with your {slot_label} selection"
                     elif existing_event_type == "once":
                         # Check if the existing weekly event's day is in our fixed days
                         if existing_day in new_event_days:
