@@ -34,7 +34,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             deletion_hours=4,  # Default deletion time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
             event_start_message="{role} The event is starting now!",  # Message sent at event start
-            deletion_warning_message="⚠️ These channels will be deleted in 15 minutes.",  # Warning before deletion
+            deletion_warning_message="⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours.",  # Warning before deletion
             divider_enabled=True,  # Enable divider channel by default
             divider_name="━━━━━━ EVENT CHANNELS ━━━━━━",  # Default divider name
             divider_channel_id=None,  # Stores the divider channel ID

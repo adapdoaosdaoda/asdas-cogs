@@ -496,61 +496,6 @@ class HandlersMixin:
                 except Exception as e:
                     log.error(f"Error checking message history for deletion warning in {text_channel.name}: {e}")
 
-            # Lock channels - remove send_messages permission for the role
-            # Refetch channels and role to ensure we have current objects
-            stored_data = await self.config.guild(guild).event_channels()
-            event_data = stored_data.get(str(event.id))
-            if event_data:
-                text_channel = guild.get_channel(event_data.get("text"))
-                voice_channel_ids = event_data.get("voice", [])
-                # Handle both old format (single ID) and new format (list of IDs)
-                if isinstance(voice_channel_ids, int):
-                    voice_channel_ids = [voice_channel_ids]
-                voice_channels = [guild.get_channel(vc_id) for vc_id in voice_channel_ids if guild.get_channel(vc_id)]
-                role = guild.get_role(event_data.get("role"))
-
-                if text_channel and voice_channels and role:
-                    try:
-                        locked_overwrites = {
-                            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                            guild.me: discord.PermissionOverwrite(
-                                view_channel=True,
-                                send_messages=True,
-                                manage_channels=True,
-                            ),
-                            role: discord.PermissionOverwrite(
-                                view_channel=True,  # Maintain view permission
-                                send_messages=False,  # Locked
-                                connect=True,  # Maintain connect permission
-                                speak=False,  # Locked in voice
-                            ),
-                        }
-
-                        # Add whitelisted roles to locked overwrites (keep view but lock send/speak)
-                        whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
-                        for whitelisted_role_id in whitelisted_role_ids:
-                            whitelisted_role = guild.get_role(whitelisted_role_id)
-                            if whitelisted_role:
-                                locked_overwrites[whitelisted_role] = discord.PermissionOverwrite(
-                                    view_channel=True,
-                                    send_messages=False,  # Locked
-                                    connect=True,
-                                    speak=False,  # Locked in voice
-                                )
-
-                        await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                        for voice_channel in voice_channels:
-                            await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                        log.info(f"Locked {len(voice_channels) + 1} channel(s) for event '{event.name}'")
-                    except discord.Forbidden:
-                        log.warning(f"Could not lock channels for event '{event.name}' - missing permissions")
-                    except Exception as e:
-                        log.error(f"Failed to lock channels for event '{event.name}': {e}")
-                else:
-                    log.warning(f"Could not lock channels for event '{event.name}' - channels not found")
-            else:
-                log.warning(f"Could not lock channels for event '{event.name}' - event data not found")
-
             # ---------- Cleanup ----------
 
             # Wait until deletion time, but check for extensions
@@ -1051,54 +996,6 @@ class HandlersMixin:
                             log.warning(f"Force create: Could not send deletion warning - missing permissions")
                 except Exception as e:
                     log.error(f"Force create: Error checking message history: {e}")
-
-            # Lock channels
-            stored_data = await self.config.guild(guild).event_channels()
-            event_data = stored_data.get(str(event.id))
-            if event_data:
-                text_channel = guild.get_channel(event_data.get("text"))
-                voice_channel_ids = event_data.get("voice", [])
-                if isinstance(voice_channel_ids, int):
-                    voice_channel_ids = [voice_channel_ids]
-                voice_channels = [guild.get_channel(vc_id) for vc_id in voice_channel_ids if guild.get_channel(vc_id)]
-                role = guild.get_role(event_data.get("role"))
-
-                if text_channel and voice_channels and role:
-                    try:
-                        locked_overwrites = {
-                            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                            guild.me: discord.PermissionOverwrite(
-                                view_channel=True,
-                                send_messages=True,
-                                manage_channels=True,
-                            ),
-                            role: discord.PermissionOverwrite(
-                                view_channel=True,
-                                send_messages=False,
-                                connect=True,
-                                speak=False,
-                            ),
-                        }
-
-                        whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
-                        for whitelisted_role_id in whitelisted_role_ids:
-                            whitelisted_role = guild.get_role(whitelisted_role_id)
-                            if whitelisted_role:
-                                locked_overwrites[whitelisted_role] = discord.PermissionOverwrite(
-                                    view_channel=True,
-                                    send_messages=False,
-                                    connect=True,
-                                    speak=False,
-                                )
-
-                        await text_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                        for voice_channel in voice_channels:
-                            await voice_channel.edit(overwrites=locked_overwrites, reason="Locking channel before deletion")
-                        log.info(f"Force create: Locked channels")
-                    except discord.Forbidden:
-                        log.warning(f"Force create: Could not lock channels - missing permissions")
-                    except Exception as e:
-                        log.error(f"Force create: Failed to lock channels: {e}")
 
             # Wait until deletion time, but check for extensions
             while True:
