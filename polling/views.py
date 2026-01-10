@@ -2,6 +2,8 @@ import discord
 from typing import Optional, Dict, List
 from datetime import datetime
 
+from .modals import EventVotingModal
+
 
 class EventPollView(discord.ui.View):
     """Main view with buttons for each event type"""
@@ -79,48 +81,11 @@ class EventPollView(discord.ui.View):
         poll_data = polls[poll_id]
         selections = poll_data.get("selections", {})
 
-        # Calculate winning times (same logic as _create_poll_embed)
-        winning_times = {}
-        for event_name, event_info in self.events.items():
-            num_slots = event_info["slots"]
-            winning_times[event_name] = {}
-
-            for slot_index in range(num_slots):
-                vote_counts = {}
-
-                for user_id, user_selections in selections.items():
-                    if event_name in user_selections:
-                        selection = user_selections[event_name]
-
-                        # Handle both list (multi-slot) and dict (single-slot) formats
-                        if isinstance(selection, list):
-                            if slot_index < len(selection) and selection[slot_index]:
-                                slot_data = selection[slot_index]
-                                if event_info["type"] == "daily":
-                                    key = ("Daily", slot_data["time"])
-                                elif event_info["type"] == "fixed_days":
-                                    key = ("Fixed", slot_data["time"])
-                                else:
-                                    key = (slot_data.get("day", "Unknown"), slot_data["time"])
-                                vote_counts[key] = vote_counts.get(key, 0) + 1
-                        else:
-                            # Legacy single-slot format
-                            if slot_index == 0:
-                                if event_info["type"] == "daily":
-                                    key = ("Daily", selection["time"])
-                                elif event_info["type"] == "fixed_days":
-                                    key = ("Fixed", selection["time"])
-                                else:
-                                    key = (selection.get("day", "Unknown"), selection["time"])
-                                vote_counts[key] = vote_counts.get(key, 0) + 1
-
-                if vote_counts:
-                    max_votes = max(vote_counts.values())
-                    winners = [k for k, v in vote_counts.items() if v == max_votes]
-                    winning_times[event_name][slot_index] = (winners, max_votes)
+        # Calculate winning times using weighted point system
+        winning_times = self.cog._calculate_winning_times_weighted(selections)
 
         # Format results using cog's method
-        results_text = self.cog.format_results_summary(winning_times, selections)
+        results_text = self.cog.format_results_summary_weighted(winning_times, selections)
 
         # Send results as ephemeral message
         await interaction.response.send_message(
@@ -146,101 +111,20 @@ class EventPollView(discord.ui.View):
             user_id_str = str(interaction.user.id)
             user_selections = poll_data["selections"].get(user_id_str, {})
 
-            # Check event type
+            # Open modal for this event
             event_info = self.events[event_name]
+            modal = EventVotingModal(
+                cog=self.cog,
+                guild_id=self.guild_id,
+                poll_id=poll_id,
+                user_id=interaction.user.id,
+                event_name=event_name,
+                event_info=event_info,
+                user_selections=user_selections,
+                events=self.events
+            )
 
-            if event_info["type"] == "daily":
-                # Daily event - show time selector directly (single slot, no day)
-                view = TimeSelectView(
-                    cog=self.cog,
-                    guild_id=self.guild_id,
-                    poll_id=poll_id,
-                    user_id=interaction.user.id,
-                    event_name=event_name,
-                    day=None,  # No day for daily events
-                    slot_index=0,  # Single slot
-                    user_selections=user_selections,
-                    events=self.events
-                )
-                await interaction.response.send_message(
-                    f"Select a time for **{event_name}** (18:00-24:00):",
-                    view=view,
-                    ephemeral=True
-                )
-            elif event_info["type"] == "fixed_days":
-                # Fixed-day event - check if multi-slot
-                if event_info["slots"] > 1:
-                    # Multi-slot fixed-day event - show slot selector (each slot = one day)
-                    view = FixedDaySlotSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_message(
-                        f"Select a slot for **{event_name}** ({event_info['slots']} slots available):",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Single slot fixed-day event - show time selector directly
-                    view = TimeSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        day=None,  # No day selection for fixed-day events
-                        slot_index=0,  # Single slot
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    days_str = ", ".join([d[:3] for d in event_info["days"]])
-                    await interaction.response.send_message(
-                        f"Select a time for **{event_name}** on {days_str} (18:00-24:00):",
-                        view=view,
-                        ephemeral=True
-                    )
-            else:
-                # Weekly event - check if multi-slot
-                if event_info["slots"] > 1:
-                    # Show slot selector first
-                    view = SlotSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events,
-                        days=self.days
-                    )
-                    await interaction.response.send_message(
-                        f"Select slot for **{event_name}** (2 slots available):",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Single slot weekly event - show day selector
-                    view = DaySelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        slot_index=0,
-                        user_selections=user_selections,
-                        events=self.events,
-                        days=self.days
-                    )
-                    await interaction.response.send_message(
-                        f"Select a day for **{event_name}**:",
-                        view=view,
-                        ephemeral=True
-                    )
+            await interaction.response.send_modal(modal)
 
         return callback
 

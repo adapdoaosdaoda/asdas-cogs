@@ -44,13 +44,23 @@ class CalendarRenderer:
         "Guild Wars": (156, 163, 175)      # Gray
     }
 
-    # Layout constants
-    CELL_WIDTH = 90
-    CELL_HEIGHT = 40
-    TIME_COL_WIDTH = 70
-    HEADER_HEIGHT = 40
-    LEGEND_HEIGHT = 110
-    PADDING = 10
+    # Layout constants (increased for higher resolution)
+    CELL_WIDTH = 120
+    CELL_HEIGHT = 50
+    TIME_COL_WIDTH = 90
+    HEADER_HEIGHT = 50
+    FOOTER_HEIGHT = 40
+    PADDING = 15
+
+    # Event name abbreviations for display
+    EVENT_ABBREV = {
+        "Hero's Realm": "Hero's Realm",
+        "Sword Trial": "Sword Trial",
+        "Party": "Party",
+        "Breaking Army": "Breaking Army",
+        "Showdown": "Showdown",
+        "Guild Wars": "Guild Wars"
+    }
 
     def __init__(self, timezone: str = "UTC"):
         """Initialize calendar renderer
@@ -60,12 +70,12 @@ class CalendarRenderer:
         """
         self.timezone = timezone
 
-        # Try to load a nice font, fallback to default
+        # Try to load a nice font with larger sizes for better clarity
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 17)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -76,7 +86,8 @@ class CalendarRenderer:
         self,
         winning_times: Dict[str, Dict[str, str]],
         events: Dict,
-        blocked_times: List[Dict] = None
+        blocked_times: List[Dict] = None,
+        total_voters: int = 0
     ) -> io.BytesIO:
         """Render calendar as PNG image
 
@@ -90,8 +101,8 @@ class CalendarRenderer:
         """
         if blocked_times is None:
             blocked_times = [
-                {"day": "Saturday", "start": "20:30", "end": "22:30"},
-                {"day": "Sunday", "start": "20:30", "end": "22:30"}
+                {"day": "Saturday", "start": "20:30", "end": "22:00"},
+                {"day": "Sunday", "start": "20:30", "end": "22:00"}
             ]
 
         # Build schedule data structure
@@ -102,7 +113,7 @@ class CalendarRenderer:
         time_slots = sorted(schedule.keys())
 
         width = self.TIME_COL_WIDTH + (len(days) * self.CELL_WIDTH) + (2 * self.PADDING)
-        height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.LEGEND_HEIGHT + (2 * self.PADDING)
+        height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.FOOTER_HEIGHT + (2 * self.PADDING)
 
         # Create image
         img = Image.new('RGB', (width, height), self.BG_COLOR)
@@ -110,7 +121,6 @@ class CalendarRenderer:
 
         # Initialize emoji positions list
         self._emoji_positions = []
-        self._legend_emoji_positions = []
 
         # Draw column headers (days)
         self._draw_day_headers(draw, days)
@@ -118,19 +128,14 @@ class CalendarRenderer:
         # Draw time labels and calendar grid
         self._draw_calendar_grid(draw, days, time_slots, schedule, blocked_times, events)
 
-        # Draw legend at bottom
-        grid_bottom = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.PADDING
-        self._draw_legend(draw, width, grid_bottom, events)
+        # Draw footer with timestamp and voter count
+        self._draw_footer(draw, width, height, total_voters)
 
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             with Pilmoji(img) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
-                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
-
-                # Draw legend emojis
-                for text_x, text_y, display_text, font in self._legend_emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
         else:
             # Fallback to text labels if pilmoji not available
@@ -258,6 +263,9 @@ class CalendarRenderer:
             "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"
         }
 
+        # Track which cells have been drawn (for multi-cell spanning events)
+        drawn_cells = set()
+
         for row, time_str in enumerate(time_slots):
             y = start_y + (row * self.CELL_HEIGHT)
 
@@ -269,6 +277,10 @@ class CalendarRenderer:
             # Draw cells for each day
             for col, day in enumerate(days):
                 x = self.TIME_COL_WIDTH + (col * self.CELL_WIDTH) + self.PADDING
+
+                # Skip if this cell was already drawn as part of a spanning event
+                if (row, col) in drawn_cells:
+                    continue
 
                 # Check if this cell is blocked
                 is_blocked = self._is_time_blocked(
@@ -286,44 +298,60 @@ class CalendarRenderer:
                     outline=self.GRID_COLOR
                 )
 
+                # Draw Guild Wars in blocked cells
+                if is_blocked:
+                    display_text = "🏰 Guild Wars"
+                    text_x = x + 5
+                    text_y = y + (self.CELL_HEIGHT // 2) - 8
+                    if not hasattr(self, '_emoji_positions'):
+                        self._emoji_positions = []
+                    self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
+
                 # Draw events in this cell
                 if time_str in schedule and day in schedule[time_str]:
                     events_in_cell = schedule[time_str][day]
 
                     if events_in_cell:
-                        # Store event info for emoji/label rendering
-                        event_data = []
-                        for priority, event_name, slot_num in events_in_cell[:3]:  # Max 3 events per cell
-                            emoji = events.get(event_name, {}).get("emoji", "•")
-                            label = self.EVENT_LABELS.get(event_name, "?")
-                            if slot_num > 0:  # Multi-slot event - add number after emoji
-                                display_text = f"{emoji}{slot_num}"
-                            else:
-                                display_text = emoji
-                            event_data.append((display_text, event_name, label))
+                        # Get the top priority event
+                        priority, event_name, slot_num = events_in_cell[0]
+                        emoji = events.get(event_name, {}).get("emoji", "•")
+                        event_abbrev = self.EVENT_ABBREV.get(event_name, event_name)
+                        duration = events.get(event_name, {}).get("duration", 30)
 
-                        # Draw emojis/labels
-                        if len(event_data) == 1:
-                            # Single event - centered
-                            display_text, event_name, label = event_data[0]
-                            text_x = x + (self.CELL_WIDTH // 2) - 10
-                            text_y = y + (self.CELL_HEIGHT // 2) - 10
-                            # Store position for later emoji rendering
-                            if not hasattr(self, '_emoji_positions'):
-                                self._emoji_positions = []
-                            self._emoji_positions.append((text_x, text_y, display_text, self.font_bold))
-                        else:
-                            # Multiple events - stack vertically
-                            spacing = 18
-                            total_height = len(event_data) * spacing
-                            start_text_y = y + (self.CELL_HEIGHT - total_height) // 2 + 5
-                            for idx, (display_text, event_name, label) in enumerate(event_data):
-                                text_x = x + (self.CELL_WIDTH // 2) - 10
-                                text_y = start_text_y + (idx * spacing)
-                                # Store position for later emoji rendering
-                                if not hasattr(self, '_emoji_positions'):
-                                    self._emoji_positions = []
-                                self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
+                        # Calculate how many cells to span (duration / 30 minutes)
+                        cells_to_span = max(1, duration // 30)
+
+                        # Check if we have enough cells to span
+                        max_span = min(cells_to_span, len(time_slots) - row)
+
+                        # Mark cells as drawn
+                        for span_row in range(row, row + max_span):
+                            drawn_cells.add((span_row, col))
+
+                        # Calculate spanning cell dimensions
+                        span_height = max_span * self.CELL_HEIGHT
+
+                        # Draw background for spanning event (slightly different color)
+                        if max_span > 1:
+                            # Redraw cell background for spanning event
+                            event_color = self.EVENT_COLORS.get(event_name, self.HEADER_TEXT)
+                            # Use a darker, semi-transparent version of event color for background
+                            bg_color = tuple(max(0, c - 100) for c in event_color)
+                            draw.rectangle(
+                                [x + 2, y + 2, x + self.CELL_WIDTH - 2, y + span_height - 2],
+                                fill=bg_color,
+                                outline=event_color,
+                                width=2
+                            )
+
+                        # Draw event text (emoji + name)
+                        display_text = f"{emoji} {event_abbrev}"
+                        text_x = x + 5
+                        text_y = y + (span_height // 2) - 8
+
+                        if not hasattr(self, '_emoji_positions'):
+                            self._emoji_positions = []
+                        self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
@@ -389,6 +417,28 @@ class CalendarRenderer:
                 current_y = legend_y + 32
             else:
                 current_y += 18
+
+    def _draw_footer(self, draw: ImageDraw, width: int, height: int, total_voters: int):
+        """Draw footer with timestamp and voter count"""
+        from datetime import datetime
+
+        # Calculate footer position
+        footer_y = height - self.FOOTER_HEIGHT
+
+        # Get current timestamp
+        now = datetime.utcnow()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        # Create footer text
+        footer_text = f"Timezone: {self.timezone} | Total voters: {total_voters} | Last updated: {timestamp}"
+
+        # Draw footer text centered
+        bbox = draw.textbbox((0, 0), footer_text, font=self.font_small)
+        text_width = bbox[2] - bbox[0]
+        text_x = (width - text_width) // 2
+        text_y = footer_y + (self.FOOTER_HEIGHT - 14) // 2
+
+        draw.text((text_x, text_y), footer_text, fill=self.TIME_TEXT, font=self.font_small)
 
     def _is_time_blocked(self, day: str, time_str: str, blocked_times: List[Dict]) -> bool:
         """Check if a time slot is blocked"""
