@@ -298,16 +298,16 @@ class PartyModal(discord.ui.View):
             polls[self.poll_id]["selections"][user_id_str][self.event_name] = {"time": self.selected_time}
             poll_data = polls[self.poll_id]
 
-        # Show confirmation
-        current_selections = await self._get_user_selections_text()
-        await interaction.response.edit_message(
-            content=f"✅ Selection saved!\n\n**{self.event_name}** at **{self.selected_time}** (daily)\n\n**Your current selections:**\n{current_selections}",
-            view=None
-        )
-
         # Update the poll embed
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
+
+        # Auto-dismiss the ephemeral message
+        await interaction.response.edit_message(
+            content=f"✅ Selection saved for **{self.event_name}**!",
+            view=None
+        )
+        await interaction.delete_original_response()
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -327,15 +327,16 @@ class PartyModal(discord.ui.View):
 
             poll_data = polls[self.poll_id]
 
-        current_selections = await self._get_user_selections_text()
-        await interaction.response.edit_message(
-            content=f"🗑️ Cleared your selection for **{self.event_name}**\n\n**Your current selections:**\n{current_selections}",
-            view=None
-        )
-
         # Update the poll embed
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
+
+        # Auto-dismiss the ephemeral message
+        await interaction.response.edit_message(
+            content=f"🗑️ Cleared selection for **{self.event_name}**",
+            view=None
+        )
+        await interaction.delete_original_response()
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
@@ -548,18 +549,17 @@ class FixedDaysModal(discord.ui.View):
             polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
             poll_data = polls[self.poll_id]
 
-        # Show confirmation
-        selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
-        current_selections = await self._get_user_selections_text()
-
-        await interaction.response.edit_message(
-            content=f"✅ Selection saved!\n\n**{self.event_name}**: {selected_text}\n\n**Your current selections:**\n{current_selections}",
-            view=None
-        )
-
         # Update the poll embed
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
+
+        # Auto-dismiss the ephemeral message
+        selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
+        await interaction.response.edit_message(
+            content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
+            view=None
+        )
+        await interaction.delete_original_response()
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -579,15 +579,16 @@ class FixedDaysModal(discord.ui.View):
 
             poll_data = polls[self.poll_id]
 
-        current_selections = await self._get_user_selections_text()
-        await interaction.response.edit_message(
-            content=f"🗑️ Cleared your selection for **{self.event_name}**\n\n**Your current selections:**\n{current_selections}",
-            view=None
-        )
-
         # Update the poll embed
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
+
+        # Auto-dismiss the ephemeral message
+        await interaction.response.edit_message(
+            content=f"🗑️ Cleared selection for **{self.event_name}**",
+            view=None
+        )
+        await interaction.delete_original_response()
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
@@ -675,11 +676,6 @@ class WeeklyEventModal(discord.ui.View):
         self.user_selections = user_selections
         self.events = events
         self.days = days
-        self.selected_slot1_day = None
-        self.selected_slot1_time = None
-        self.selected_slot2_day = None
-        self.selected_slot2_time = None
-
         # Get current selections if exist
         current_selections = user_selections.get(event_name)
         current_slot1 = None
@@ -687,6 +683,12 @@ class WeeklyEventModal(discord.ui.View):
         if current_selections and isinstance(current_selections, list):
             current_slot1 = current_selections[0] if len(current_selections) > 0 else None
             current_slot2 = current_selections[1] if len(current_selections) > 1 else None
+
+        # Initialize selected values from existing selections (so user can edit without re-selecting everything)
+        self.selected_slot1_day = current_slot1.get("day") if current_slot1 and isinstance(current_slot1, dict) else None
+        self.selected_slot1_time = current_slot1.get("time") if current_slot1 and isinstance(current_slot1, dict) else None
+        self.selected_slot2_day = current_slot2.get("day") if current_slot2 and isinstance(current_slot2, dict) else None
+        self.selected_slot2_time = current_slot2.get("time") if current_slot2 and isinstance(current_slot2, dict) else None
 
         # Generate time options
         event_info = events[event_name]
@@ -903,23 +905,22 @@ class WeeklyEventModal(discord.ui.View):
             polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
             poll_data = polls[self.poll_id]
 
-        # Show confirmation
+        # Update the poll embed
+        if poll_data:
+            await self._update_poll_display(interaction, poll_data)
+
+        # Auto-dismiss the ephemeral message
         selection_parts = []
         if has_slot1:
             selection_parts.append(f"Slot 1: {self.selected_slot1_day} at {self.selected_slot1_time}")
         if has_slot2:
             selection_parts.append(f"Slot 2: {self.selected_slot2_day} at {self.selected_slot2_time}")
 
-        current_selections = await self._get_user_selections_text()
-
         await interaction.response.edit_message(
-            content=f"✅ Selection saved!\n\n**{self.event_name}**\n{chr(10).join(selection_parts)}\n\n**Your current selections:**\n{current_selections}",
+            content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
             view=None
         )
-
-        # Update the poll embed
-        if poll_data:
-            await self._update_poll_display(interaction, poll_data)
+        await interaction.delete_original_response()
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -939,15 +940,16 @@ class WeeklyEventModal(discord.ui.View):
 
             poll_data = polls[self.poll_id]
 
-        current_selections = await self._get_user_selections_text()
-        await interaction.response.edit_message(
-            content=f"🗑️ Cleared your selection for **{self.event_name}**\n\n**Your current selections:**\n{current_selections}",
-            view=None
-        )
-
         # Update the poll embed
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
+
+        # Auto-dismiss the ephemeral message
+        await interaction.response.edit_message(
+            content=f"🗑️ Cleared selection for **{self.event_name}**",
+            view=None
+        )
+        await interaction.delete_original_response()
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
