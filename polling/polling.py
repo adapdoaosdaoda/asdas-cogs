@@ -482,9 +482,11 @@ class EventPolling(commands.Cog):
                         # Extract just the emoji strings, limit to 2 events per cell
                         event_emojis = [emoji for priority, emoji in sorted_events[:2]]
                         cell = "".join(event_emojis)
+                        # Don't pad when we have emojis, just add one space
+                        row += f" {cell} │"
                     else:
-                        cell = "  "
-                    row += f" {cell:3} │"
+                        # Empty cell - pad with spaces to match column width
+                        row += "     │"
                 lines.append(row)
 
         lines.append("```")

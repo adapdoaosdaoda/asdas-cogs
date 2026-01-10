@@ -172,7 +172,6 @@ class SlotSelectView(discord.ui.View):
             button = discord.ui.Button(
                 label=f"Slot {slot_index + 1}",
                 style=discord.ButtonStyle.secondary,
-                custom_id=f"slot_btn:{event_name}:{slot_index}",
                 row=0
             )
             button.callback = self._create_slot_callback(slot_index)
@@ -245,7 +244,6 @@ class DaySelectView(discord.ui.View):
             button = discord.ui.Button(
                 label=day[:3],  # Mon, Tue, Wed, etc.
                 style=discord.ButtonStyle.secondary,  # Grey
-                custom_id=f"day_btn:{event_name}:{day}",
                 row=0  # All day buttons in first row
             )
             button.callback = self._create_day_callback(day)
