@@ -91,24 +91,42 @@ class EventPollView(discord.ui.View):
                     ephemeral=True
                 )
             elif event_info["type"] == "fixed_days":
-                # Fixed-day event - show time selector directly (no day selection needed)
-                view = TimeSelectView(
-                    cog=self.cog,
-                    guild_id=self.guild_id,
-                    poll_id=poll_id,
-                    user_id=interaction.user.id,
-                    event_name=event_name,
-                    day=None,  # No day selection for fixed-day events
-                    slot_index=0,  # Single slot
-                    user_selections=user_selections,
-                    events=self.events
-                )
-                days_str = ", ".join([d[:3] for d in event_info["days"]])
-                await interaction.response.send_message(
-                    f"Select a time for **{event_name}** on {days_str} (18:00-24:00):",
-                    view=view,
-                    ephemeral=True
-                )
+                # Fixed-day event - check if multi-slot
+                if event_info["slots"] > 1:
+                    # Multi-slot fixed-day event - show slot selector (each slot = one day)
+                    view = FixedDaySlotSelectView(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        user_selections=user_selections,
+                        events=self.events
+                    )
+                    await interaction.response.send_message(
+                        f"Select a slot for **{event_name}** ({event_info['slots']} slots available):",
+                        view=view,
+                        ephemeral=True
+                    )
+                else:
+                    # Single slot fixed-day event - show time selector directly
+                    view = TimeSelectView(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        day=None,  # No day selection for fixed-day events
+                        slot_index=0,  # Single slot
+                        user_selections=user_selections,
+                        events=self.events
+                    )
+                    days_str = ", ".join([d[:3] for d in event_info["days"]])
+                    await interaction.response.send_message(
+                        f"Select a time for **{event_name}** on {days_str} (18:00-24:00):",
+                        view=view,
+                        ephemeral=True
+                    )
             else:
                 # Weekly event - check if multi-slot
                 if event_info["slots"] > 1:
@@ -222,6 +240,81 @@ class SlotSelectView(discord.ui.View):
         pass
 
 
+class FixedDaySlotSelectView(discord.ui.View):
+    """View for selecting which slot to configure for fixed-day multi-slot events
+    Each slot corresponds to one day from the event's days list"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
+                 event_name: str, user_selections: Dict, events: Dict):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.user_id = user_id
+        self.event_name = event_name
+        self.user_selections = user_selections
+        self.events = events
+
+        event_info = events[event_name]
+        num_slots = event_info["slots"]
+        days = event_info["days"]
+
+        # Create buttons for each slot - each slot represents a specific day
+        for slot_index in range(num_slots):
+            day = days[slot_index] if slot_index < len(days) else f"Day {slot_index + 1}"
+            button = discord.ui.Button(
+                label=f"{day[:3]}",  # Mon, Tue, Wed, etc.
+                style=discord.ButtonStyle.secondary,
+                row=0 if slot_index < 5 else 1
+            )
+            button.callback = self._create_slot_callback(slot_index, day)
+            self.add_item(button)
+
+        # Add cancel button
+        cancel_btn = discord.ui.Button(
+            label="Cancel",
+            style=discord.ButtonStyle.danger,
+            emoji="❌",
+            row=2
+        )
+        cancel_btn.callback = self._cancel
+        self.add_item(cancel_btn)
+
+    def _create_slot_callback(self, slot_index: int, day: str):
+        """Create a callback for a specific slot button"""
+        async def callback(interaction: discord.Interaction):
+            # Show time selector for this slot/day
+            view = TimeSelectView(
+                cog=self.cog,
+                guild_id=self.guild_id,
+                poll_id=self.poll_id,
+                user_id=self.user_id,
+                event_name=self.event_name,
+                day=day,  # Store the specific day for this slot
+                slot_index=slot_index,
+                user_selections=self.user_selections,
+                events=self.events
+            )
+
+            await interaction.response.edit_message(
+                content=f"Select a time for **{self.event_name}** on **{day}**:",
+                view=view
+            )
+
+        return callback
+
+    async def _cancel(self, interaction: discord.Interaction):
+        """Handle cancel"""
+        await interaction.response.edit_message(
+            content="Selection cancelled.",
+            view=None
+        )
+
+    async def on_timeout(self):
+        """Handle timeout"""
+        pass
+
+
 class DaySelectView(discord.ui.View):
     """View for selecting a day of the week"""
 
@@ -239,22 +332,25 @@ class DaySelectView(discord.ui.View):
         self.days = days
 
         # Create 7 grey buttons for each day of the week
+        # Discord allows max 5 buttons per row, so split across 2 rows
         for idx, day in enumerate(days):
             # Use abbreviated day names for button labels (3 letters)
+            # Row 0: Mon-Fri (5 buttons), Row 1: Sat-Sun (2 buttons)
+            button_row = 0 if idx < 5 else 1
             button = discord.ui.Button(
                 label=day[:3],  # Mon, Tue, Wed, etc.
                 style=discord.ButtonStyle.secondary,  # Grey
-                row=0  # All day buttons in first row
+                row=button_row
             )
             button.callback = self._create_day_callback(day)
             self.add_item(button)
 
-        # Add cancel button in second row
+        # Add cancel button in third row
         cancel_btn = discord.ui.Button(
             label="Cancel",
             style=discord.ButtonStyle.danger,
             emoji="❌",
-            row=1
+            row=2
         )
         cancel_btn.callback = self._cancel
         self.add_item(cancel_btn)
@@ -315,7 +411,8 @@ class TimeSelectView(discord.ui.View):
         event_info = events[event_name]
         start_hour, end_hour = event_info["time_range"]
         interval = event_info["interval"]
-        times = self.cog.generate_time_options(start_hour, end_hour, interval)
+        duration = event_info["duration"]
+        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration)
 
         # Create select menu(s) for times - split into multiple if too many options
         max_options_per_select = 25
