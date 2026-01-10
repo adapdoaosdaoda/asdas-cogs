@@ -1,10 +1,11 @@
 from redbot.core import commands, Config
 from redbot.core.bot import Red
 import discord
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Union
 from datetime import datetime, time as dt_time, timedelta
 import os
 import tempfile
+import re
 
 from .views import EventPollView
 from .calendar_renderer import CalendarRenderer
@@ -103,6 +104,35 @@ class EventPolling(commands.Cog):
         # Initialize calendar renderer
         self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
 
+    def _parse_message_id(self, message_input: Union[str, int]) -> Optional[int]:
+        """Parse message ID from either an integer or a Discord message link
+
+        Args:
+            message_input: Either an integer message ID or a Discord message link
+
+        Returns:
+            The message ID as an integer, or None if parsing failed
+        """
+        # If it's already an int, return it
+        if isinstance(message_input, int):
+            return message_input
+
+        # If it's a string, try to parse it
+        if isinstance(message_input, str):
+            # Try to parse as direct integer first
+            try:
+                return int(message_input)
+            except ValueError:
+                pass
+
+            # Try to extract from Discord message link
+            # Format: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}
+            match = re.search(r'discord\.com/channels/\d+/\d+/(\d+)', message_input)
+            if match:
+                return int(match.group(1))
+
+        return None
+
     def _prepare_calendar_data(self, winning_times: Dict) -> Dict[str, Dict[str, str]]:
         """Convert winning_times format to calendar renderer format
 
@@ -186,12 +216,18 @@ class EventPolling(commands.Cog):
         await ctx.tick()
 
     @eventpoll.command(name="results")
-    async def show_results(self, ctx: commands.Context, message_id: int):
+    async def show_results(self, ctx: commands.Context, message_id: str):
         """Show the results of a poll
 
         Example: [p]eventpoll results 123456789
+        Or: [p]eventpoll results https://discord.com/channels/guild/channel/message
         """
-        poll_id = str(message_id)
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
         polls = await self.config.guild(ctx.guild).polls()
 
         if poll_id not in polls:
@@ -268,12 +304,18 @@ class EventPolling(commands.Cog):
         await ctx.send(embed=embed)
 
     @eventpoll.command(name="end")
-    async def end_poll(self, ctx: commands.Context, message_id: int):
+    async def end_poll(self, ctx: commands.Context, message_id: str):
         """End a poll and remove it from the database
 
         Example: [p]eventpoll end 123456789
+        Or: [p]eventpoll end https://discord.com/channels/guild/channel/message
         """
-        poll_id = str(message_id)
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
         async with self.config.guild(ctx.guild).polls() as polls:
             if poll_id not in polls:
                 await ctx.send("Poll not found!")
@@ -308,12 +350,18 @@ class EventPolling(commands.Cog):
             pass
 
     @eventpoll.command(name="clear")
-    async def clear_user_votes(self, ctx: commands.Context, message_id: int, user: discord.Member):
+    async def clear_user_votes(self, ctx: commands.Context, message_id: str, user: discord.Member):
         """Clear a user's votes from a poll
 
         Example: [p]eventpoll clear 123456789 @user
+        Or: [p]eventpoll clear https://discord.com/channels/guild/channel/message @user
         """
-        poll_id = str(message_id)
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
         async with self.config.guild(ctx.guild).polls() as polls:
             if poll_id not in polls:
                 await ctx.send("Poll not found!")
@@ -329,12 +377,18 @@ class EventPolling(commands.Cog):
                 await ctx.send(f"{user.mention} hasn't voted in this poll.")
 
     @eventpoll.command(name="calendar")
-    async def post_calendar(self, ctx: commands.Context, message_id: int):
+    async def post_calendar(self, ctx: commands.Context, message_id: str):
         """Post an auto-updating calendar view for a poll
 
         Example: [p]eventpoll calendar 123456789
+        Or: [p]eventpoll calendar https://discord.com/channels/guild/channel/message
         """
-        poll_id = str(message_id)
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
         polls = await self.config.guild(ctx.guild).polls()
 
         if poll_id not in polls:
