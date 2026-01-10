@@ -24,6 +24,7 @@ class EventPolling(commands.Cog):
         )
 
         # Event definitions (ordered: Hero's Realm, Sword Trial, Party, Breaking Army, Showdown)
+        # Priority order for calendar display (higher number = higher priority)
         self.events = {
             "Hero's Realm": {
                 "type": "fixed_days",
@@ -33,7 +34,8 @@ class EventPolling(commands.Cog):
                 "duration": 30,  # 30 minutes
                 "slots": 1,
                 "color": discord.Color.greyple(),
-                "emoji": "🛡️"
+                "emoji": "🛡️",
+                "priority": 5  # Highest priority
             },
             "Sword Trial": {
                 "type": "fixed_days",
@@ -43,7 +45,8 @@ class EventPolling(commands.Cog):
                 "duration": 30,  # 30 minutes
                 "slots": 1,
                 "color": discord.Color.greyple(),
-                "emoji": "⚔️"
+                "emoji": "⚔️",
+                "priority": 4
             },
             "Party": {
                 "type": "daily",
@@ -52,7 +55,8 @@ class EventPolling(commands.Cog):
                 "duration": 10,  # 10 minutes
                 "slots": 1,  # Single time slot
                 "color": discord.Color.green(),
-                "emoji": "🎉"
+                "emoji": "🎉",
+                "priority": 3
             },
             "Breaking Army": {
                 "type": "once",
@@ -61,7 +65,8 @@ class EventPolling(commands.Cog):
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.blue(),
-                "emoji": "⚡"
+                "emoji": "⚡",
+                "priority": 2
             },
             "Showdown": {
                 "type": "once",
@@ -70,7 +75,8 @@ class EventPolling(commands.Cog):
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.red(),
-                "emoji": "🏆"
+                "emoji": "🏆",
+                "priority": 1  # Lowest priority
             }
         }
 
@@ -156,20 +162,42 @@ class EventPolling(commands.Cog):
         # Organize results by event
         for event_name in self.events.keys():
             event_results = {}
+            event_info = self.events[event_name]
 
             for user_id, user_selections in selections.items():
                 if event_name in user_selections:
                     selection = user_selections[event_name]
 
-                    # Format the selection string
-                    if self.events[event_name]["type"] == "daily":
-                        key = selection["time"]
-                    else:
-                        key = f"{selection['day']} at {selection['time']}"
+                    # Handle multi-slot events (stored as list)
+                    if isinstance(selection, list):
+                        for slot_index, slot_data in enumerate(selection):
+                            if slot_data:  # Slot might be None if not yet selected
+                                # Format the selection string
+                                if event_info["type"] == "daily":
+                                    key = f"Slot {slot_index + 1}: {slot_data['time']}"
+                                elif event_info["type"] == "fixed_days":
+                                    days_str = ", ".join([d[:3] for d in event_info["days"]])
+                                    key = f"Slot {slot_index + 1}: {slot_data['time']} ({days_str})"
+                                else:
+                                    key = f"Slot {slot_index + 1}: {slot_data['day']} at {slot_data['time']}"
 
-                    if key not in event_results:
-                        event_results[key] = []
-                    event_results[key].append(f"<@{user_id}>")
+                                if key not in event_results:
+                                    event_results[key] = []
+                                event_results[key].append(f"<@{user_id}>")
+                    else:
+                        # Single-slot event (stored as dict)
+                        # Format the selection string
+                        if event_info["type"] == "daily":
+                            key = selection["time"]
+                        elif event_info["type"] == "fixed_days":
+                            days_str = ", ".join([d[:3] for d in event_info["days"]])
+                            key = f"{selection['time']} ({days_str})"
+                        else:
+                            key = f"{selection['day']} at {selection['time']}"
+
+                        if key not in event_results:
+                            event_results[key] = []
+                        event_results[key].append(f"<@{user_id}>")
 
             # Add to embed
             if event_results:
@@ -262,22 +290,20 @@ class EventPolling(commands.Cog):
         if poll_id and poll_id in polls:
             selections = polls[poll_id].get("selections", {})
 
-        if not selections:
-            # No votes yet, show event info
-            embed.add_field(
-                name="📋 Events",
-                value=(
-                    "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
-                    "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
-                    "🎉 **Party** - Daily (10 min, 1 slot)\n"
-                    "⚡ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
-                    "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
-                    "🏰 **Guild Wars** - Sat & Sun 20:30-22:00 (blocked)\n"
-                    "⚠️ Events cannot have conflicting times"
-                ),
-                inline=False
-            )
-            return embed
+        # Show event info at the top
+        embed.add_field(
+            name="📋 Events",
+            value=(
+                "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
+                "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
+                "🎉 **Party** - Daily (10 min, 1 slot)\n"
+                "⚡ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
+                "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
+                "🏰 **Guild Wars** - Sat & Sun 20:30-22:00 (blocked)\n"
+                "⚠️ Events cannot have conflicting times"
+            ),
+            inline=False
+        )
 
         # Calculate winning times (most votes) for each event and slot
         winning_times = {}
@@ -372,16 +398,17 @@ class EventPolling(commands.Cog):
 
     def _create_calendar_table(self, winning_times: Dict) -> str:
         """Create a visual Unicode calendar table showing the weekly schedule"""
-        # Build a data structure: {time: {day: [emojis]}}
+        # Build a data structure: {time: {day: [(priority, emoji)]}}
         schedule = {}
         times = self.generate_time_options(18, 24, 30)
 
         for time_slot in times:
             schedule[time_slot] = {day: [] for day in self.days_of_week}
 
-        # Populate schedule with winning events
+        # Populate schedule with winning events (with priority)
         for event_name, event_info in self.events.items():
             emoji = event_info["emoji"]
+            priority = event_info["priority"]
             event_slots = winning_times.get(event_name, {})
 
             for slot_index, slot_winners in event_slots.items():
@@ -392,24 +419,24 @@ class EventPolling(commands.Cog):
                         # Daily events appear on all days
                         for day in self.days_of_week:
                             if event_info["slots"] > 1:
-                                schedule[winner_time][day].append(f"{emoji}{slot_index + 1}")
+                                schedule[winner_time][day].append((priority, f"{emoji}{slot_index + 1}"))
                             else:
-                                schedule[winner_time][day].append(emoji)
+                                schedule[winner_time][day].append((priority, emoji))
                     elif event_info["type"] == "fixed_days":
                         # Fixed-day events appear on their configured days
                         for day in event_info["days"]:
                             if event_info["slots"] > 1:
-                                schedule[winner_time][day].append(f"{emoji}{slot_index + 1}")
+                                schedule[winner_time][day].append((priority, f"{emoji}{slot_index + 1}"))
                             else:
-                                schedule[winner_time][day].append(emoji)
+                                schedule[winner_time][day].append((priority, emoji))
                     else:
                         # Weekly events appear only on their specific day
                         if event_info["slots"] > 1:
-                            schedule[winner_time][winner_day].append(f"{emoji}{slot_index + 1}")
+                            schedule[winner_time][winner_day].append((priority, f"{emoji}{slot_index + 1}"))
                         else:
-                            schedule[winner_time][winner_day].append(emoji)
+                            schedule[winner_time][winner_day].append((priority, emoji))
 
-        # Add Guild Wars emoji to blocked time slots
+        # Add Guild Wars emoji to blocked time slots (priority 0 - always shows last)
         for blocked in self.blocked_times:
             blocked_day = blocked["day"]
             blocked_start = blocked["start"]
@@ -424,7 +451,7 @@ class EventPolling(commands.Cog):
                 slot_time = datetime.strptime(time_slot, "%H:%M")
                 # Check if this time slot is within the blocked range (inclusive start, exclusive end)
                 if start_time <= slot_time < end_time:
-                    schedule[time_slot][blocked_day].append(self.guild_wars_emoji)
+                    schedule[time_slot][blocked_day].append((0, self.guild_wars_emoji))
 
         # Build the table using code block for monospace formatting
         lines = []
@@ -445,8 +472,11 @@ class EventPolling(commands.Cog):
                 for day in self.days_of_week:
                     events = row_data[day]
                     if events:
-                        # Join multiple events with space
-                        cell = "".join(events[:2])  # Limit to 2 events per cell
+                        # Sort by priority (descending - highest priority first)
+                        sorted_events = sorted(events, key=lambda x: x[0], reverse=True)
+                        # Extract just the emoji strings, limit to 2 events per cell
+                        event_emojis = [emoji for priority, emoji in sorted_events[:2]]
+                        cell = "".join(event_emojis)
                     else:
                         cell = "  "
                     row += f" {cell:3} │"
