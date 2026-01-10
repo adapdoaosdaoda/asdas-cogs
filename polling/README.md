@@ -96,6 +96,14 @@ Clear a specific user's votes from a poll.
 [p]eventpoll clear 123456789 @user
 ```
 
+### `[p]eventpoll calendar <message_id>`
+Post an auto-updating calendar view for a poll. Creates a separate calendar embed that automatically updates when users vote, includes a link to the original poll, and provides a legend of event types.
+
+**Example:**
+```
+[p]eventpoll calendar 123456789
+```
+
 ## Usage Flow
 
 1. Admin creates a poll using `[p]eventpoll create`
@@ -142,10 +150,12 @@ Users receive clear, specific error messages when conflicts occur:
 
 ## Calendar View
 
-The poll embed displays a **visual Unicode calendar table** showing the weekly schedule:
+The poll embed displays a **visual Unicode calendar table** showing the weekly schedule. You can also post a dedicated auto-updating calendar embed using `[p]eventpoll calendar <message_id>`.
 
 ```
 📊 Weekly Calendar View
+All times in Server Time
+
 Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun
 ──────────────────────────────────────────────────
 18:00 │ 🎉  │ 🎉  │ 🎉  │ 🎉  │ 🎉  │ 🎉  │ 🎉
@@ -166,8 +176,10 @@ Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun
 **Calendar Features:**
 - **Grid Layout**: Easy to see which events are scheduled when at a glance
 - **Monospace Font**: Uses code block for proper alignment
+- **Timezone Display**: Shows "All times in Server Time" at the top
 - **Compact View**: Only shows time slots with scheduled events
 - **Slot Numbers**: Multi-slot events show as ⚡1, ⚡2, 🏆1, 🏆2
+- **Auto-updating**: Use `[p]eventpoll calendar` to post a dedicated calendar that updates automatically
 - **Daily Events**: Party (🎉) appears across all days
 - **Fixed-Day Events**: Hero's Realm (🛡️) and Sword Trial (⚔️) appear on Wed/Fri/Sat/Sun
 - **Weekly Events**: Appear only on their scheduled day

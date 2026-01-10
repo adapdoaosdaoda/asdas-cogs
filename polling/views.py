@@ -447,6 +447,9 @@ class TimeSelectView(discord.ui.View):
                     )
                     updated_embed.set_footer(text="Click the buttons below to set your preferences")
                     await message.edit(embed=updated_embed)
+
+                # Update any calendar messages for this poll
+                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
             except Exception:
                 # Silently fail if we can't update the poll message
                 pass
@@ -489,6 +492,9 @@ class TimeSelectView(discord.ui.View):
                     )
                     updated_embed.set_footer(text="Click the buttons below to set your preferences")
                     await message.edit(embed=updated_embed)
+
+                # Update any calendar messages for this poll
+                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
             except Exception:
                 # Silently fail if we can't update the poll message
                 pass

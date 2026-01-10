@@ -156,7 +156,7 @@ class EventPolling(commands.Cog):
         # Create results embed
         embed = discord.Embed(
             title=f"📊 Results: {poll_data['title']}",
-            color=discord.Color.green()
+            color=discord.Color(0xcb4449)
         )
 
         # Organize results by event
@@ -276,12 +276,178 @@ class EventPolling(commands.Cog):
             else:
                 await ctx.send(f"{user.mention} hasn't voted in this poll.")
 
+    @eventpoll.command(name="calendar")
+    async def post_calendar(self, ctx: commands.Context, message_id: int):
+        """Post an auto-updating calendar view for a poll
+
+        Example: [p]eventpoll calendar 123456789
+        """
+        poll_id = str(message_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+
+        # Create calendar embed
+        embed = await self._create_calendar_embed(poll_data, ctx.guild.id, poll_id)
+
+        # Send the calendar message
+        calendar_msg = await ctx.send(embed=embed)
+
+        # Store calendar message ID in poll data for auto-updating
+        async with self.config.guild(ctx.guild).polls() as polls:
+            if poll_id in polls:
+                if "calendar_messages" not in polls[poll_id]:
+                    polls[poll_id]["calendar_messages"] = []
+                polls[poll_id]["calendar_messages"].append({
+                    "message_id": calendar_msg.id,
+                    "channel_id": ctx.channel.id
+                })
+
+        await ctx.tick()
+
+    async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> discord.Embed:
+        """Create a calendar-only embed with legend and poll link"""
+        title = poll_data["title"]
+        channel_id = poll_data["channel_id"]
+        message_id = poll_data["message_id"]
+
+        # Create embed
+        embed = discord.Embed(
+            title=f"📅 {title} - Calendar View",
+            description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
+            color=discord.Color(0xcb4449)
+        )
+
+        # Get selections
+        selections = poll_data.get("selections", {})
+
+        # Calculate winning times (same logic as main poll embed)
+        winning_times = {}
+        for event_name, event_info in self.events.items():
+            num_slots = event_info["slots"]
+            winning_times[event_name] = {}
+
+            for slot_index in range(num_slots):
+                vote_counts = {}
+                for user_id, user_selections in selections.items():
+                    if event_name in user_selections:
+                        selection = user_selections[event_name]
+
+                        # Handle both list (multi-slot) and dict (single-slot) formats
+                        if isinstance(selection, list):
+                            if slot_index < len(selection) and selection[slot_index]:
+                                slot_data = selection[slot_index]
+                                if event_info["type"] == "daily":
+                                    key = ("Daily", slot_data["time"])
+                                elif event_info["type"] == "fixed_days":
+                                    key = ("Fixed", slot_data["time"])
+                                else:
+                                    key = (slot_data.get("day", "Unknown"), slot_data["time"])
+                                vote_counts[key] = vote_counts.get(key, 0) + 1
+                        else:
+                            # Legacy single-slot format
+                            if slot_index == 0:
+                                if event_info["type"] == "daily":
+                                    key = ("Daily", selection["time"])
+                                elif event_info["type"] == "fixed_days":
+                                    key = ("Fixed", selection["time"])
+                                else:
+                                    key = (selection.get("day", "Unknown"), selection["time"])
+                                vote_counts[key] = vote_counts.get(key, 0) + 1
+
+                if vote_counts:
+                    max_votes = max(vote_counts.values())
+                    winners = [k for k, v in vote_counts.items() if v == max_votes]
+                    winning_times[event_name][slot_index] = (winners, max_votes)
+
+        # Create calendar table
+        calendar_table = self._create_calendar_table(winning_times)
+        if calendar_table:
+            embed.add_field(
+                name="📊 Weekly Schedule",
+                value=calendar_table,
+                inline=False
+            )
+
+        # Add legend
+        legend = (
+            "**Legend:**\n"
+            "🛡️ Hero's Realm │ ⚔️ Sword Trial │ 🎉 Party\n"
+            "⚡ Breaking Army │ 🏆 Showdown │ 🏰 Guild Wars (blocked)"
+        )
+        embed.add_field(
+            name="📖 Event Types",
+            value=legend,
+            inline=False
+        )
+
+        # Add summary
+        summary_lines = []
+        for event_name, event_info in self.events.items():
+            emoji = event_info["emoji"]
+            event_slots = winning_times.get(event_name, {})
+
+            if event_slots:
+                for slot_index in range(event_info["slots"]):
+                    if slot_index in event_slots:
+                        winners, votes = event_slots[slot_index]
+                        if event_info["type"] == "daily":
+                            time_str = winners[0][1]
+                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                        elif event_info["type"] == "fixed_days":
+                            time_str = winners[0][1]
+                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                        else:
+                            winner_strs = [f"{day} {time}" for day, time in winners]
+                            if event_info["slots"] > 1:
+                                summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: {winner_strs[0]} ({votes} votes)")
+                            else:
+                                summary_lines.append(f"{emoji} **{event_name}**: {winner_strs[0]} ({votes} votes)")
+                    else:
+                        if event_info["slots"] > 1:
+                            summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: No votes yet")
+            else:
+                if event_info["slots"] > 1:
+                    for slot_index in range(event_info["slots"]):
+                        summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: No votes yet")
+                else:
+                    summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
+
+        embed.add_field(
+            name="🏆 Current Winners",
+            value="\n".join(summary_lines),
+            inline=False
+        )
+
+        embed.set_footer(text=f"Total voters: {len(selections)}")
+
+        return embed
+
+    async def _update_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
+        """Update all calendar messages associated with this poll"""
+        calendar_messages = poll_data.get("calendar_messages", [])
+
+        for cal_msg_data in calendar_messages:
+            try:
+                channel = guild.get_channel(cal_msg_data["channel_id"])
+                if channel:
+                    message = await channel.fetch_message(cal_msg_data["message_id"])
+                    updated_embed = await self._create_calendar_embed(poll_data, guild.id, poll_id)
+                    await message.edit(embed=updated_embed)
+            except Exception:
+                # Silently fail if we can't update a calendar message
+                pass
+
     async def _create_poll_embed(self, title: str, guild_id: int, poll_id: str) -> discord.Embed:
         """Create calendar-style embed showing winning times"""
         embed = discord.Embed(
             title=f"📅 {title}",
             description="Vote for your preferred times by clicking the buttons below!",
-            color=discord.Color.blue()
+            color=discord.Color(0xcb4449)
         )
 
         # Get poll data if it exists
@@ -461,8 +627,10 @@ class EventPolling(commands.Cog):
         # Build the table using code block for monospace formatting
         lines = []
 
-        # Header row
+        # Header row with timezone
         lines.append("```")
+        lines.append("All times in Server Time")
+        lines.append("")
         header = "Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun"
         lines.append(header)
         lines.append("─" * len(header))
