@@ -83,7 +83,7 @@ class EventPolling(commands.Cog):
             }
         }
 
-        # Guild Wars - blocked time event (Sat & Sun 20:30-22:00)
+        # Guild Wars - blocked time event (Sat & Sun 20:30-21:30)
         self.guild_wars_emoji = "🏰"
 
         self.days_of_week = [
@@ -437,8 +437,11 @@ class EventPolling(commands.Cog):
         calendar_file = discord.File(image_buffer, filename="calendar.png")
         embed.set_image(url="attachment://calendar.png")
 
-        # Set footer with timezone and voter count
-        embed.set_footer(text=f"Timezone: {self.timezone_display} | Total voters: {len(selections)}")
+        # Set footer with timezone, voter count, and last updated time
+        from datetime import datetime
+        now = datetime.utcnow()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        embed.set_footer(text=f"Timezone: {self.timezone_display} | Total voters: {len(selections)} | Last updated: {timestamp}")
 
         return embed, calendar_file
 
@@ -480,7 +483,7 @@ class EventPolling(commands.Cog):
                 "🎉 **Party** - Daily (10 min, 1 slot)\n"
                 "⚡ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
                 "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
-                "🏰 **Guild Wars** - Sat & Sun 20:30-22:00 (blocked)\n"
+                "🏰 **Guild Wars** - Sat & Sun 20:30-21:30 (blocked)\n"
                 "⚠️ Events cannot have conflicting times"
             ),
             inline=False
@@ -766,7 +769,7 @@ class EventPolling(commands.Cog):
                     event_start, event_end = self._get_event_time_range(event_name, time_str)
 
                     if self._time_ranges_overlap(event_start, event_end, blocked_start, blocked_end):
-                        return True, f"This time conflicts with a blocked period (Sat & Sun 20:30-22:00)"
+                        return True, f"This time conflicts with a blocked period (Sat & Sun 20:30-21:30)"
 
         return False, None
 

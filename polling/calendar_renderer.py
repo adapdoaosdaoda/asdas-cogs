@@ -51,6 +51,16 @@ class CalendarRenderer:
     HEADER_HEIGHT = 50
     PADDING = 15
 
+    # Event name abbreviations for display
+    EVENT_ABBREV = {
+        "Hero's Realm": "Hero's Realm",
+        "Sword Trial": "Sword Trial",
+        "Party": "Party",
+        "Breaking Army": "Breaking Army",
+        "Showdown": "Showdown",
+        "Guild Wars": "Guild Wars"
+    }
+
     def __init__(self, timezone: str = "UTC"):
         """Initialize calendar renderer
 
@@ -248,6 +258,9 @@ class CalendarRenderer:
             "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"
         }
 
+        # Track which cells have been drawn (for multi-cell spanning events)
+        drawn_cells = set()
+
         for row, time_str in enumerate(time_slots):
             y = start_y + (row * self.CELL_HEIGHT)
 
@@ -259,6 +272,10 @@ class CalendarRenderer:
             # Draw cells for each day
             for col, day in enumerate(days):
                 x = self.TIME_COL_WIDTH + (col * self.CELL_WIDTH) + self.PADDING
+
+                # Skip if this cell was already drawn as part of a spanning event
+                if (row, col) in drawn_cells:
+                    continue
 
                 # Check if this cell is blocked
                 is_blocked = self._is_time_blocked(
@@ -276,42 +293,60 @@ class CalendarRenderer:
                     outline=self.GRID_COLOR
                 )
 
+                # Draw Guild Wars in blocked cells
+                if is_blocked:
+                    display_text = "🏰 Guild Wars"
+                    text_x = x + 5
+                    text_y = y + (self.CELL_HEIGHT // 2) - 8
+                    if not hasattr(self, '_emoji_positions'):
+                        self._emoji_positions = []
+                    self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
+
                 # Draw events in this cell
                 if time_str in schedule and day in schedule[time_str]:
                     events_in_cell = schedule[time_str][day]
 
                     if events_in_cell:
-                        # Store event info for emoji/label rendering
-                        event_data = []
-                        for priority, event_name, slot_num in events_in_cell[:3]:  # Max 3 events per cell
-                            emoji = events.get(event_name, {}).get("emoji", "•")
-                            label = self.EVENT_LABELS.get(event_name, "?")
-                            # Use emoji without slot number
-                            display_text = emoji
-                            event_data.append((display_text, event_name, label))
+                        # Get the top priority event
+                        priority, event_name, slot_num = events_in_cell[0]
+                        emoji = events.get(event_name, {}).get("emoji", "•")
+                        event_abbrev = self.EVENT_ABBREV.get(event_name, event_name)
+                        duration = events.get(event_name, {}).get("duration", 30)
 
-                        # Draw emojis/labels
-                        if len(event_data) == 1:
-                            # Single event - centered
-                            display_text, event_name, label = event_data[0]
-                            text_x = x + (self.CELL_WIDTH // 2) - 10
-                            text_y = y + (self.CELL_HEIGHT // 2) - 10
-                            # Store position for later emoji rendering
-                            if not hasattr(self, '_emoji_positions'):
-                                self._emoji_positions = []
-                            self._emoji_positions.append((text_x, text_y, display_text, self.font_bold))
-                        else:
-                            # Multiple events - stack vertically
-                            spacing = 18
-                            total_height = len(event_data) * spacing
-                            start_text_y = y + (self.CELL_HEIGHT - total_height) // 2 + 5
-                            for idx, (display_text, event_name, label) in enumerate(event_data):
-                                text_x = x + (self.CELL_WIDTH // 2) - 10
-                                text_y = start_text_y + (idx * spacing)
-                                # Store position for later emoji rendering
-                                if not hasattr(self, '_emoji_positions'):
-                                    self._emoji_positions = []
-                                self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
+                        # Calculate how many cells to span (duration / 30 minutes)
+                        cells_to_span = max(1, duration // 30)
+
+                        # Check if we have enough cells to span
+                        max_span = min(cells_to_span, len(time_slots) - row)
+
+                        # Mark cells as drawn
+                        for span_row in range(row, row + max_span):
+                            drawn_cells.add((span_row, col))
+
+                        # Calculate spanning cell dimensions
+                        span_height = max_span * self.CELL_HEIGHT
+
+                        # Draw background for spanning event (slightly different color)
+                        if max_span > 1:
+                            # Redraw cell background for spanning event
+                            event_color = self.EVENT_COLORS.get(event_name, self.HEADER_TEXT)
+                            # Use a darker, semi-transparent version of event color for background
+                            bg_color = tuple(max(0, c - 100) for c in event_color)
+                            draw.rectangle(
+                                [x + 2, y + 2, x + self.CELL_WIDTH - 2, y + span_height - 2],
+                                fill=bg_color,
+                                outline=event_color,
+                                width=2
+                            )
+
+                        # Draw event text (emoji + name)
+                        display_text = f"{emoji} {event_abbrev}"
+                        text_x = x + 5
+                        text_y = y + (span_height // 2) - 8
+
+                        if not hasattr(self, '_emoji_positions'):
+                            self._emoji_positions = []
+                        self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
