@@ -425,18 +425,11 @@ class EventPolling(commands.Cog):
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
 
-        # Create embed with legend
+        # Create embed
         embed = discord.Embed(
             title="📅 Event Calendar",
             description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
             color=discord.Color(0xcb4449)
-        )
-
-        # Add legend field
-        embed.add_field(
-            name="Legend",
-            value="🎉 Party\n🛡️ Hero's Realm\n⚔️ Sword Trial\n⚡ Breaking Army\n🏆 Showdown\n🏰 Guild Wars",
-            inline=False
         )
 
         # Get selections
@@ -552,6 +545,96 @@ class EventPolling(commands.Cog):
 
         return embed
 
+    def format_results_intro(self, selections: Dict) -> str:
+        """Format results introduction with rules explanation
+
+        Args:
+            selections: Dict of user selections
+
+        Returns:
+            Formatted string with voting rules and tiebreak explanation
+        """
+        summary_lines = [
+            "**📊 Current Results** (Weighted Voting System)",
+            f"Total voters: {len(selections)}",
+            "",
+            "**How voting works:**",
+            "• 5 points: Your exact voted time",
+            "• 3 points: 30 minutes before/after your voted time",
+            "• 1 point: 1 hour before/after your voted time",
+            "• For Breaking Army & Showdown: +1 point to same time on all other days",
+            "",
+            "**Event priority and tiebreak rules:**",
+            "• Priority order: Hero's Realm > Sword Trial > Breaking Army > Showdown (Party is separate)",
+            "• Tiebreaker (same points): Breaking Army/Showdown prefer Saturday, then later time",
+            "• Tiebreaker (other events): Later time wins",
+            "",
+            "**Click a button below to see that event's votes:**",
+        ]
+        return "\n".join(summary_lines)
+
+    def format_event_results(self, event_name: str, winning_times: Dict, selections: Dict) -> str:
+        """Format results for a single event category
+
+        Args:
+            event_name: Name of the event
+            winning_times: Dict from _calculate_winning_times_weighted
+            selections: Dict of user selections
+
+        Returns:
+            Formatted string with top 3 results for the event
+        """
+        summary_lines = []
+
+        event_info = self.events.get(event_name)
+        if not event_info:
+            return f"Event '{event_name}' not found."
+
+        emoji = event_info["emoji"]
+        event_slots = winning_times.get(event_name, {})
+
+        if event_slots:
+            for slot_index in range(event_info["slots"]):
+                if slot_index not in event_slots:
+                    continue
+
+                winner_key, winner_points, all_entries = event_slots[slot_index]
+
+                # Format header based on event type
+                if event_info["slots"] > 1:
+                    if event_info["type"] == "fixed_days":
+                        day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
+                        summary_lines.append(f"{emoji} **{event_name} ({day_name[:3]})**:")
+                    else:
+                        summary_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**:")
+                else:
+                    summary_lines.append(f"{emoji} **{event_name}**:")
+
+                # Show top 3 entries
+                for rank, (key, points) in enumerate(all_entries[:3], 1):
+                    day, time = key
+                    if event_info["type"] == "daily":
+                        summary_lines.append(f"  {rank}. {time} - **{points} pts**")
+                    elif event_info["type"] == "fixed_days":
+                        if event_info["slots"] > 1:
+                            summary_lines.append(f"  {rank}. {day[:3]} {time} - **{points} pts**")
+                        else:
+                            days_str = "/".join([d[:3] for d in event_info["days"]])
+                            summary_lines.append(f"  {rank}. {time} ({days_str}) - **{points} pts**")
+                    else:
+                        summary_lines.append(f"  {rank}. {day[:3]} {time} - **{points} pts**")
+
+                summary_lines.append("")
+        else:
+            if event_info["slots"] > 1:
+                for slot_index in range(event_info["slots"]):
+                    summary_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**: No votes yet")
+            else:
+                summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
+            summary_lines.append("")
+
+        return "\n".join(summary_lines)
+
     def format_results_summary_weighted(self, winning_times: Dict, selections: Dict) -> str:
         """Format results summary with weighted points for display
 
@@ -572,6 +655,11 @@ class EventPolling(commands.Cog):
             "• 3 points: 30 minutes before/after your voted time",
             "• 1 point: 1 hour before/after your voted time",
             "• For Breaking Army & Showdown: +1 point to same time on all other days",
+            "",
+            "**Event priority and tiebreak rules:**",
+            "• Priority order: Hero's Realm > Sword Trial > Breaking Army > Showdown (Party is separate)",
+            "• Tiebreaker (same points): Breaking Army/Showdown prefer Saturday, then later time",
+            "• Tiebreaker (other events): Later time wins",
             "",
             "**Top 3 Options Per Event:**",
             ""

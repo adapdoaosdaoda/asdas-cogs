@@ -63,7 +63,7 @@ class EventPollView(discord.ui.View):
             self.add_item(button)
 
     async def _show_results(self, interaction: discord.Interaction):
-        """Show current poll results"""
+        """Show current poll results with category buttons"""
         # Get poll_id from the message
         poll_id = str(interaction.message.id)
 
@@ -82,12 +82,16 @@ class EventPollView(discord.ui.View):
         # Calculate winning times using weighted point system
         winning_times = self.cog._calculate_winning_times_weighted(selections)
 
-        # Format results using cog's method
-        results_text = self.cog.format_results_summary_weighted(winning_times, selections)
+        # Format intro text with rules
+        intro_text = self.cog.format_results_intro(selections)
 
-        # Send results as ephemeral message
+        # Create view with event category buttons
+        results_view = ResultsCategoryView(self.cog, self.guild_id, poll_id, winning_times, selections, self.events)
+
+        # Send intro with category buttons as ephemeral message
         await interaction.response.send_message(
-            results_text,
+            intro_text,
+            view=results_view,
             ephemeral=True
         )
 
@@ -1017,6 +1021,67 @@ class WeeklyEventModal(discord.ui.View):
                     lines.append(f"{emoji} {event_name}: {selection['time']} (daily)")
 
         return "\n".join(lines) if lines else "None"
+
+    async def on_timeout(self):
+        """Handle timeout"""
+        pass
+
+class ResultsCategoryView(discord.ui.View):
+    """View with buttons for each event category to show results"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, winning_times: Dict, selections: Dict, events: Dict):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.winning_times = winning_times
+        self.selections = selections
+        self.events = events
+
+        # Add buttons for each event
+        row = 0
+        for event_name, event_info in events.items():
+            # Determine button style based on event
+            if "Hero's Realm" in event_name:
+                button_style = discord.ButtonStyle.secondary  # Grey
+            elif "Sword Trial" in event_name:
+                button_style = discord.ButtonStyle.secondary  # Grey
+            elif "Party" in event_name:
+                button_style = discord.ButtonStyle.success  # Green
+            elif "Breaking Army" in event_name:
+                button_style = discord.ButtonStyle.primary  # Blue
+            elif "Showdown" in event_name:
+                button_style = discord.ButtonStyle.danger  # Red
+            else:
+                button_style = discord.ButtonStyle.secondary  # Grey
+
+            button = discord.ui.Button(
+                label=event_name,
+                style=button_style,
+                emoji=event_info["emoji"],
+                custom_id=f"results:{event_name}",
+                row=row
+            )
+            button.callback = self._create_results_callback(event_name)
+            self.add_item(button)
+
+            # Increment row (max 5 items per row)
+            if len([item for item in self.children if getattr(item, 'row', None) == row]) >= 5:
+                row += 1
+
+    def _create_results_callback(self, event_name: str):
+        async def callback(interaction: discord.Interaction):
+            # Format results for this event
+            event_results = self.cog.format_event_results(event_name, self.winning_times, self.selections)
+
+            # Send results and auto-dismiss
+            await interaction.response.edit_message(
+                content=event_results,
+                view=None
+            )
+            await interaction.delete_original_response()
+
+        return callback
 
     async def on_timeout(self):
         """Handle timeout"""
