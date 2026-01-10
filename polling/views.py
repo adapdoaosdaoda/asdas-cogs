@@ -2,6 +2,8 @@ import discord
 from typing import Optional, Dict, List
 from datetime import datetime
 
+from .modals import EventVotingModal
+
 
 class EventPollView(discord.ui.View):
     """Main view with buttons for each event type"""
@@ -146,101 +148,20 @@ class EventPollView(discord.ui.View):
             user_id_str = str(interaction.user.id)
             user_selections = poll_data["selections"].get(user_id_str, {})
 
-            # Check event type
+            # Open modal for this event
             event_info = self.events[event_name]
+            modal = EventVotingModal(
+                cog=self.cog,
+                guild_id=self.guild_id,
+                poll_id=poll_id,
+                user_id=interaction.user.id,
+                event_name=event_name,
+                event_info=event_info,
+                user_selections=user_selections,
+                events=self.events
+            )
 
-            if event_info["type"] == "daily":
-                # Daily event - show time selector directly (single slot, no day)
-                view = TimeSelectView(
-                    cog=self.cog,
-                    guild_id=self.guild_id,
-                    poll_id=poll_id,
-                    user_id=interaction.user.id,
-                    event_name=event_name,
-                    day=None,  # No day for daily events
-                    slot_index=0,  # Single slot
-                    user_selections=user_selections,
-                    events=self.events
-                )
-                await interaction.response.send_message(
-                    f"Select a time for **{event_name}** (18:00-24:00):",
-                    view=view,
-                    ephemeral=True
-                )
-            elif event_info["type"] == "fixed_days":
-                # Fixed-day event - check if multi-slot
-                if event_info["slots"] > 1:
-                    # Multi-slot fixed-day event - show slot selector (each slot = one day)
-                    view = FixedDaySlotSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_message(
-                        f"Select a slot for **{event_name}** ({event_info['slots']} slots available):",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Single slot fixed-day event - show time selector directly
-                    view = TimeSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        day=None,  # No day selection for fixed-day events
-                        slot_index=0,  # Single slot
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    days_str = ", ".join([d[:3] for d in event_info["days"]])
-                    await interaction.response.send_message(
-                        f"Select a time for **{event_name}** on {days_str} (18:00-24:00):",
-                        view=view,
-                        ephemeral=True
-                    )
-            else:
-                # Weekly event - check if multi-slot
-                if event_info["slots"] > 1:
-                    # Show slot selector first
-                    view = SlotSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events,
-                        days=self.days
-                    )
-                    await interaction.response.send_message(
-                        f"Select slot for **{event_name}** (2 slots available):",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Single slot weekly event - show day selector
-                    view = DaySelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        slot_index=0,
-                        user_selections=user_selections,
-                        events=self.events,
-                        days=self.days
-                    )
-                    await interaction.response.send_message(
-                        f"Select a day for **{event_name}**:",
-                        view=view,
-                        ephemeral=True
-                    )
+            await interaction.response.send_modal(modal)
 
         return callback
 
