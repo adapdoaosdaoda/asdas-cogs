@@ -122,6 +122,9 @@ class CalendarRenderer:
 
         time_slots = sorted(schedule.keys(), key=sort_time_key)
 
+        # Crop empty hours from extremities - find first and last slots with events
+        time_slots = self._crop_empty_hours(time_slots, schedule, days)
+
         width = self.TIME_COL_WIDTH + (len(days) * self.CELL_WIDTH) + (2 * self.PADDING)
         height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.FOOTER_HEIGHT + (2 * self.PADDING)
 
@@ -331,10 +334,13 @@ class CalendarRenderer:
                     outline=self.GRID_COLOR
                 )
 
-                # Draw Guild Wars in blocked cells
+                # Draw Guild Wars in blocked cells (centered)
                 if is_blocked:
-                    display_text = "🏰"
-                    text_x = x + 5
+                    display_text = "🏰 Guild Wars"
+                    # Calculate text width for centering
+                    bbox = draw.textbbox((0, 0), display_text, font=self.font_small)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x + (self.CELL_WIDTH - text_width) // 2
                     text_y = y + (self.CELL_HEIGHT // 2) - 8
                     if not hasattr(self, '_emoji_positions'):
                         self._emoji_positions = []
@@ -352,16 +358,27 @@ class CalendarRenderer:
                             priority, event_name, slot_num = events_in_cell[event_idx]
                             emoji = events.get(event_name, {}).get("emoji", "•")
 
+                            # Create display text with emoji and name
+                            display_text = f"{emoji} {event_name}"
+
+                            # Calculate text width for centering
+                            bbox = draw.textbbox((0, 0), display_text, font=self.font_small)
+                            text_width = bbox[2] - bbox[0]
+                            text_height = bbox[3] - bbox[1]
+
+                            # Center horizontally
+                            text_x = x + (self.CELL_WIDTH - text_width) // 2
+
                             # Position events vertically based on index
                             if num_events_to_show == 1:
                                 # Single event: center vertically
-                                text_y = y + (self.CELL_HEIGHT // 2) - 8
+                                text_y = y + (self.CELL_HEIGHT - text_height) // 2
                             else:
-                                # Multiple events: stack vertically
-                                text_y = y + 5 + (event_idx * 20)
-
-                            display_text = emoji
-                            text_x = x + 5 + (event_idx * 30)  # Offset horizontally for multiple events
+                                # Multiple events: stack vertically with line breaks, center each
+                                if event_idx == 0:
+                                    text_y = y + 5
+                                else:
+                                    text_y = y + 27  # Second line (with line break)
 
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
@@ -475,3 +492,51 @@ class CalendarRenderer:
                 return True
 
         return False
+
+    def _crop_empty_hours(self, time_slots: List[str], schedule: Dict, days: List[str]) -> List[str]:
+        """Crop empty hours from the extremities of the calendar
+
+        Args:
+            time_slots: Sorted list of all time slots
+            schedule: Schedule data structure mapping time -> day -> events
+            days: List of day abbreviations
+
+        Returns:
+            Filtered list of time slots with empty extremities removed
+        """
+        if not time_slots:
+            return time_slots
+
+        # Find first time slot with any events
+        first_event_idx = None
+        for idx, time_str in enumerate(time_slots):
+            has_events = False
+            for day in days:
+                if time_str in schedule and day in schedule[time_str]:
+                    if schedule[time_str][day]:  # Check if events list is not empty
+                        has_events = True
+                        break
+            if has_events:
+                first_event_idx = idx
+                break
+
+        # Find last time slot with any events
+        last_event_idx = None
+        for idx in range(len(time_slots) - 1, -1, -1):
+            time_str = time_slots[idx]
+            has_events = False
+            for day in days:
+                if time_str in schedule and day in schedule[time_str]:
+                    if schedule[time_str][day]:  # Check if events list is not empty
+                        has_events = True
+                        break
+            if has_events:
+                last_event_idx = idx
+                break
+
+        # If no events found, return original list
+        if first_event_idx is None or last_event_idx is None:
+            return time_slots
+
+        # Return cropped list
+        return time_slots[first_event_idx:last_event_idx + 1]
