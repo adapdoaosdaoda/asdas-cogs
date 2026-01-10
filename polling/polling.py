@@ -371,7 +371,7 @@ class EventPolling(commands.Cog):
 
         # Create embed
         embed = discord.Embed(
-            title=f"📅 {title} - Calendar View",
+            title="📅 Event Calendar",
             description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
             color=discord.Color(0xcb4449)
         )
@@ -430,62 +430,8 @@ class EventPolling(commands.Cog):
         calendar_file = discord.File(image_buffer, filename="calendar.png")
         embed.set_image(url="attachment://calendar.png")
 
-        # Add legend
-        legend = (
-            "**Legend:**\n"
-            "🛡️ Hero's Realm │ ⚔️ Sword Trial │ 🎉 Party\n"
-            "⚡ Breaking Army │ 🏆 Showdown │ 🏰 Guild Wars (blocked)"
-        )
-        embed.add_field(
-            name="📖 Event Types",
-            value=legend,
-            inline=False
-        )
-
-        # Add summary
-        summary_lines = []
-        for event_name, event_info in self.events.items():
-            emoji = event_info["emoji"]
-            event_slots = winning_times.get(event_name, {})
-
-            if event_slots:
-                for slot_index in range(event_info["slots"]):
-                    if slot_index in event_slots:
-                        winners, votes = event_slots[slot_index]
-                        if event_info["type"] == "daily":
-                            time_str = winners[0][1]
-                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
-                        elif event_info["type"] == "fixed_days":
-                            time_str = winners[0][1]
-                            if event_info["slots"] > 1:
-                                # Multi-slot fixed-day event - show day name from slot index
-                                day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Day {slot_index + 1}"
-                                summary_lines.append(f"{emoji} **{event_name} ({day_name})**: {time_str} ({votes} votes)")
-                            else:
-                                summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
-                        else:
-                            winner_strs = [f"{day} {time}" for day, time in winners]
-                            if event_info["slots"] > 1:
-                                summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: {winner_strs[0]} ({votes} votes)")
-                            else:
-                                summary_lines.append(f"{emoji} **{event_name}**: {winner_strs[0]} ({votes} votes)")
-                    else:
-                        if event_info["slots"] > 1:
-                            summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: No votes yet")
-            else:
-                if event_info["slots"] > 1:
-                    for slot_index in range(event_info["slots"]):
-                        summary_lines.append(f"{emoji} **{event_name} #{slot_index + 1}**: No votes yet")
-                else:
-                    summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
-
-        embed.add_field(
-            name="🏆 Current Winners",
-            value="\n".join(summary_lines),
-            inline=False
-        )
-
-        embed.set_footer(text=f"Total voters: {len(selections)}")
+        # Set footer with timezone and voter count
+        embed.set_footer(text=f"Timezone: {self.timezone_display} | Total voters: {len(selections)}")
 
         return embed, calendar_file
 
