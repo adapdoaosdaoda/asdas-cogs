@@ -660,8 +660,9 @@ class EventPolling(commands.Cog):
                             # 1 emoji = 2 char widths, need 1 leading + 2 trailing spaces
                             row += f" {cell}  │"
                     else:
-                        # Empty cell - pad with spaces to match column width
-                        row += "     │"
+                        # Empty cell - use braille blank pattern to match emoji width
+                        # ⠀ (braille blank U+2800) +   (hair space U+200A) + ⠀ (braille blank)
+                        row += " ⠀ ⠀ │"
                 lines.append(row)
 
         lines.append("```")
