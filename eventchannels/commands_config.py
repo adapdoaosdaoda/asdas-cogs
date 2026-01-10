@@ -18,6 +18,26 @@ class CommandsConfigMixin:
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
+    async def seteventarchivecategory(self, ctx, category: discord.CategoryChannel):
+        """Set the category where archived event channels will be moved.
+
+        When event channels contain user messages, they are automatically archived
+        instead of being deleted. Archived channels are moved to this category,
+        made read-only, and prefixed with 'archived-'.
+
+        If not set, an "Event Archives" category will be auto-created when needed.
+
+        **Parameters:**
+        - category: The category to use for archived channels
+
+        **Example:**
+        - `[p]eventchannels setarchivecategory @Event Archives`
+        """
+        await self.config.guild(ctx.guild).archive_category_id.set(category.id)
+        await ctx.send(f"✅ Archived event channels will be moved to **{category.name}**.")
+
+    @commands.admin_or_permissions(manage_guild=True)
+    @commands.guild_only()
     async def seteventtimezone(self, ctx, tz: str):
         """Set the timezone for event role matching (e.g., Europe/Amsterdam, America/New_York)."""
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError

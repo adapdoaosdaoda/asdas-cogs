@@ -438,29 +438,19 @@ class HandlersMixin:
             warning_time = delete_time - timedelta(minutes=15)
             await asyncio.sleep(max(0, (warning_time - datetime.now(timezone.utc)).total_seconds()))
 
-            # Send deletion warning and lock channels (only if there was recent activity)
+            # Send deletion warning and lock channels (always if there are user messages)
             deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
             if deletion_warning_template:
-                # Check if there was a message sent in the last 15 minutes
+                # Check if there are any user messages (for archiving and extension)
                 try:
-                    last_message = None
-                    async for message in text_channel.history(limit=1):
-                        last_message = message
-                        break
+                    has_user_messages = await self._has_user_messages(text_channel)
 
-                    # Only send warning if there was a message in the last 15 minutes
-                    should_send_warning = False
-                    if last_message:
-                        time_since_last_message = datetime.now(timezone.utc) - last_message.created_at
-                        if time_since_last_message <= timedelta(minutes=15):
-                            should_send_warning = True
-                            log.info(f"Last message in {text_channel.name} was {time_since_last_message.total_seconds():.0f}s ago - sending deletion warning")
-                        else:
-                            log.info(f"Last message in {text_channel.name} was {time_since_last_message.total_seconds():.0f}s ago - skipping deletion warning")
+                    if has_user_messages:
+                        log.info(f"User messages found in {text_channel.name} - sending deletion warning with extend option")
                     else:
-                        log.info(f"No messages found in {text_channel.name} - skipping deletion warning")
+                        log.info(f"No user messages found in {text_channel.name} - skipping deletion warning")
 
-                    if should_send_warning:
+                    if has_user_messages:
                         try:
                             deletion_warning_msg = deletion_warning_template.format(
                                 role=role.mention,
@@ -954,18 +944,10 @@ class HandlersMixin:
             deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
             if deletion_warning_template:
                 try:
-                    last_message = None
-                    async for message in text_channel.history(limit=1):
-                        last_message = message
-                        break
+                    # Always send warning if there are user messages (for archiving and extension)
+                    has_user_messages = await self._has_user_messages(text_channel)
 
-                    should_send_warning = False
-                    if last_message:
-                        time_since_last_message = datetime.now(timezone.utc) - last_message.created_at
-                        if time_since_last_message <= timedelta(minutes=15):
-                            should_send_warning = True
-
-                    if should_send_warning:
+                    if has_user_messages:
                         try:
                             deletion_warning_msg = deletion_warning_template.format(
                                 role=role.mention,
