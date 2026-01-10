@@ -81,48 +81,11 @@ class EventPollView(discord.ui.View):
         poll_data = polls[poll_id]
         selections = poll_data.get("selections", {})
 
-        # Calculate winning times (same logic as _create_poll_embed)
-        winning_times = {}
-        for event_name, event_info in self.events.items():
-            num_slots = event_info["slots"]
-            winning_times[event_name] = {}
-
-            for slot_index in range(num_slots):
-                vote_counts = {}
-
-                for user_id, user_selections in selections.items():
-                    if event_name in user_selections:
-                        selection = user_selections[event_name]
-
-                        # Handle both list (multi-slot) and dict (single-slot) formats
-                        if isinstance(selection, list):
-                            if slot_index < len(selection) and selection[slot_index]:
-                                slot_data = selection[slot_index]
-                                if event_info["type"] == "daily":
-                                    key = ("Daily", slot_data["time"])
-                                elif event_info["type"] == "fixed_days":
-                                    key = ("Fixed", slot_data["time"])
-                                else:
-                                    key = (slot_data.get("day", "Unknown"), slot_data["time"])
-                                vote_counts[key] = vote_counts.get(key, 0) + 1
-                        else:
-                            # Legacy single-slot format
-                            if slot_index == 0:
-                                if event_info["type"] == "daily":
-                                    key = ("Daily", selection["time"])
-                                elif event_info["type"] == "fixed_days":
-                                    key = ("Fixed", selection["time"])
-                                else:
-                                    key = (selection.get("day", "Unknown"), selection["time"])
-                                vote_counts[key] = vote_counts.get(key, 0) + 1
-
-                if vote_counts:
-                    max_votes = max(vote_counts.values())
-                    winners = [k for k, v in vote_counts.items() if v == max_votes]
-                    winning_times[event_name][slot_index] = (winners, max_votes)
+        # Calculate winning times using weighted point system
+        winning_times = self.cog._calculate_winning_times_weighted(selections)
 
         # Format results using cog's method
-        results_text = self.cog.format_results_summary(winning_times, selections)
+        results_text = self.cog.format_results_summary_weighted(winning_times, selections)
 
         # Send results as ephemeral message
         await interaction.response.send_message(

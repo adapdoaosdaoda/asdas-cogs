@@ -49,6 +49,7 @@ class CalendarRenderer:
     CELL_HEIGHT = 50
     TIME_COL_WIDTH = 90
     HEADER_HEIGHT = 50
+    FOOTER_HEIGHT = 40
     PADDING = 15
 
     # Event name abbreviations for display
@@ -85,7 +86,8 @@ class CalendarRenderer:
         self,
         winning_times: Dict[str, Dict[str, str]],
         events: Dict,
-        blocked_times: List[Dict] = None
+        blocked_times: List[Dict] = None,
+        total_voters: int = 0
     ) -> io.BytesIO:
         """Render calendar as PNG image
 
@@ -111,7 +113,7 @@ class CalendarRenderer:
         time_slots = sorted(schedule.keys())
 
         width = self.TIME_COL_WIDTH + (len(days) * self.CELL_WIDTH) + (2 * self.PADDING)
-        height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + (2 * self.PADDING)
+        height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.FOOTER_HEIGHT + (2 * self.PADDING)
 
         # Create image
         img = Image.new('RGB', (width, height), self.BG_COLOR)
@@ -125,6 +127,9 @@ class CalendarRenderer:
 
         # Draw time labels and calendar grid
         self._draw_calendar_grid(draw, days, time_slots, schedule, blocked_times, events)
+
+        # Draw footer with timestamp and voter count
+        self._draw_footer(draw, width, height, total_voters)
 
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
@@ -412,6 +417,28 @@ class CalendarRenderer:
                 current_y = legend_y + 32
             else:
                 current_y += 18
+
+    def _draw_footer(self, draw: ImageDraw, width: int, height: int, total_voters: int):
+        """Draw footer with timestamp and voter count"""
+        from datetime import datetime
+
+        # Calculate footer position
+        footer_y = height - self.FOOTER_HEIGHT
+
+        # Get current timestamp
+        now = datetime.utcnow()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        # Create footer text
+        footer_text = f"Timezone: {self.timezone} | Total voters: {total_voters} | Last updated: {timestamp}"
+
+        # Draw footer text centered
+        bbox = draw.textbbox((0, 0), footer_text, font=self.font_small)
+        text_width = bbox[2] - bbox[0]
+        text_x = (width - text_width) // 2
+        text_y = footer_y + (self.FOOTER_HEIGHT - 14) // 2
+
+        draw.text((text_x, text_y), footer_text, fill=self.TIME_TEXT, font=self.font_small)
 
     def _is_time_blocked(self, day: str, time_str: str, blocked_times: List[Dict]) -> bool:
         """Check if a time slot is blocked"""
