@@ -885,7 +885,7 @@ class EventPolling(commands.Cog):
         current_hour = start_hour
         current_minute = 0
 
-        while current_hour < end_hour or (current_hour == end_hour and current_minute == 0):
+        while current_hour < end_hour:
             # Convert hours >= 24 to next-day format (24 -> 00, 25 -> 01, etc.)
             display_hour = current_hour if current_hour < 24 else current_hour - 24
             time_str = f"{display_hour:02d}:{current_minute:02d}"
