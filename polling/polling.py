@@ -833,11 +833,18 @@ class EventPolling(commands.Cog):
                     new_event_days = self.events[event_name]["days"]
 
                     if existing_event_type == "fixed_days":
-                        # Check if any days overlap
-                        existing_event_days = self.events[existing_event]["days"]
-                        shared_days = set(new_event_days) & set(existing_event_days)
-                        if shared_days and self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
-                            return True, f"This time conflicts with your {slot_label} selection"
+                        # For multi-slot fixed-day events, compare the specific days for each slot
+                        # (new_day is the day for the slot being selected, existing_day is from the existing slot)
+                        if new_day and existing_day:
+                            # Both have specific days - only conflict if same day and times overlap
+                            if new_day == existing_day and self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                                return True, f"This time conflicts with your {slot_label} selection"
+                        else:
+                            # Fallback to checking event day lists if specific days aren't set
+                            existing_event_days = self.events[existing_event]["days"]
+                            shared_days = set(new_event_days) & set(existing_event_days)
+                            if shared_days and self._time_ranges_overlap(new_start, new_end, existing_start, existing_end):
+                                return True, f"This time conflicts with your {slot_label} selection"
                     elif existing_event_type == "once":
                         # Check if the existing weekly event's day is in our fixed days
                         if existing_day in new_event_days:
