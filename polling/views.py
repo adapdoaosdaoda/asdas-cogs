@@ -675,11 +675,6 @@ class WeeklyEventModal(discord.ui.View):
         self.user_selections = user_selections
         self.events = events
         self.days = days
-        self.selected_slot1_day = None
-        self.selected_slot1_time = None
-        self.selected_slot2_day = None
-        self.selected_slot2_time = None
-
         # Get current selections if exist
         current_selections = user_selections.get(event_name)
         current_slot1 = None
@@ -687,6 +682,12 @@ class WeeklyEventModal(discord.ui.View):
         if current_selections and isinstance(current_selections, list):
             current_slot1 = current_selections[0] if len(current_selections) > 0 else None
             current_slot2 = current_selections[1] if len(current_selections) > 1 else None
+
+        # Initialize selected values from existing selections (so user can edit without re-selecting everything)
+        self.selected_slot1_day = current_slot1.get("day") if current_slot1 and isinstance(current_slot1, dict) else None
+        self.selected_slot1_time = current_slot1.get("time") if current_slot1 and isinstance(current_slot1, dict) else None
+        self.selected_slot2_day = current_slot2.get("day") if current_slot2 and isinstance(current_slot2, dict) else None
+        self.selected_slot2_time = current_slot2.get("time") if current_slot2 and isinstance(current_slot2, dict) else None
 
         # Generate time options
         event_info = events[event_name]
