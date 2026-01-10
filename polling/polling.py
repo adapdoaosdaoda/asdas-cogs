@@ -800,66 +800,37 @@ class EventPolling(commands.Cog):
             num_slots = event_info["slots"]
             winning_times[event_name] = {}
 
-            for slot_index in range(num_slots):
-                # Dictionary to store points: key -> total_points
+            # Special handling for weekly events with multiple slots (Breaking Army, Showdown)
+            # Pool all votes together and select top 2
+            if event_info["type"] == "weekly" and num_slots > 1:
+                # Pool votes from all slots
                 point_totals = {}
 
-                # Process each user's vote
+                # Process each user's vote (pool both slots together)
                 for user_id, user_selections in selections.items():
                     if event_name not in user_selections:
                         continue
 
                     selection = user_selections[event_name]
 
-                    # Get the voted time for this slot
-                    voted_time = None
-                    voted_day = None
-
+                    # Collect all voted times from all slots for this user
+                    voted_entries = []
                     if isinstance(selection, list):
-                        if slot_index < len(selection) and selection[slot_index]:
-                            slot_data = selection[slot_index]
-                            voted_time = slot_data["time"]
-                            voted_day = slot_data.get("day")
+                        for slot_data in selection:
+                            if slot_data:
+                                voted_time = slot_data.get("time")
+                                voted_day = slot_data.get("day")
+                                if voted_time and voted_day:
+                                    voted_entries.append((voted_day, voted_time))
                     else:
                         # Single-slot format
-                        if slot_index == 0:
-                            voted_time = selection["time"]
-                            voted_day = selection.get("day")
+                        voted_time = selection.get("time")
+                        voted_day = selection.get("day")
+                        if voted_time and voted_day:
+                            voted_entries.append((voted_day, voted_time))
 
-                    if not voted_time:
-                        continue
-
-                    # Calculate points for all possible times
-                    if event_info["type"] == "daily":
-                        # Daily events
-                        for target_time in all_times:
-                            points = self._calculate_weighted_points(voted_time, target_time)
-                            if points > 0:
-                                key = ("Daily", target_time)
-                                point_totals[key] = point_totals.get(key, 0) + points
-
-                    elif event_info["type"] == "fixed_days":
-                        # Fixed-day events
-                        if event_info["slots"] > 1 and voted_day:
-                            # Multi-slot: specific day
-                            for target_time in all_times:
-                                points = self._calculate_weighted_points(voted_time, target_time)
-                                if points > 0:
-                                    key = (voted_day, target_time)
-                                    point_totals[key] = point_totals.get(key, 0) + points
-                        else:
-                            # Single slot for all fixed days
-                            for target_time in all_times:
-                                points = self._calculate_weighted_points(voted_time, target_time)
-                                if points > 0:
-                                    key = ("Fixed", target_time)
-                                    point_totals[key] = point_totals.get(key, 0) + points
-
-                    else:
-                        # Weekly events (Breaking Army, Showdown)
-                        if not voted_day:
-                            continue
-
+                    # Award points for each voted entry
+                    for voted_day, voted_time in voted_entries:
                         # Main points for the voted day
                         for target_time in all_times:
                             points = self._calculate_weighted_points(voted_time, target_time)
@@ -873,19 +844,128 @@ class EventPolling(commands.Cog):
                                 key = (day, voted_time)
                                 point_totals[key] = point_totals.get(key, 0) + 1
 
-                # Select winner (highest points, latest time for ties)
+                # Sort by points (desc), then by distance to Saturday (asc), then by time (desc)
+                def saturday_distance(day_name: str) -> int:
+                    """Calculate distance from Saturday (0 = Saturday, 1 = Fri/Sun, etc.)"""
+                    day_index = self.days_of_week.index(day_name)
+                    saturday_index = 5  # Saturday
+                    return min(abs(day_index - saturday_index), 7 - abs(day_index - saturday_index))
+
                 if point_totals:
-                    # Sort by points (descending) then by time (descending for tie-breaking)
                     sorted_entries = sorted(
                         point_totals.items(),
-                        key=lambda x: (x[1], x[0][1]),  # Sort by points, then by time
-                        reverse=True
+                        key=lambda x: (-x[1], saturday_distance(x[0][0]), -self._time_to_sort_key(x[0][1])),
                     )
 
-                    winner_key, winner_points = sorted_entries[0]
-                    winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
+                    # Assign top 2 to slots
+                    for slot_index in range(min(num_slots, len(sorted_entries))):
+                        winner_key, winner_points = sorted_entries[slot_index]
+                        winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
+
+            else:
+                # Original slot-by-slot logic for other event types
+                for slot_index in range(num_slots):
+                    # Dictionary to store points: key -> total_points
+                    point_totals = {}
+
+                    # Process each user's vote
+                    for user_id, user_selections in selections.items():
+                        if event_name not in user_selections:
+                            continue
+
+                        selection = user_selections[event_name]
+
+                        # Get the voted time for this slot
+                        voted_time = None
+                        voted_day = None
+
+                        if isinstance(selection, list):
+                            if slot_index < len(selection) and selection[slot_index]:
+                                slot_data = selection[slot_index]
+                                voted_time = slot_data["time"]
+                                voted_day = slot_data.get("day")
+                        else:
+                            # Single-slot format
+                            if slot_index == 0:
+                                voted_time = selection["time"]
+                                voted_day = selection.get("day")
+
+                        if not voted_time:
+                            continue
+
+                        # Calculate points for all possible times
+                        if event_info["type"] == "daily":
+                            # Daily events
+                            for target_time in all_times:
+                                points = self._calculate_weighted_points(voted_time, target_time)
+                                if points > 0:
+                                    key = ("Daily", target_time)
+                                    point_totals[key] = point_totals.get(key, 0) + points
+
+                        elif event_info["type"] == "fixed_days":
+                            # Fixed-day events
+                            if event_info["slots"] > 1 and voted_day:
+                                # Multi-slot: specific day
+                                for target_time in all_times:
+                                    points = self._calculate_weighted_points(voted_time, target_time)
+                                    if points > 0:
+                                        key = (voted_day, target_time)
+                                        point_totals[key] = point_totals.get(key, 0) + points
+                            else:
+                                # Single slot for all fixed days
+                                for target_time in all_times:
+                                    points = self._calculate_weighted_points(voted_time, target_time)
+                                    if points > 0:
+                                        key = ("Fixed", target_time)
+                                        point_totals[key] = point_totals.get(key, 0) + points
+
+                        else:
+                            # Weekly events (single slot only, legacy path)
+                            if not voted_day:
+                                continue
+
+                            # Main points for the voted day
+                            for target_time in all_times:
+                                points = self._calculate_weighted_points(voted_time, target_time)
+                                if points > 0:
+                                    key = (voted_day, target_time)
+                                    point_totals[key] = point_totals.get(key, 0) + points
+
+                            # Special case: 1 point to same time on all other days
+                            for day in self.days_of_week:
+                                if day != voted_day:
+                                    key = (day, voted_time)
+                                    point_totals[key] = point_totals.get(key, 0) + 1
+
+                    # Select winner (highest points, latest time for ties)
+                    if point_totals:
+                        # Sort by points (descending) then by time (descending for tie-breaking)
+                        sorted_entries = sorted(
+                            point_totals.items(),
+                            key=lambda x: (x[1], x[0][1]),  # Sort by points, then by time
+                            reverse=True
+                        )
+
+                        winner_key, winner_points = sorted_entries[0]
+                        winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
 
         return winning_times
+
+    def _time_to_sort_key(self, time_str: str) -> int:
+        """Convert time string to sortable integer for sorting
+
+        Args:
+            time_str: Time in HH:MM format
+
+        Returns:
+            Integer representing minutes since 17:00 (start of event window)
+        """
+        hour, minute = map(int, time_str.split(':'))
+        # Handle wraparound: times 00:00-02:59 are treated as next day
+        if hour < 3:
+            hour += 24
+        # Convert to minutes since 17:00
+        return (hour - 17) * 60 + minute
 
     def _calculate_weighted_points(self, voted_time: str, target_time: str) -> int:
         """Calculate weighted points based on time difference
