@@ -70,6 +70,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
         # Configuration Commands
         config_commands = (
             f"`{prefix}eventchannels setcategory <category>` - Set where event channels will be created\n"
+            f"`{prefix}eventchannels setarchivecategory <category>` - Set where archived channels will be moved\n"
             f"`{prefix}eventchannels settimezone <timezone>` - Set timezone for event role matching (e.g., Europe/Amsterdam)\n"
             f"`{prefix}eventchannels setcreationtime <minutes>` - Set when channels are created before event start (default: 15)\n"
             f"`{prefix}eventchannels setdeletion <hours>` - Set when channels are deleted after event start (default: 4)\n"
@@ -82,6 +83,17 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             f"`{prefix}eventchannels linkthread <thread> <event_id>` - Manually link a forum thread to an event\n"
         )
         embed.add_field(name="Configuration", value=config_commands, inline=False)
+
+        # Archive Features
+        archive_commands = (
+            f"**Automatic Archiving:**\n"
+            f"Channels with user messages are automatically archived instead of deleted.\n"
+            f"Archived channels are moved to the archive category, made read-only, and prefixed with 'archived-'.\n\n"
+            f"**Deletion Extension:**\n"
+            f"React with ⏰ to the deletion warning message to extend deletion by 4 hours.\n"
+            f"This allows you to keep channels open longer if needed."
+        )
+        embed.add_field(name="Archive & Deletion Features", value=archive_commands, inline=False)
 
         # Voice Multiplier Commands
         voice_commands = (
@@ -130,8 +142,10 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             message = (
                 f"**EventChannels Commands**\n\n"
                 f"**Configuration:**\n{config_commands}\n\n"
+                f"**Archive & Deletion Features:**\n{archive_commands}\n\n"
                 f"**Voice Channel Multiplier:**\n{voice_commands}\n\n"
                 f"**Divider Channel:**\n{divider_commands}\n\n"
+                f"**Whitelisted Roles:**\n{whitelist_commands}\n\n"
                 f"**View Settings:**\n{view_commands}\n\n"
                 f"**Testing:**\n{test_commands}\n\n"
                 f"Most commands require Manage Guild permission"
@@ -144,6 +158,11 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
     async def setcategory(self, ctx, category: discord.CategoryChannel):
         """Wrapper for seteventcategory from CommandsConfigMixin."""
         await self.seteventcategory(ctx, category)
+
+    @eventchannels.command(name="setarchivecategory")
+    async def setarchivecategory(self, ctx, category: discord.CategoryChannel):
+        """Wrapper for seteventarchivecategory from CommandsConfigMixin."""
+        await self.seteventarchivecategory(ctx, category)
 
     @eventchannels.command(name="settimezone")
     async def settimezone(self, ctx, tz: str):
