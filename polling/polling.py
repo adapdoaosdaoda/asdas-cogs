@@ -1037,7 +1037,150 @@ class EventPolling(commands.Cog):
                         winner_key, winner_points = sorted_entries[0]
                         winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
 
+        # Resolve conflicts between events based on priority
+        winning_times = self._resolve_event_conflicts(winning_times)
+
         return winning_times
+
+    def _resolve_event_conflicts(self, winning_times: Dict) -> Dict:
+        """Resolve conflicts between events based on priority
+
+        Higher priority events get their preferred time.
+        Lower priority events must pick next best non-conflicting time.
+
+        Args:
+            winning_times: Initial winning times from voting
+
+        Returns:
+            Adjusted winning times with conflicts resolved
+        """
+        # Sort events by priority (highest first)
+        sorted_events = sorted(
+            self.events.items(),
+            key=lambda x: x[1].get("priority", 0),
+            reverse=True
+        )
+
+        # Track occupied time slots: {day: [(start_time, end_time, event_name)]}
+        occupied_slots = {day: [] for day in self.days_of_week}
+        occupied_slots["Daily"] = []  # For daily events
+
+        adjusted_winning_times = {}
+
+        for event_name, event_info in sorted_events:
+            if event_name not in winning_times:
+                continue
+
+            adjusted_winning_times[event_name] = {}
+
+            for slot_index, slot_data in winning_times[event_name].items():
+                winner_key, winner_points, all_entries = slot_data
+
+                # Try to find a non-conflicting time from the sorted entries
+                selected_entry = None
+                for candidate_key, candidate_points in all_entries:
+                    if self._check_event_conflict_with_occupied(
+                        event_name, candidate_key, occupied_slots
+                    ):
+                        # This time conflicts, try next
+                        continue
+                    else:
+                        # Found a non-conflicting time
+                        selected_entry = (candidate_key, candidate_points)
+                        break
+
+                if selected_entry:
+                    final_key, final_points = selected_entry
+                    # Add this time to occupied slots
+                    self._add_to_occupied_slots(event_name, final_key, occupied_slots)
+                    # Store the adjusted winning time
+                    adjusted_winning_times[event_name][slot_index] = (final_key, final_points, all_entries)
+                else:
+                    # No non-conflicting time found, keep original (shouldn't happen often)
+                    adjusted_winning_times[event_name][slot_index] = slot_data
+
+        return adjusted_winning_times
+
+    def _check_event_conflict_with_occupied(
+        self, event_name: str, time_key: tuple, occupied_slots: Dict
+    ) -> bool:
+        """Check if an event's time conflicts with already-occupied slots
+
+        Args:
+            event_name: Name of the event
+            time_key: (day, time) tuple
+            occupied_slots: Dictionary of occupied time slots
+
+        Returns:
+            True if conflict exists, False otherwise
+        """
+        day, time = time_key
+        event_info = self.events[event_name]
+
+        # Get time range for this event
+        event_start, event_end = self._get_event_time_range(event_name, time)
+
+        # Determine which days this event affects
+        affected_days = []
+        if event_info["type"] == "daily" or day == "Daily":
+            affected_days = self.days_of_week
+        elif event_info["type"] == "fixed_days":
+            if day in self.days_of_week:
+                # Multi-slot fixed-day event with specific day
+                affected_days = [day]
+            else:
+                # Single-slot fixed-day event (day = "Fixed")
+                affected_days = event_info.get("days", [])
+        else:
+            # Weekly event - specific day only
+            affected_days = [day] if day in self.days_of_week else []
+
+        # Check for conflicts on each affected day
+        for check_day in affected_days:
+            # Check against daily events
+            for occupied_start, occupied_end, occupied_event in occupied_slots.get("Daily", []):
+                if self._time_ranges_overlap(event_start, event_end, occupied_start, occupied_end):
+                    return True
+
+            # Check against events on this specific day
+            for occupied_start, occupied_end, occupied_event in occupied_slots.get(check_day, []):
+                if self._time_ranges_overlap(event_start, event_end, occupied_start, occupied_end):
+                    return True
+
+        return False
+
+    def _add_to_occupied_slots(
+        self, event_name: str, time_key: tuple, occupied_slots: Dict
+    ):
+        """Add an event's time to the occupied slots tracker
+
+        Args:
+            event_name: Name of the event
+            time_key: (day, time) tuple
+            occupied_slots: Dictionary of occupied time slots to update
+        """
+        day, time = time_key
+        event_info = self.events[event_name]
+
+        # Get time range for this event
+        event_start, event_end = self._get_event_time_range(event_name, time)
+
+        # Determine which days this event affects
+        if event_info["type"] == "daily" or day == "Daily":
+            # Daily events go in the "Daily" slot
+            occupied_slots["Daily"].append((event_start, event_end, event_name))
+        elif event_info["type"] == "fixed_days":
+            if day in self.days_of_week:
+                # Multi-slot fixed-day event with specific day
+                occupied_slots[day].append((event_start, event_end, event_name))
+            else:
+                # Single-slot fixed-day event affects all its days
+                for event_day in event_info.get("days", []):
+                    occupied_slots[event_day].append((event_start, event_end, event_name))
+        else:
+            # Weekly event - specific day only
+            if day in self.days_of_week:
+                occupied_slots[day].append((event_start, event_end, event_name))
 
     def _time_to_sort_key(self, time_str: str) -> int:
         """Convert time string to sortable integer for sorting
