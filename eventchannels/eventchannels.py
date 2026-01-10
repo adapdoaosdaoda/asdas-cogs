@@ -67,13 +67,18 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             color=discord.Color.blue()
         )
 
-        # Configuration Commands
-        config_commands = (
+        # Configuration Commands - Basic
+        config_commands_basic = (
             f"`{prefix}eventchannels setcategory <category>` - Set where event channels will be created\n"
             f"`{prefix}eventchannels setarchivecategory <category>` - Set where archived channels will be moved\n"
             f"`{prefix}eventchannels settimezone <timezone>` - Set timezone for event role matching (e.g., Europe/Amsterdam)\n"
             f"`{prefix}eventchannels setcreationtime <minutes>` - Set when channels are created before event start (default: 15)\n"
             f"`{prefix}eventchannels setdeletion <hours>` - Set when channels are deleted after event start (default: 4)\n"
+        )
+        embed.add_field(name="Configuration - Basic", value=config_commands_basic, inline=False)
+
+        # Configuration Commands - Advanced
+        config_commands_advanced = (
             f"`{prefix}eventchannels setroleformat <format>` - Customize role name format pattern\n"
             f"`{prefix}eventchannels setchannelformat <format>` - Customize channel name format pattern\n"
             f"`{prefix}eventchannels setannouncement <message>` - Set announcement message in event channels\n"
@@ -82,7 +87,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             f"`{prefix}eventchannels setchannelnamelimit <limit>` - Set maximum character limit for channel names (default: 100)\n"
             f"`{prefix}eventchannels linkthread <thread> <event_id>` - Manually link a forum thread to an event\n"
         )
-        embed.add_field(name="Configuration", value=config_commands, inline=False)
+        embed.add_field(name="Configuration - Advanced", value=config_commands_advanced, inline=False)
 
         # Archive Features
         archive_commands = (
@@ -141,7 +146,8 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             # Fallback to plain text if bot lacks embed permissions
             message = (
                 f"**EventChannels Commands**\n\n"
-                f"**Configuration:**\n{config_commands}\n\n"
+                f"**Configuration - Basic:**\n{config_commands_basic}\n\n"
+                f"**Configuration - Advanced:**\n{config_commands_advanced}\n\n"
                 f"**Archive & Deletion Features:**\n{archive_commands}\n\n"
                 f"**Voice Channel Multiplier:**\n{voice_commands}\n\n"
                 f"**Divider Channel:**\n{divider_commands}\n\n"
