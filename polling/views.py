@@ -16,8 +16,19 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
+        # Add Results button first (grey, row 0)
+        results_button = discord.ui.Button(
+            label="Results",
+            style=discord.ButtonStyle.secondary,
+            emoji="🏆",
+            custom_id="event_poll:results",
+            row=0
+        )
+        results_button.callback = self._show_results
+        self.add_item(results_button)
+
         # Create buttons for each event in 2 rows
-        # Row 0: Hero's Realm, Sword Trial
+        # Row 0: Results, Hero's Realm, Sword Trial
         # Row 1: Party, Breaking Army, Showdown
         event_names = list(events.keys())
         for idx, event_name in enumerate(event_names):
@@ -50,6 +61,72 @@ class EventPollView(discord.ui.View):
             )
             button.callback = self._create_event_callback(event_name)
             self.add_item(button)
+
+    async def _show_results(self, interaction: discord.Interaction):
+        """Show current poll results"""
+        # Get poll_id from the message
+        poll_id = str(interaction.message.id)
+
+        # Get poll data
+        polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+        if poll_id not in polls:
+            await interaction.response.send_message(
+                "This poll is no longer active!",
+                ephemeral=True
+            )
+            return
+
+        poll_data = polls[poll_id]
+        selections = poll_data.get("selections", {})
+
+        # Calculate winning times (same logic as _create_poll_embed)
+        winning_times = {}
+        for event_name, event_info in self.events.items():
+            num_slots = event_info["slots"]
+            winning_times[event_name] = {}
+
+            for slot_index in range(num_slots):
+                vote_counts = {}
+
+                for user_id, user_selections in selections.items():
+                    if event_name in user_selections:
+                        selection = user_selections[event_name]
+
+                        # Handle both list (multi-slot) and dict (single-slot) formats
+                        if isinstance(selection, list):
+                            if slot_index < len(selection) and selection[slot_index]:
+                                slot_data = selection[slot_index]
+                                if event_info["type"] == "daily":
+                                    key = ("Daily", slot_data["time"])
+                                elif event_info["type"] == "fixed_days":
+                                    key = ("Fixed", slot_data["time"])
+                                else:
+                                    key = (slot_data.get("day", "Unknown"), slot_data["time"])
+                                vote_counts[key] = vote_counts.get(key, 0) + 1
+                        else:
+                            # Legacy single-slot format
+                            if slot_index == 0:
+                                if event_info["type"] == "daily":
+                                    key = ("Daily", selection["time"])
+                                elif event_info["type"] == "fixed_days":
+                                    key = ("Fixed", selection["time"])
+                                else:
+                                    key = (selection.get("day", "Unknown"), selection["time"])
+                                vote_counts[key] = vote_counts.get(key, 0) + 1
+
+                if vote_counts:
+                    max_votes = max(vote_counts.values())
+                    winners = [k for k, v in vote_counts.items() if v == max_votes]
+                    winning_times[event_name][slot_index] = (winners, max_votes)
+
+        # Format results using cog's method
+        results_text = self.cog.format_results_summary(winning_times, selections)
+
+        # Send results as ephemeral message
+        await interaction.response.send_message(
+            results_text,
+            ephemeral=True
+        )
 
     def _create_event_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):

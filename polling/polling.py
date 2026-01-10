@@ -519,9 +519,22 @@ class EventPolling(commands.Cog):
                     winners = [k for k, v in vote_counts.items() if v == max_votes]
                     winning_times[event_name][slot_index] = (winners, max_votes)
 
-        # Calendar removed from poll embed - use [p]eventpoll calendar command for calendar view
+        # Current Winners removed - use Results button to view
 
-        # Add summary of each event
+        embed.set_footer(text=f"Total voters: {len(selections)}")
+
+        return embed
+
+    def format_results_summary(self, winning_times: Dict, selections: Dict) -> str:
+        """Format results summary for display
+
+        Args:
+            winning_times: Dict of event winning times
+            selections: Dict of user selections
+
+        Returns:
+            Formatted string with results summary
+        """
         summary_lines = []
         for event_name, event_info in self.events.items():
             emoji = event_info["emoji"]
@@ -558,15 +571,8 @@ class EventPolling(commands.Cog):
                 else:
                     summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
 
-        embed.add_field(
-            name="🏆 Current Winners",
-            value="\n".join(summary_lines),
-            inline=False
-        )
-
-        embed.set_footer(text=f"Total voters: {len(selections)}")
-
-        return embed
+        header = f"**🏆 Current Results** (Total voters: {len(selections)})\n\n"
+        return header + "\n".join(summary_lines)
 
     def _create_calendar_table(self, winning_times: Dict) -> str:
         """Create a visual Unicode calendar table showing the weekly schedule"""
