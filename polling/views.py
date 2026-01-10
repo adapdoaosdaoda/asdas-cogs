@@ -109,182 +109,65 @@ class EventPollView(discord.ui.View):
             user_id_str = str(interaction.user.id)
             user_selections = poll_data["selections"].get(user_id_str, {})
 
-            # Check event type
+            # Check event type and show appropriate modal
             event_info = self.events[event_name]
             timezone_display = self.cog.timezone_display
 
             if event_info["type"] == "daily":
-                # Daily event - show time selector directly (single slot, no day)
-                view = TimeSelectView(
+                # Party event - single time selection
+                view = PartyModal(
                     cog=self.cog,
                     guild_id=self.guild_id,
                     poll_id=poll_id,
                     user_id=interaction.user.id,
                     event_name=event_name,
-                    day=None,  # No day for daily events
-                    slot_index=0,  # Single slot
                     user_selections=user_selections,
                     events=self.events
                 )
                 await interaction.response.send_message(
-                    f"**{event_name}** - Select a time\nTimezone: {timezone_display}",
+                    f"**{event_name}** - Select your preferred time\nTimezone: {timezone_display}",
                     view=view,
                     ephemeral=True
                 )
             elif event_info["type"] == "fixed_days":
-                # Fixed-day event - check if multi-slot
-                if event_info["slots"] > 1:
-                    # Multi-slot fixed-day event - show slot selector (each slot = one day)
-                    view = FixedDaySlotSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select a day\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Single slot fixed-day event - show time selector directly
-                    view = TimeSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        day=None,  # No day selection for fixed-day events
-                        slot_index=0,  # Single slot
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    days_str = ", ".join([d[:3] for d in event_info["days"]])
-                    await interaction.response.send_message(
-                        f"**{event_name}** ({days_str}) - Select a time\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
+                # Hero's Realm / Sword Trial - multiple fixed days
+                view = FixedDaysModal(
+                    cog=self.cog,
+                    guild_id=self.guild_id,
+                    poll_id=poll_id,
+                    user_id=interaction.user.id,
+                    event_name=event_name,
+                    user_selections=user_selections,
+                    events=self.events
+                )
+                await interaction.response.send_message(
+                    f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
+                    view=view,
+                    ephemeral=True
+                )
             else:
-                # Weekly event - check if multi-slot
-                if event_info["slots"] > 1:
-                    # Show slot selector first
-                    view = SlotSelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events,
-                        days=self.days
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select a slot\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Single slot weekly event - show day selector
-                    view = DaySelectView(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        slot_index=0,
-                        user_selections=user_selections,
-                        events=self.events,
-                        days=self.days
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select a day\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
+                # Breaking Army / Showdown - 2 slots with day+time
+                view = WeeklyEventModal(
+                    cog=self.cog,
+                    guild_id=self.guild_id,
+                    poll_id=poll_id,
+                    user_id=interaction.user.id,
+                    event_name=event_name,
+                    user_selections=user_selections,
+                    events=self.events,
+                    days=self.days
+                )
+                await interaction.response.send_message(
+                    f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
+                    view=view,
+                    ephemeral=True
+                )
 
         return callback
 
 
-class SlotSelectView(discord.ui.View):
-    """View for selecting which slot to configure (for multi-slot events)"""
-
-    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
-                 event_name: str, user_selections: Dict, events: Dict, days: List[str]):
-        super().__init__(timeout=180)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.poll_id = poll_id
-        self.user_id = user_id
-        self.event_name = event_name
-        self.user_selections = user_selections
-        self.events = events
-        self.days = days
-
-        num_slots = events[event_name]["slots"]
-
-        # Create buttons for each slot
-        for slot_index in range(num_slots):
-            button = discord.ui.Button(
-                label=f"Slot {slot_index + 1}",
-                style=discord.ButtonStyle.secondary,
-                row=0
-            )
-            button.callback = self._create_slot_callback(slot_index)
-            self.add_item(button)
-
-        # Add cancel button
-        cancel_btn = discord.ui.Button(
-            label="Cancel",
-            style=discord.ButtonStyle.danger,
-            emoji="❌",
-            row=1
-        )
-        cancel_btn.callback = self._cancel
-        self.add_item(cancel_btn)
-
-    def _create_slot_callback(self, slot_index: int):
-        """Create a callback for a specific slot button"""
-        async def callback(interaction: discord.Interaction):
-            # Show combined day and time selector for this slot
-            view = DayAndTimeSelectView(
-                cog=self.cog,
-                guild_id=self.guild_id,
-                poll_id=self.poll_id,
-                user_id=self.user_id,
-                event_name=self.event_name,
-                slot_index=slot_index,
-                user_selections=self.user_selections,
-                events=self.events,
-                days=self.days
-            )
-
-            timezone_display = self.cog.timezone_display
-            await interaction.response.edit_message(
-                content=f"**{self.event_name}** Slot {slot_index + 1} - Select day and time\nTimezone: {timezone_display}",
-                view=view
-            )
-
-        return callback
-
-    async def _cancel(self, interaction: discord.Interaction):
-        """Handle cancel"""
-        await interaction.response.edit_message(
-            content="Selection cancelled.",
-            view=None
-        )
-
-    async def on_timeout(self):
-        """Handle timeout"""
-        pass
-
-
-class FixedDaySlotSelectView(discord.ui.View):
-    """View for selecting which slot to configure for fixed-day multi-slot events
-    Each slot corresponds to one day from the event's days list"""
+class PartyModal(discord.ui.View):
+    """Modal for Party event - single time dropdown"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
                  event_name: str, user_selections: Dict, events: Dict):
@@ -296,196 +179,12 @@ class FixedDaySlotSelectView(discord.ui.View):
         self.event_name = event_name
         self.user_selections = user_selections
         self.events = events
-
-        event_info = events[event_name]
-        num_slots = event_info["slots"]
-        days = event_info["days"]
-
-        # Create buttons for each slot - each slot represents a specific day
-        for slot_index in range(num_slots):
-            day = days[slot_index] if slot_index < len(days) else f"Day {slot_index + 1}"
-            button = discord.ui.Button(
-                label=f"{day[:3]}",  # Mon, Tue, Wed, etc.
-                style=discord.ButtonStyle.secondary,
-                row=0 if slot_index < 5 else 1
-            )
-            button.callback = self._create_slot_callback(slot_index, day)
-            self.add_item(button)
-
-        # Add cancel button
-        cancel_btn = discord.ui.Button(
-            label="Cancel",
-            style=discord.ButtonStyle.danger,
-            emoji="❌",
-            row=2
-        )
-        cancel_btn.callback = self._cancel
-        self.add_item(cancel_btn)
-
-    def _create_slot_callback(self, slot_index: int, day: str):
-        """Create a callback for a specific slot button"""
-        async def callback(interaction: discord.Interaction):
-            # Show time selector for this slot/day
-            view = TimeSelectView(
-                cog=self.cog,
-                guild_id=self.guild_id,
-                poll_id=self.poll_id,
-                user_id=self.user_id,
-                event_name=self.event_name,
-                day=day,  # Store the specific day for this slot
-                slot_index=slot_index,
-                user_selections=self.user_selections,
-                events=self.events
-            )
-
-            timezone_display = self.cog.timezone_display
-            await interaction.response.edit_message(
-                content=f"**{self.event_name}** ({day}) - Select a time\nTimezone: {timezone_display}",
-                view=view
-            )
-
-        return callback
-
-    async def _cancel(self, interaction: discord.Interaction):
-        """Handle cancel"""
-        await interaction.response.edit_message(
-            content="Selection cancelled.",
-            view=None
-        )
-
-    async def on_timeout(self):
-        """Handle timeout"""
-        pass
-
-
-class DaySelectView(discord.ui.View):
-    """View for selecting a day of the week"""
-
-    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
-                 event_name: str, slot_index: int, user_selections: Dict, events: Dict, days: List[str]):
-        super().__init__(timeout=180)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.poll_id = poll_id
-        self.user_id = user_id
-        self.event_name = event_name
-        self.slot_index = slot_index
-        self.user_selections = user_selections
-        self.events = events
-        self.days = days
-
-        # Create 7 grey buttons for each day of the week
-        # Discord allows max 5 buttons per row, so split across 2 rows
-        for idx, day in enumerate(days):
-            # Use abbreviated day names for button labels (3 letters)
-            # Row 0: Mon-Fri (5 buttons), Row 1: Sat-Sun (2 buttons)
-            button_row = 0 if idx < 5 else 1
-            button = discord.ui.Button(
-                label=day[:3],  # Mon, Tue, Wed, etc.
-                style=discord.ButtonStyle.secondary,  # Grey
-                row=button_row
-            )
-            button.callback = self._create_day_callback(day)
-            self.add_item(button)
-
-        # Add cancel button in third row
-        cancel_btn = discord.ui.Button(
-            label="Cancel",
-            style=discord.ButtonStyle.danger,
-            emoji="❌",
-            row=2
-        )
-        cancel_btn.callback = self._cancel
-        self.add_item(cancel_btn)
-
-    def _create_day_callback(self, day: str):
-        """Create a callback for a specific day button"""
-        async def callback(interaction: discord.Interaction):
-            # Show time selector
-            view = TimeSelectView(
-                cog=self.cog,
-                guild_id=self.guild_id,
-                poll_id=self.poll_id,
-                user_id=self.user_id,
-                event_name=self.event_name,
-                day=day,
-                slot_index=self.slot_index,
-                user_selections=self.user_selections,
-                events=self.events
-            )
-
-            slot_text = f" Slot {self.slot_index + 1}" if self.events[self.event_name]["slots"] > 1 else ""
-            timezone_display = self.cog.timezone_display
-            await interaction.response.edit_message(
-                content=f"**{self.event_name}**{slot_text} ({day}) - Select a time\nTimezone: {timezone_display}",
-                view=view
-            )
-
-        return callback
-
-    async def _cancel(self, interaction: discord.Interaction):
-        """Handle cancel"""
-        await interaction.response.edit_message(
-            content="Selection cancelled.",
-            view=None
-        )
-
-    async def on_timeout(self):
-        """Handle timeout"""
-        pass
-
-
-class DayAndTimeSelectView(discord.ui.View):
-    """View for selecting both day and time together (for weekly events)"""
-
-    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
-                 event_name: str, slot_index: int, user_selections: Dict, events: Dict, days: List[str]):
-        super().__init__(timeout=180)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.poll_id = poll_id
-        self.user_id = user_id
-        self.event_name = event_name
-        self.slot_index = slot_index
-        self.user_selections = user_selections
-        self.events = events
-        self.days = days
-
-        # Store selected values
-        self.selected_day = None
         self.selected_time = None
 
         # Get current selection if exists
-        current_selection = None
-        if event_name in user_selections:
-            selection = user_selections[event_name]
-            if isinstance(selection, list) and slot_index < len(selection):
-                current_selection = selection[slot_index]
-            elif not isinstance(selection, list) and slot_index == 0:
-                current_selection = selection
+        current_selection = user_selections.get(event_name)
 
-        # Create day dropdown
-        day_options = []
-        for day in days:
-            day_options.append(
-                discord.SelectOption(
-                    label=day,
-                    value=day,
-                    emoji="📅",
-                    default=(current_selection and current_selection.get("day") == day)
-                )
-            )
-
-        day_select = discord.ui.Select(
-            placeholder="Choose a day...",
-            options=day_options,
-            custom_id=f"day_select:{event_name}",
-            row=0
-        )
-        day_select.callback = self._day_selected
-        self.add_item(day_select)
-
-        # Create time dropdown
+        # Generate time options
         event_info = events[event_name]
         start_hour, end_hour = event_info["time_range"]
         interval = event_info["interval"]
@@ -495,7 +194,7 @@ class DayAndTimeSelectView(discord.ui.View):
         # Get timezone display
         timezone_display = self.cog.timezone_display
 
-        # Split times into chunks if needed (max 25 options per select)
+        # Create time dropdown - split into chunks if needed
         max_options_per_select = 25
         time_chunks = [times[i:i + max_options_per_select] for i in range(0, len(times), max_options_per_select)]
 
@@ -514,47 +213,42 @@ class DayAndTimeSelectView(discord.ui.View):
             time_select = discord.ui.Select(
                 placeholder=f"Choose a time ({time_chunk[0]} - {time_chunk[-1]}) {timezone_display}",
                 options=time_options,
-                custom_id=f"time_select:{event_name}:{chunk_idx}",
-                row=1 + chunk_idx
+                custom_id=f"time_select:{chunk_idx}",
+                row=chunk_idx
             )
             time_select.callback = self._time_selected
             self.add_item(time_select)
 
-        # Add submit button
+        # Add buttons
+        button_row = len(time_chunks)
+
         submit_btn = discord.ui.Button(
             label="Save",
             style=discord.ButtonStyle.success,
             emoji="✅",
-            row=4
+            row=button_row
         )
         submit_btn.callback = self._submit
         self.add_item(submit_btn)
 
-        # Add clear button if user already has a selection
         if current_selection:
             clear_btn = discord.ui.Button(
-                label="Clear Selection",
+                label="Clear",
                 style=discord.ButtonStyle.danger,
                 emoji="🗑️",
-                row=4
+                row=button_row
             )
             clear_btn.callback = self._clear_selection
             self.add_item(clear_btn)
 
-        # Add cancel button
         cancel_btn = discord.ui.Button(
             label="Cancel",
             style=discord.ButtonStyle.secondary,
             emoji="❌",
-            row=4
+            row=button_row
         )
         cancel_btn.callback = self._cancel
         self.add_item(cancel_btn)
-
-    async def _day_selected(self, interaction: discord.Interaction):
-        """Handle day selection"""
-        self.selected_day = interaction.data["values"][0]
-        await interaction.response.defer()
 
     async def _time_selected(self, interaction: discord.Interaction):
         """Handle time selection"""
@@ -563,10 +257,9 @@ class DayAndTimeSelectView(discord.ui.View):
 
     async def _submit(self, interaction: discord.Interaction):
         """Handle submit"""
-        # Get current selections from dropdowns or use stored values
-        if not self.selected_day or not self.selected_time:
+        if not self.selected_time:
             await interaction.response.send_message(
-                "⚠️ Please select both a day and a time before saving!",
+                "⚠️ Please select a time before saving!",
                 ephemeral=True
             )
             return
@@ -575,9 +268,9 @@ class DayAndTimeSelectView(discord.ui.View):
         has_conflict, conflict_msg = self.cog.check_time_conflict(
             self.user_selections,
             self.event_name,
-            self.selected_day,
+            None,  # No day for daily events
             self.selected_time,
-            self.slot_index
+            0  # Single slot
         )
 
         if has_conflict:
@@ -602,50 +295,19 @@ class DayAndTimeSelectView(discord.ui.View):
                 polls[self.poll_id]["selections"][user_id_str] = {}
 
             # Store the selection
-            selection_data = {"time": self.selected_time, "day": self.selected_day}
-
-            # For multi-slot events, store as list
-            event_info = self.events[self.event_name]
-            if event_info["slots"] > 1:
-                if self.event_name not in polls[self.poll_id]["selections"][user_id_str]:
-                    polls[self.poll_id]["selections"][user_id_str][self.event_name] = [None] * event_info["slots"]
-
-                polls[self.poll_id]["selections"][user_id_str][self.event_name][self.slot_index] = selection_data
-            else:
-                polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection_data
-
+            polls[self.poll_id]["selections"][user_id_str][self.event_name] = {"time": self.selected_time}
             poll_data = polls[self.poll_id]
 
-        # Create confirmation message
-        slot_text = f" Slot {self.slot_index + 1}" if event_info["slots"] > 1 else ""
-        selection_text = f"**{self.event_name}**{slot_text} on **{self.selected_day}** at **{self.selected_time}**"
-
-        # Show user's current selections
+        # Show confirmation
         current_selections = await self._get_user_selections_text()
-
         await interaction.response.edit_message(
-            content=f"✅ Selection saved!\n\n{selection_text}\n\n**Your current selections:**\n{current_selections}",
+            content=f"✅ Selection saved!\n\n**{self.event_name}** at **{self.selected_time}** (daily)\n\n**Your current selections:**\n{current_selections}",
             view=None
         )
 
         # Update the poll embed
         if poll_data:
-            try:
-                channel = interaction.guild.get_channel(poll_data["channel_id"])
-                if channel:
-                    message = await channel.fetch_message(poll_data["message_id"])
-                    updated_embed = await self.cog._create_poll_embed(
-                        poll_data["title"],
-                        self.guild_id,
-                        self.poll_id
-                    )
-                    updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                    await message.edit(embed=updated_embed)
-
-                # Update any calendar messages for this poll
-                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
-            except Exception:
-                pass
+            await self._update_poll_display(interaction, poll_data)
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -666,7 +328,6 @@ class DayAndTimeSelectView(discord.ui.View):
             poll_data = polls[self.poll_id]
 
         current_selections = await self._get_user_selections_text()
-
         await interaction.response.edit_message(
             content=f"🗑️ Cleared your selection for **{self.event_name}**\n\n**Your current selections:**\n{current_selections}",
             view=None
@@ -674,22 +335,7 @@ class DayAndTimeSelectView(discord.ui.View):
 
         # Update the poll embed
         if poll_data:
-            try:
-                channel = interaction.guild.get_channel(poll_data["channel_id"])
-                if channel:
-                    message = await channel.fetch_message(poll_data["message_id"])
-                    updated_embed = await self.cog._create_poll_embed(
-                        poll_data["title"],
-                        self.guild_id,
-                        self.poll_id
-                    )
-                    updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                    await message.edit(embed=updated_embed)
-
-                # Update any calendar messages for this poll
-                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
-            except Exception:
-                pass
+            await self._update_poll_display(interaction, poll_data)
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
@@ -697,6 +343,25 @@ class DayAndTimeSelectView(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+
+    async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
+        """Update the poll embed and calendar"""
+        try:
+            channel = interaction.guild.get_channel(poll_data["channel_id"])
+            if channel:
+                message = await channel.fetch_message(poll_data["message_id"])
+                updated_embed = await self.cog._create_poll_embed(
+                    poll_data["title"],
+                    self.guild_id,
+                    self.poll_id
+                )
+                updated_embed.set_footer(text="Click the buttons below to set your preferences")
+                await message.edit(embed=updated_embed)
+
+            # Update any calendar messages for this poll
+            await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+        except Exception:
+            pass
 
     async def _get_user_selections_text(self) -> str:
         """Get formatted text of user's current selections"""
@@ -744,21 +409,23 @@ class DayAndTimeSelectView(discord.ui.View):
         pass
 
 
-class TimeSelectView(discord.ui.View):
-    """View for selecting a time"""
+class FixedDaysModal(discord.ui.View):
+    """Modal for Hero's Realm / Sword Trial - one time dropdown per fixed day"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
-                 event_name: str, day: Optional[str], slot_index: int, user_selections: Dict, events: Dict):
+                 event_name: str, user_selections: Dict, events: Dict):
         super().__init__(timeout=180)
         self.cog = cog
         self.guild_id = guild_id
         self.poll_id = poll_id
         self.user_id = user_id
         self.event_name = event_name
-        self.day = day
-        self.slot_index = slot_index
         self.user_selections = user_selections
         self.events = events
+        self.selected_times = {}  # {day: time}
+
+        # Get current selections if exist
+        current_selections = user_selections.get(event_name)
 
         # Generate time options
         event_info = events[event_name]
@@ -770,72 +437,84 @@ class TimeSelectView(discord.ui.View):
         # Get timezone display
         timezone_display = self.cog.timezone_display
 
-        # Create select menu(s) for times - split into multiple if too many options
-        max_options_per_select = 25
-        time_chunks = [times[i:i + max_options_per_select] for i in range(0, len(times), max_options_per_select)]
+        # Create a time dropdown for each fixed day
+        days = event_info["days"]
+        for row_idx, day in enumerate(days):
+            # Get current time for this day if exists
+            current_time = None
+            if current_selections and isinstance(current_selections, list):
+                if row_idx < len(current_selections) and current_selections[row_idx]:
+                    current_time = current_selections[row_idx].get("time")
 
-        for chunk_idx, time_chunk in enumerate(time_chunks):
-            options = []
-            for time_str in time_chunk:
-                options.append(
+            # Create options for this day's dropdown
+            time_options = []
+            for time_str in times[:25]:  # Limit to 25 options
+                time_options.append(
                     discord.SelectOption(
                         label=time_str,
                         value=time_str,
-                        emoji="🕐"
+                        emoji="🕐",
+                        default=(current_time == time_str)
                     )
                 )
 
-            select = discord.ui.Select(
-                placeholder=f"Choose a time ({time_chunk[0]} - {time_chunk[-1]}) {timezone_display}",
-                options=options,
-                custom_id=f"time_select:{event_name}:{chunk_idx}",
-                row=chunk_idx
+            day_select = discord.ui.Select(
+                placeholder=f"{day[:3]} - Choose a time... {timezone_display}",
+                options=time_options,
+                custom_id=f"day_select:{day}",
+                row=row_idx
             )
-            select.callback = self._time_selected
-            self.add_item(select)
+            day_select.callback = self._create_time_callback(day)
+            self.add_item(day_select)
 
-        # Add clear button if user already has a selection
-        if event_name in user_selections:
+        # Add buttons
+        button_row = len(days)
+
+        submit_btn = discord.ui.Button(
+            label="Save",
+            style=discord.ButtonStyle.success,
+            emoji="✅",
+            row=button_row
+        )
+        submit_btn.callback = self._submit
+        self.add_item(submit_btn)
+
+        if current_selections:
             clear_btn = discord.ui.Button(
-                label="Clear Selection",
+                label="Clear",
                 style=discord.ButtonStyle.danger,
                 emoji="🗑️",
-                row=len(time_chunks)
+                row=button_row
             )
             clear_btn.callback = self._clear_selection
             self.add_item(clear_btn)
 
-        # Add cancel button
         cancel_btn = discord.ui.Button(
             label="Cancel",
             style=discord.ButtonStyle.secondary,
             emoji="❌",
-            row=len(time_chunks)
+            row=button_row
         )
         cancel_btn.callback = self._cancel
         self.add_item(cancel_btn)
 
-    async def _time_selected(self, interaction: discord.Interaction):
-        """Handle time selection"""
-        selected_time = interaction.data["values"][0]
+    def _create_time_callback(self, day: str):
+        """Create a callback for a specific day's time selection"""
+        async def callback(interaction: discord.Interaction):
+            self.selected_times[day] = interaction.data["values"][0]
+            await interaction.response.defer()
+        return callback
 
-        # Check for conflicts
-        has_conflict, conflict_msg = self.cog.check_time_conflict(
-            self.user_selections,
-            self.event_name,
-            self.day,
-            selected_time,
-            self.slot_index
-        )
-
-        if has_conflict:
+    async def _submit(self, interaction: discord.Interaction):
+        """Handle submit"""
+        if not self.selected_times:
             await interaction.response.send_message(
-                f"⚠️ **Conflict detected!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                "⚠️ Please select at least one time before saving!",
                 ephemeral=True
             )
             return
 
-        # Save the selection
+        # Save the selections
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
@@ -849,63 +528,38 @@ class TimeSelectView(discord.ui.View):
             if user_id_str not in polls[self.poll_id]["selections"]:
                 polls[self.poll_id]["selections"][user_id_str] = {}
 
-            # Store the selection
-            selection_data = {"time": selected_time}
-            if self.day:
-                selection_data["day"] = self.day
-
-            # For multi-slot events, store as list; for single-slot, store as dict
+            # Store as list format
             event_info = self.events[self.event_name]
-            if event_info["slots"] > 1:
-                # Multi-slot event - use list format
-                if self.event_name not in polls[self.poll_id]["selections"][user_id_str]:
-                    # Initialize with None for each slot
-                    polls[self.poll_id]["selections"][user_id_str][self.event_name] = [None] * event_info["slots"]
+            days = event_info["days"]
+            selections_list = []
 
-                polls[self.poll_id]["selections"][user_id_str][self.event_name][self.slot_index] = selection_data
-            else:
-                # Single-slot event - use dict format
-                polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection_data
+            for day in days:
+                if day in self.selected_times:
+                    selections_list.append({"time": self.selected_times[day]})
+                else:
+                    # Keep existing selection if available, otherwise None
+                    existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [])
+                    idx = days.index(day)
+                    if isinstance(existing, list) and idx < len(existing):
+                        selections_list.append(existing[idx])
+                    else:
+                        selections_list.append(None)
 
+            polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
             poll_data = polls[self.poll_id]
 
-        # Create confirmation message
-        slot_text = f" slot {self.slot_index + 1}" if event_info["slots"] > 1 else ""
-        if self.day:
-            selection_text = f"**{self.event_name}**{slot_text} on **{self.day}** at **{selected_time}**"
-        elif event_info["type"] == "fixed_days":
-            days_str = ", ".join([d[:3] for d in event_info["days"]])
-            selection_text = f"**{self.event_name}**{slot_text} at **{selected_time}** ({days_str})"
-        else:
-            selection_text = f"**{self.event_name}**{slot_text} at **{selected_time}** (daily)"
-
-        # Show user's current selections
+        # Show confirmation
+        selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
         current_selections = await self._get_user_selections_text()
 
         await interaction.response.edit_message(
-            content=f"✅ Selection saved!\n\n{selection_text}\n\n**Your current selections:**\n{current_selections}",
+            content=f"✅ Selection saved!\n\n**{self.event_name}**: {selected_text}\n\n**Your current selections:**\n{current_selections}",
             view=None
         )
 
-        # Update the poll embed to show updated results
+        # Update the poll embed
         if poll_data:
-            try:
-                channel = interaction.guild.get_channel(poll_data["channel_id"])
-                if channel:
-                    message = await channel.fetch_message(poll_data["message_id"])
-                    updated_embed = await self.cog._create_poll_embed(
-                        poll_data["title"],
-                        self.guild_id,
-                        self.poll_id
-                    )
-                    updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                    await message.edit(embed=updated_embed)
-
-                # Update any calendar messages for this poll
-                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
-            except Exception:
-                # Silently fail if we can't update the poll message
-                pass
+            await self._update_poll_display(interaction, poll_data)
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -926,31 +580,14 @@ class TimeSelectView(discord.ui.View):
             poll_data = polls[self.poll_id]
 
         current_selections = await self._get_user_selections_text()
-
         await interaction.response.edit_message(
             content=f"🗑️ Cleared your selection for **{self.event_name}**\n\n**Your current selections:**\n{current_selections}",
             view=None
         )
 
-        # Update the poll embed to show updated results
+        # Update the poll embed
         if poll_data:
-            try:
-                channel = interaction.guild.get_channel(poll_data["channel_id"])
-                if channel:
-                    message = await channel.fetch_message(poll_data["message_id"])
-                    updated_embed = await self.cog._create_poll_embed(
-                        poll_data["title"],
-                        self.guild_id,
-                        self.poll_id
-                    )
-                    updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                    await message.edit(embed=updated_embed)
-
-                # Update any calendar messages for this poll
-                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
-            except Exception:
-                # Silently fail if we can't update the poll message
-                pass
+            await self._update_poll_display(interaction, poll_data)
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
@@ -958,6 +595,25 @@ class TimeSelectView(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+
+    async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
+        """Update the poll embed and calendar"""
+        try:
+            channel = interaction.guild.get_channel(poll_data["channel_id"])
+            if channel:
+                message = await channel.fetch_message(poll_data["message_id"])
+                updated_embed = await self.cog._create_poll_embed(
+                    poll_data["title"],
+                    self.guild_id,
+                    self.poll_id
+                )
+                updated_embed.set_footer(text="Click the buttons below to set your preferences")
+                await message.edit(embed=updated_embed)
+
+            # Update any calendar messages for this poll
+            await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+        except Exception:
+            pass
 
     async def _get_user_selections_text(self) -> str:
         """Get formatted text of user's current selections"""
@@ -980,12 +636,12 @@ class TimeSelectView(discord.ui.View):
             if isinstance(selection, list):
                 # Multi-slot event
                 for idx, slot_data in enumerate(selection):
-                    if slot_data:  # Slot might be None if not yet selected
+                    if slot_data:
                         if "day" in slot_data:
                             lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['day']} at {slot_data['time']}")
                         elif event_type == "fixed_days":
-                            days_str = ", ".join([d[:3] for d in self.events[event_name]["days"]])
-                            lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['time']} ({days_str})")
+                            day = self.events[event_name]["days"][idx] if idx < len(self.events[event_name]["days"]) else f"Day {idx + 1}"
+                            lines.append(f"{emoji} {event_name} ({day[:3]}): {slot_data['time']}")
                         else:
                             lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['time']} (daily)")
             else:
@@ -993,7 +649,367 @@ class TimeSelectView(discord.ui.View):
                 if "day" in selection:
                     lines.append(f"{emoji} {event_name}: {selection['day']} at {selection['time']}")
                 elif event_type == "fixed_days":
-                    days_str = ", ".join([d[:3] for d in self.events[event_name]["days"]])
+                    days_str = "/".join([d[:3] for d in self.events[event_name]["days"]])
+                    lines.append(f"{emoji} {event_name}: {selection['time']} ({days_str})")
+                else:
+                    lines.append(f"{emoji} {event_name}: {selection['time']} (daily)")
+
+        return "\n".join(lines) if lines else "None"
+
+    async def on_timeout(self):
+        """Handle timeout"""
+        pass
+
+
+class WeeklyEventModal(discord.ui.View):
+    """Modal for Breaking Army / Showdown - 2 slots with day+time dropdowns each"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
+                 event_name: str, user_selections: Dict, events: Dict, days: List[str]):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.user_id = user_id
+        self.event_name = event_name
+        self.user_selections = user_selections
+        self.events = events
+        self.days = days
+        self.selected_slot1_day = None
+        self.selected_slot1_time = None
+        self.selected_slot2_day = None
+        self.selected_slot2_time = None
+
+        # Get current selections if exist
+        current_selections = user_selections.get(event_name)
+        current_slot1 = None
+        current_slot2 = None
+        if current_selections and isinstance(current_selections, list):
+            current_slot1 = current_selections[0] if len(current_selections) > 0 else None
+            current_slot2 = current_selections[1] if len(current_selections) > 1 else None
+
+        # Generate time options
+        event_info = events[event_name]
+        start_hour, end_hour = event_info["time_range"]
+        interval = event_info["interval"]
+        duration = event_info["duration"]
+        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration)
+
+        # Get timezone display
+        timezone_display = self.cog.timezone_display
+
+        # Slot 1 Day dropdown (row 0)
+        day_options_1 = []
+        for day in days:
+            day_options_1.append(
+                discord.SelectOption(
+                    label=day,
+                    value=day,
+                    emoji="📅",
+                    default=(current_slot1 and current_slot1.get("day") == day)
+                )
+            )
+
+        slot1_day_select = discord.ui.Select(
+            placeholder="Slot 1: Choose a day...",
+            options=day_options_1,
+            custom_id="slot1_day_select",
+            row=0
+        )
+        slot1_day_select.callback = self._slot1_day_selected
+        self.add_item(slot1_day_select)
+
+        # Slot 1 Time dropdown (row 1)
+        time_options_1 = []
+        for time_str in times[:25]:  # Limit to 25 options
+            time_options_1.append(
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(current_slot1 and current_slot1.get("time") == time_str)
+                )
+            )
+
+        slot1_time_select = discord.ui.Select(
+            placeholder=f"Slot 1: Choose a time... {timezone_display}",
+            options=time_options_1,
+            custom_id="slot1_time_select",
+            row=1
+        )
+        slot1_time_select.callback = self._slot1_time_selected
+        self.add_item(slot1_time_select)
+
+        # Slot 2 Day dropdown (row 2)
+        day_options_2 = []
+        for day in days:
+            day_options_2.append(
+                discord.SelectOption(
+                    label=day,
+                    value=day,
+                    emoji="📅",
+                    default=(current_slot2 and current_slot2.get("day") == day)
+                )
+            )
+
+        slot2_day_select = discord.ui.Select(
+            placeholder="Slot 2: Choose a day...",
+            options=day_options_2,
+            custom_id="slot2_day_select",
+            row=2
+        )
+        slot2_day_select.callback = self._slot2_day_selected
+        self.add_item(slot2_day_select)
+
+        # Slot 2 Time dropdown (row 3)
+        time_options_2 = []
+        for time_str in times[:25]:  # Limit to 25 options
+            time_options_2.append(
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(current_slot2 and current_slot2.get("time") == time_str)
+                )
+            )
+
+        slot2_time_select = discord.ui.Select(
+            placeholder=f"Slot 2: Choose a time... {timezone_display}",
+            options=time_options_2,
+            custom_id="slot2_time_select",
+            row=3
+        )
+        slot2_time_select.callback = self._slot2_time_selected
+        self.add_item(slot2_time_select)
+
+        # Add buttons (row 4)
+        submit_btn = discord.ui.Button(
+            label="Save",
+            style=discord.ButtonStyle.success,
+            emoji="✅",
+            row=4
+        )
+        submit_btn.callback = self._submit
+        self.add_item(submit_btn)
+
+        if current_selections:
+            clear_btn = discord.ui.Button(
+                label="Clear",
+                style=discord.ButtonStyle.danger,
+                emoji="🗑️",
+                row=4
+            )
+            clear_btn.callback = self._clear_selection
+            self.add_item(clear_btn)
+
+        cancel_btn = discord.ui.Button(
+            label="Cancel",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌",
+            row=4
+        )
+        cancel_btn.callback = self._cancel
+        self.add_item(cancel_btn)
+
+    async def _slot1_day_selected(self, interaction: discord.Interaction):
+        """Handle slot 1 day selection"""
+        self.selected_slot1_day = interaction.data["values"][0]
+        await interaction.response.defer()
+
+    async def _slot1_time_selected(self, interaction: discord.Interaction):
+        """Handle slot 1 time selection"""
+        self.selected_slot1_time = interaction.data["values"][0]
+        await interaction.response.defer()
+
+    async def _slot2_day_selected(self, interaction: discord.Interaction):
+        """Handle slot 2 day selection"""
+        self.selected_slot2_day = interaction.data["values"][0]
+        await interaction.response.defer()
+
+    async def _slot2_time_selected(self, interaction: discord.Interaction):
+        """Handle slot 2 time selection"""
+        self.selected_slot2_time = interaction.data["values"][0]
+        await interaction.response.defer()
+
+    async def _submit(self, interaction: discord.Interaction):
+        """Handle submit"""
+        # Check if at least one complete slot is selected
+        has_slot1 = self.selected_slot1_day and self.selected_slot1_time
+        has_slot2 = self.selected_slot2_day and self.selected_slot2_time
+
+        if not has_slot1 and not has_slot2:
+            await interaction.response.send_message(
+                "⚠️ Please select at least one complete slot (day + time) before saving!",
+                ephemeral=True
+            )
+            return
+
+        # Check for conflicts for each slot
+        if has_slot1:
+            has_conflict, conflict_msg = self.cog.check_time_conflict(
+                self.user_selections,
+                self.event_name,
+                self.selected_slot1_day,
+                self.selected_slot1_time,
+                0
+            )
+            if has_conflict:
+                await interaction.response.send_message(
+                    f"⚠️ **Conflict detected in Slot 1!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                    ephemeral=True
+                )
+                return
+
+        if has_slot2:
+            has_conflict, conflict_msg = self.cog.check_time_conflict(
+                self.user_selections,
+                self.event_name,
+                self.selected_slot2_day,
+                self.selected_slot2_time,
+                1
+            )
+            if has_conflict:
+                await interaction.response.send_message(
+                    f"⚠️ **Conflict detected in Slot 2!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                    ephemeral=True
+                )
+                return
+
+        # Save the selections
+        poll_data = None
+        async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+            if self.poll_id not in polls:
+                await interaction.response.send_message(
+                    "This poll is no longer active!",
+                    ephemeral=True
+                )
+                return
+
+            user_id_str = str(self.user_id)
+            if user_id_str not in polls[self.poll_id]["selections"]:
+                polls[self.poll_id]["selections"][user_id_str] = {}
+
+            # Get existing selections to preserve slots we're not updating
+            existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [None, None])
+            if not isinstance(existing, list):
+                existing = [None, None]
+
+            # Update slots
+            selections_list = [
+                {"day": self.selected_slot1_day, "time": self.selected_slot1_time} if has_slot1 else existing[0],
+                {"day": self.selected_slot2_day, "time": self.selected_slot2_time} if has_slot2 else (existing[1] if len(existing) > 1 else None)
+            ]
+
+            polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
+            poll_data = polls[self.poll_id]
+
+        # Show confirmation
+        selection_parts = []
+        if has_slot1:
+            selection_parts.append(f"Slot 1: {self.selected_slot1_day} at {self.selected_slot1_time}")
+        if has_slot2:
+            selection_parts.append(f"Slot 2: {self.selected_slot2_day} at {self.selected_slot2_time}")
+
+        current_selections = await self._get_user_selections_text()
+
+        await interaction.response.edit_message(
+            content=f"✅ Selection saved!\n\n**{self.event_name}**\n{chr(10).join(selection_parts)}\n\n**Your current selections:**\n{current_selections}",
+            view=None
+        )
+
+        # Update the poll embed
+        if poll_data:
+            await self._update_poll_display(interaction, poll_data)
+
+    async def _clear_selection(self, interaction: discord.Interaction):
+        """Clear the user's selection for this event"""
+        poll_data = None
+        async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+            if self.poll_id not in polls:
+                await interaction.response.send_message(
+                    "This poll is no longer active!",
+                    ephemeral=True
+                )
+                return
+
+            user_id_str = str(self.user_id)
+            if user_id_str in polls[self.poll_id]["selections"]:
+                if self.event_name in polls[self.poll_id]["selections"][user_id_str]:
+                    del polls[self.poll_id]["selections"][user_id_str][self.event_name]
+
+            poll_data = polls[self.poll_id]
+
+        current_selections = await self._get_user_selections_text()
+        await interaction.response.edit_message(
+            content=f"🗑️ Cleared your selection for **{self.event_name}**\n\n**Your current selections:**\n{current_selections}",
+            view=None
+        )
+
+        # Update the poll embed
+        if poll_data:
+            await self._update_poll_display(interaction, poll_data)
+
+    async def _cancel(self, interaction: discord.Interaction):
+        """Handle cancel"""
+        await interaction.response.edit_message(
+            content="Selection cancelled.",
+            view=None
+        )
+
+    async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
+        """Update the poll embed and calendar"""
+        try:
+            channel = interaction.guild.get_channel(poll_data["channel_id"])
+            if channel:
+                message = await channel.fetch_message(poll_data["message_id"])
+                updated_embed = await self.cog._create_poll_embed(
+                    poll_data["title"],
+                    self.guild_id,
+                    self.poll_id
+                )
+                updated_embed.set_footer(text="Click the buttons below to set your preferences")
+                await message.edit(embed=updated_embed)
+
+            # Update any calendar messages for this poll
+            await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+        except Exception:
+            pass
+
+    async def _get_user_selections_text(self) -> str:
+        """Get formatted text of user's current selections"""
+        polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+        if self.poll_id not in polls:
+            return "None"
+
+        user_id_str = str(self.user_id)
+        selections = polls[self.poll_id]["selections"].get(user_id_str, {})
+
+        if not selections:
+            return "None"
+
+        lines = []
+        for event_name, selection in selections.items():
+            emoji = self.events[event_name]["emoji"]
+            event_type = self.events[event_name]["type"]
+
+            # Handle both list (multi-slot) and dict (single-slot) formats
+            if isinstance(selection, list):
+                # Multi-slot event
+                for idx, slot_data in enumerate(selection):
+                    if slot_data:
+                        if "day" in slot_data:
+                            lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['day']} at {slot_data['time']}")
+                        elif event_type == "fixed_days":
+                            day = self.events[event_name]["days"][idx] if idx < len(self.events[event_name]["days"]) else f"Day {idx + 1}"
+                            lines.append(f"{emoji} {event_name} ({day[:3]}): {slot_data['time']}")
+                        else:
+                            lines.append(f"{emoji} {event_name} #{idx + 1}: {slot_data['time']} (daily)")
+            else:
+                # Single-slot event
+                if "day" in selection:
+                    lines.append(f"{emoji} {event_name}: {selection['day']} at {selection['time']}")
+                elif event_type == "fixed_days":
+                    days_str = "/".join([d[:3] for d in self.events[event_name]["days"]])
                     lines.append(f"{emoji} {event_name}: {selection['time']} ({days_str})")
                 else:
                     lines.append(f"{emoji} {event_name}: {selection['time']} (daily)")
