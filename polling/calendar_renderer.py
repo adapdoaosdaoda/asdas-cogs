@@ -110,7 +110,17 @@ class CalendarRenderer:
 
         # Calculate image dimensions
         days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        time_slots = sorted(schedule.keys())
+
+        # Sort time slots with custom logic: times after midnight (00:xx, 01:xx) go after 23:xx
+        def sort_time_key(time_str: str) -> int:
+            """Convert time string to sortable integer (handle wraparound)"""
+            hour, minute = map(int, time_str.split(':'))
+            # Times 00:00-02:59 are treated as next day (add 24 hours)
+            if hour < 3:
+                hour += 24
+            return hour * 60 + minute
+
+        time_slots = sorted(schedule.keys(), key=sort_time_key)
 
         width = self.TIME_COL_WIDTH + (len(days) * self.CELL_WIDTH) + (2 * self.PADDING)
         height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.FOOTER_HEIGHT + (2 * self.PADDING)
@@ -181,15 +191,44 @@ class CalendarRenderer:
                     day_slot_map[day] = idx + 1
 
             for day, time_str in day_times.items():
-                short_day = day_map.get(day, day[:3])
-
-                if time_str not in schedule:
-                    schedule[time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+                # Handle special day types
+                days_to_process = []
+                if day == "Daily":
+                    # Daily events appear on all days
+                    days_to_process = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                elif day == "Fixed":
+                    # Fixed-day events with single slot - expand to all configured days
+                    fixed_days = event_info.get("days", [])
+                    days_to_process = [day_map.get(d, d[:3]) for d in fixed_days]
+                else:
+                    # Regular day or multi-slot fixed-day event
+                    short_day = day_map.get(day, day[:3])
+                    days_to_process = [short_day]
 
                 # Determine slot number for this event
                 slot_num = day_slot_map.get(day, 0)  # 0 means single slot or not applicable
 
-                schedule[time_str][short_day].append((priority, event_name, slot_num))
+                # Calculate how many time slots this event spans (based on duration)
+                duration = event_info.get("duration", 30)
+                time_slots_spanned = max(1, duration // 30)
+
+                # Generate all time slots for this event (e.g., 19:00 and 19:30 for 60-min event)
+                from datetime import datetime, timedelta
+                start_time = datetime.strptime(time_str, "%H:%M")
+                time_slots_for_event = []
+                for i in range(time_slots_spanned):
+                    slot_time = start_time + timedelta(minutes=i * 30)
+                    slot_time_str = slot_time.strftime("%H:%M")
+                    time_slots_for_event.append(slot_time_str)
+
+                # Add event to all relevant time slots and days
+                for slot_time_str in time_slots_for_event:
+                    if slot_time_str not in schedule:
+                        schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+
+                    for short_day in days_to_process:
+                        if short_day in schedule[slot_time_str]:
+                            schedule[slot_time_str][short_day].append((priority, event_name, slot_num))
 
         # Generate all time slots from 17:00 to 02:00 (30 min intervals)
         all_times = []
@@ -264,9 +303,6 @@ class CalendarRenderer:
             "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"
         }
 
-        # Track which cells have been drawn (for multi-cell spanning events)
-        drawn_cells = set()
-
         for row, time_str in enumerate(time_slots):
             y = start_y + (row * self.CELL_HEIGHT)
 
@@ -278,10 +314,6 @@ class CalendarRenderer:
             # Draw cells for each day
             for col, day in enumerate(days):
                 x = self.TIME_COL_WIDTH + (col * self.CELL_WIDTH) + self.PADDING
-
-                # Skip if this cell was already drawn as part of a spanning event
-                if (row, col) in drawn_cells:
-                    continue
 
                 # Check if this cell is blocked
                 is_blocked = self._is_time_blocked(
@@ -301,58 +333,39 @@ class CalendarRenderer:
 
                 # Draw Guild Wars in blocked cells
                 if is_blocked:
-                    display_text = "🏰 Guild Wars"
+                    display_text = "🏰"
                     text_x = x + 5
                     text_y = y + (self.CELL_HEIGHT // 2) - 8
                     if not hasattr(self, '_emoji_positions'):
                         self._emoji_positions = []
                     self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
 
-                # Draw events in this cell
+                # Draw events in this cell (support up to 2 events)
                 if time_str in schedule and day in schedule[time_str]:
                     events_in_cell = schedule[time_str][day]
 
                     if events_in_cell:
-                        # Get the top priority event
-                        priority, event_name, slot_num = events_in_cell[0]
-                        emoji = events.get(event_name, {}).get("emoji", "•")
-                        event_abbrev = self.EVENT_ABBREV.get(event_name, event_name)
-                        duration = events.get(event_name, {}).get("duration", 30)
+                        # Draw up to 2 events per cell
+                        num_events_to_show = min(2, len(events_in_cell))
 
-                        # Calculate how many cells to span (duration / 30 minutes)
-                        cells_to_span = max(1, duration // 30)
+                        for event_idx in range(num_events_to_show):
+                            priority, event_name, slot_num = events_in_cell[event_idx]
+                            emoji = events.get(event_name, {}).get("emoji", "•")
 
-                        # Check if we have enough cells to span
-                        max_span = min(cells_to_span, len(time_slots) - row)
+                            # Position events vertically based on index
+                            if num_events_to_show == 1:
+                                # Single event: center vertically
+                                text_y = y + (self.CELL_HEIGHT // 2) - 8
+                            else:
+                                # Multiple events: stack vertically
+                                text_y = y + 5 + (event_idx * 20)
 
-                        # Mark cells as drawn
-                        for span_row in range(row, row + max_span):
-                            drawn_cells.add((span_row, col))
+                            display_text = emoji
+                            text_x = x + 5 + (event_idx * 30)  # Offset horizontally for multiple events
 
-                        # Calculate spanning cell dimensions
-                        span_height = max_span * self.CELL_HEIGHT
-
-                        # Draw background for spanning event (slightly different color)
-                        if max_span > 1:
-                            # Redraw cell background for spanning event
-                            event_color = self.EVENT_COLORS.get(event_name, self.HEADER_TEXT)
-                            # Use a darker, semi-transparent version of event color for background
-                            bg_color = tuple(max(0, c - 100) for c in event_color)
-                            draw.rectangle(
-                                [x + 2, y + 2, x + self.CELL_WIDTH - 2, y + span_height - 2],
-                                fill=bg_color,
-                                outline=event_color,
-                                width=2
-                            )
-
-                        # Draw event text (emoji + name)
-                        display_text = f"{emoji} {event_abbrev}"
-                        text_x = x + 5
-                        text_y = y + (span_height // 2) - 8
-
-                        if not hasattr(self, '_emoji_positions'):
-                            self._emoji_positions = []
-                        self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
+                            if not hasattr(self, '_emoji_positions'):
+                                self._emoji_positions = []
+                            self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
