@@ -48,16 +48,19 @@ class EventPollView(discord.ui.View):
 
     def _create_event_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):
+            # Get poll_id from the message (for persistent views)
+            poll_id = str(interaction.message.id)
+
             # Get user's current selections
             polls = await self.cog.config.guild_from_id(self.guild_id).polls()
-            if not self.poll_id or self.poll_id not in polls:
+            if poll_id not in polls:
                 await interaction.response.send_message(
                     "This poll is no longer active!",
                     ephemeral=True
                 )
                 return
 
-            poll_data = polls[self.poll_id]
+            poll_data = polls[poll_id]
             user_id_str = str(interaction.user.id)
             user_selections = poll_data["selections"].get(user_id_str, {})
 
@@ -69,7 +72,7 @@ class EventPollView(discord.ui.View):
                 view = TimeSelectView(
                     cog=self.cog,
                     guild_id=self.guild_id,
-                    poll_id=self.poll_id,
+                    poll_id=poll_id,
                     user_id=interaction.user.id,
                     event_name=event_name,
                     day=None,  # No day for daily events
@@ -87,7 +90,7 @@ class EventPollView(discord.ui.View):
                 view = TimeSelectView(
                     cog=self.cog,
                     guild_id=self.guild_id,
-                    poll_id=self.poll_id,
+                    poll_id=poll_id,
                     user_id=interaction.user.id,
                     event_name=event_name,
                     day=None,  # No day selection for fixed-day events
@@ -108,7 +111,7 @@ class EventPollView(discord.ui.View):
                     view = SlotSelectView(
                         cog=self.cog,
                         guild_id=self.guild_id,
-                        poll_id=self.poll_id,
+                        poll_id=poll_id,
                         user_id=interaction.user.id,
                         event_name=event_name,
                         user_selections=user_selections,
@@ -125,7 +128,7 @@ class EventPollView(discord.ui.View):
                     view = DaySelectView(
                         cog=self.cog,
                         guild_id=self.guild_id,
-                        poll_id=self.poll_id,
+                        poll_id=poll_id,
                         user_id=interaction.user.id,
                         event_name=event_name,
                         slot_index=0,
