@@ -156,20 +156,42 @@ class EventPolling(commands.Cog):
         # Organize results by event
         for event_name in self.events.keys():
             event_results = {}
+            event_info = self.events[event_name]
 
             for user_id, user_selections in selections.items():
                 if event_name in user_selections:
                     selection = user_selections[event_name]
 
-                    # Format the selection string
-                    if self.events[event_name]["type"] == "daily":
-                        key = selection["time"]
-                    else:
-                        key = f"{selection['day']} at {selection['time']}"
+                    # Handle multi-slot events (stored as list)
+                    if isinstance(selection, list):
+                        for slot_index, slot_data in enumerate(selection):
+                            if slot_data:  # Slot might be None if not yet selected
+                                # Format the selection string
+                                if event_info["type"] == "daily":
+                                    key = f"Slot {slot_index + 1}: {slot_data['time']}"
+                                elif event_info["type"] == "fixed_days":
+                                    days_str = ", ".join([d[:3] for d in event_info["days"]])
+                                    key = f"Slot {slot_index + 1}: {slot_data['time']} ({days_str})"
+                                else:
+                                    key = f"Slot {slot_index + 1}: {slot_data['day']} at {slot_data['time']}"
 
-                    if key not in event_results:
-                        event_results[key] = []
-                    event_results[key].append(f"<@{user_id}>")
+                                if key not in event_results:
+                                    event_results[key] = []
+                                event_results[key].append(f"<@{user_id}>")
+                    else:
+                        # Single-slot event (stored as dict)
+                        # Format the selection string
+                        if event_info["type"] == "daily":
+                            key = selection["time"]
+                        elif event_info["type"] == "fixed_days":
+                            days_str = ", ".join([d[:3] for d in event_info["days"]])
+                            key = f"{selection['time']} ({days_str})"
+                        else:
+                            key = f"{selection['day']} at {selection['time']}"
+
+                        if key not in event_results:
+                            event_results[key] = []
+                        event_results[key].append(f"<@{user_id}>")
 
             # Add to embed
             if event_results:
