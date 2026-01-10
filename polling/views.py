@@ -16,25 +16,30 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Create buttons for each event - spread across rows if needed
+        # Create buttons for each event in 2 rows
+        # Row 0: Hero's Realm, Sword Trial
+        # Row 1: Party, Breaking Army, Showdown
         event_names = list(events.keys())
         for idx, event_name in enumerate(event_names):
             # Determine button style based on event
             if "Hero's Realm" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 0
             elif "Sword Trial" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 0
             elif "Party" in event_name:
                 button_style = discord.ButtonStyle.success  # Green
+                row = 1
             elif "Breaking Army" in event_name:
                 button_style = discord.ButtonStyle.primary  # Blue
+                row = 1
             elif "Showdown" in event_name:
                 button_style = discord.ButtonStyle.danger  # Red
+                row = 1
             else:
                 button_style = discord.ButtonStyle.secondary  # Grey
-
-            # Discord allows max 5 buttons per row
-            row = idx // 5
+                row = 1
 
             button = discord.ui.Button(
                 label=event_name,
