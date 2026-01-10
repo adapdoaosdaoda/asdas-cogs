@@ -1,8 +1,14 @@
-"""Calendar image rendering using PIL"""
+"""Calendar image rendering using PIL with emoji support via pilmoji"""
 
 from PIL import Image, ImageDraw, ImageFont
 from typing import Dict, List, Tuple
 import io
+
+try:
+    from pilmoji import Pilmoji
+    PILMOJI_AVAILABLE = True
+except ImportError:
+    PILMOJI_AVAILABLE = False
 
 
 class CalendarRenderer:
@@ -102,6 +108,10 @@ class CalendarRenderer:
         img = Image.new('RGB', (width, height), self.BG_COLOR)
         draw = ImageDraw.Draw(img)
 
+        # Initialize emoji positions list
+        self._emoji_positions = []
+        self._legend_emoji_positions = []
+
         # Draw column headers (days)
         self._draw_day_headers(draw, days)
 
@@ -111,6 +121,29 @@ class CalendarRenderer:
         # Draw legend at bottom
         grid_bottom = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.PADDING
         self._draw_legend(draw, width, grid_bottom, events)
+
+        # Render all emojis using pilmoji if available
+        if PILMOJI_AVAILABLE:
+            with Pilmoji(img) as pilmoji:
+                # Draw calendar cell emojis
+                for text_x, text_y, display_text, font in self._emoji_positions:
+                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
+
+                # Draw legend emojis
+                for text_x, text_y, display_text, font in self._legend_emoji_positions:
+                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
+        else:
+            # Fallback to text labels if pilmoji not available
+            for text_x, text_y, display_text, font in self._emoji_positions:
+                # Use text labels instead of emojis
+                label_text = display_text
+                # Try to extract label from text (fallback)
+                for event_name, emoji in [("Hero's Realm", "🛡️"), ("Sword Trial", "⚔️"), ("Party", "🎉"), ("Breaking Army", "⚡"), ("Showdown", "🏆"), ("Guild Wars", "🏰")]:
+                    if emoji in display_text:
+                        label = self.EVENT_LABELS.get(event_name, "?")
+                        label_text = display_text.replace(emoji, label)
+                        break
+                draw.text((text_x, text_y), label_text, font=font, fill=self.HEADER_TEXT)
 
         # Convert to bytes
         buffer = io.BytesIO()
@@ -258,36 +291,39 @@ class CalendarRenderer:
                     events_in_cell = schedule[time_str][day]
 
                     if events_in_cell:
-                        # Build text labels for events
-                        labels = []
+                        # Store event info for emoji/label rendering
+                        event_data = []
                         for priority, event_name, slot_num in events_in_cell[:3]:  # Max 3 events per cell
+                            emoji = events.get(event_name, {}).get("emoji", "•")
                             label = self.EVENT_LABELS.get(event_name, "?")
-                            if slot_num > 0:  # Multi-slot event
-                                label = f"{label}{slot_num}"
-                            labels.append((label, event_name))
+                            if slot_num > 0:  # Multi-slot event - add number after emoji
+                                display_text = f"{emoji}{slot_num}"
+                            else:
+                                display_text = emoji
+                            event_data.append((display_text, event_name, label))
 
-                        # Draw labels with colored text
-                        if len(labels) == 1:
+                        # Draw emojis/labels
+                        if len(event_data) == 1:
                             # Single event - centered
-                            label, event_name = labels[0]
-                            color = self.EVENT_COLORS.get(event_name, self.HEADER_TEXT)
-                            bbox = draw.textbbox((0, 0), label, font=self.font_bold)
-                            text_width = bbox[2] - bbox[0]
-                            text_height = bbox[3] - bbox[1]
-                            text_x = x + (self.CELL_WIDTH - text_width) // 2
-                            text_y = y + (self.CELL_HEIGHT - text_height) // 2
-                            draw.text((text_x, text_y), label, fill=color, font=self.font_bold)
+                            display_text, event_name, label = event_data[0]
+                            text_x = x + (self.CELL_WIDTH // 2) - 10
+                            text_y = y + (self.CELL_HEIGHT // 2) - 10
+                            # Store position for later emoji rendering
+                            if not hasattr(self, '_emoji_positions'):
+                                self._emoji_positions = []
+                            self._emoji_positions.append((text_x, text_y, display_text, self.font_bold))
                         else:
                             # Multiple events - stack vertically
-                            total_height = len(labels) * 15
-                            start_text_y = y + (self.CELL_HEIGHT - total_height) // 2
-                            for idx, (label, event_name) in enumerate(labels):
-                                color = self.EVENT_COLORS.get(event_name, self.HEADER_TEXT)
-                                bbox = draw.textbbox((0, 0), label, font=self.font_small)
-                                text_width = bbox[2] - bbox[0]
-                                text_x = x + (self.CELL_WIDTH - text_width) // 2
-                                text_y = start_text_y + (idx * 15)
-                                draw.text((text_x, text_y), label, fill=color, font=self.font_small)
+                            spacing = 18
+                            total_height = len(event_data) * spacing
+                            start_text_y = y + (self.CELL_HEIGHT - total_height) // 2 + 5
+                            for idx, (display_text, event_name, label) in enumerate(event_data):
+                                text_x = x + (self.CELL_WIDTH // 2) - 10
+                                text_y = start_text_y + (idx * spacing)
+                                # Store position for later emoji rendering
+                                if not hasattr(self, '_emoji_positions'):
+                                    self._emoji_positions = []
+                                self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
@@ -329,15 +365,23 @@ class CalendarRenderer:
             event_info = events.get(event_name, {})
             num_slots = event_info.get("slots", 1)
 
-            # Format text
+            # Format text (emoji will be rendered separately with pilmoji)
             if num_slots > 1 and event_info.get("type") == "fixed_days":
                 # Show slot range for multi-slot events
-                text = f"{emoji} {label}1-{label}{num_slots}: {event_name}"
+                emoji_part = emoji
+                text_part = f" {label}1-{label}{num_slots}: {event_name}"
             else:
-                text = f"{emoji} {label}: {event_name}"
+                emoji_part = emoji
+                text_part = f" {label}: {event_name}"
 
-            # Draw the text
-            draw.text((current_x, current_y), text, fill=self.HEADER_TEXT, font=self.font_small)
+            # Store emoji position for pilmoji rendering
+            if not hasattr(self, '_legend_emoji_positions'):
+                self._legend_emoji_positions = []
+            self._legend_emoji_positions.append((current_x, current_y, emoji_part, self.font_small))
+
+            # Draw the text part (after emoji space)
+            text_x = current_x + 25  # Space for emoji
+            draw.text((text_x, current_y), text_part, fill=self.HEADER_TEXT, font=self.font_small)
 
             # Move to next position (3 items per column)
             if idx == 2:

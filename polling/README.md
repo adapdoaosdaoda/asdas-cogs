@@ -1,19 +1,31 @@
 # Event Polling Cog
 
-A Discord cog for creating event scheduling polls with dropdown menus, automatic conflict detection, and duration-aware scheduling with multi-slot selection.
+A Discord cog for creating event scheduling polls with dropdown menus, automatic conflict detection, visual calendar images, and duration-aware scheduling with multi-slot selection.
+
+## Installation
+
+This cog requires **Pillow** and **pilmoji** for calendar image generation with emoji support:
+
+```bash
+pip install Pillow
+pip install git+https://github.com/jay3332/pilmoji
+```
+
+**Note:** If pilmoji is not installed, the calendar will fall back to text labels (HR, ST, P, BA, SD, GW) instead of emojis.
 
 ## Features
 
-- **5 Event Types**: Party (daily, 1 slot), Breaking Army (weekly, 2 slots), Showdown (weekly, 2 slots), Hero's Realm (fixed days, 1 slot), Sword Trial (fixed days, 1 slot)
-- **Multi-Slot Selection**: Select multiple day/time combinations for Breaking Army and Showdown events
-- **Fixed-Day Events**: Hero's Realm and Sword Trial automatically appear on Wed/Fri/Sat/Sun
-- **Interactive Buttons**: Grey buttons for day selection, dropdowns for time selection
+- **5 Event Types**: Party (daily, 1 slot), Breaking Army (weekly, 2 slots), Showdown (weekly, 2 slots), Hero's Realm (fixed days, 4 slots), Sword Trial (fixed days, 4 slots)
+- **Multi-Slot Selection**: Select multiple day/time combinations for Breaking Army, Showdown, Hero's Realm, and Sword Trial
+- **Fixed-Day Events**: Hero's Realm and Sword Trial allow 4 separate slots (one for each day: Wed/Fri/Sat/Sun)
+- **Visual Calendar Images**: Professional PNG calendar images with emoji rendering
+- **Interactive Buttons**: Color-coded buttons for events, Results button for viewing current winners
 - **Duration-Aware Conflict Detection**: Prevents users from selecting overlapping event times based on event durations
 - **Blocked Time Slots**: Saturday & Sunday 20:30-22:00 are blocked from selection
-- **Calendar View**: Real-time calendar-style display showing current winning times with slot numbers
+- **Calendar View**: Beautiful visual calendar images showing schedule with colored labels and emojis
 - **Color-Coded Buttons**: Grey for Hero's Realm/Sword Trial, Green for Party, Blue for Breaking Army, Red for Showdown
 - **Editable Selections**: Users can freely change or clear their choices
-- **Live Updates**: Poll embed updates automatically when users vote
+- **Live Updates**: Calendar images update automatically when users vote
 
 ## Events
 
