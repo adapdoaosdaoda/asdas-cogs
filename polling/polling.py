@@ -639,36 +639,33 @@ class EventPolling(commands.Cog):
         lines.append(header)
         lines.append("─" * len(header))
 
-        # Data rows - only show rows with events
+        # Data rows - show all time slots
         for time_slot in times:
             row_data = schedule[time_slot]
-            has_events = any(row_data.values())
+            row = f"{time_slot} │"
+            for day in self.days_of_week:
+                events = row_data[day]
+                if events:
+                    # Sort by priority (descending - highest priority first)
+                    sorted_events = sorted(events, key=lambda x: x[0], reverse=True)
+                    # Extract just the emoji strings, limit to 2 events per cell
+                    event_emojis = [emoji for priority, emoji in sorted_events[:2]]
+                    cell = "".join(event_emojis)
 
-            if has_events:
-                row = f"{time_slot} │"
-                for day in self.days_of_week:
-                    events = row_data[day]
-                    if events:
-                        # Sort by priority (descending - highest priority first)
-                        sorted_events = sorted(events, key=lambda x: x[0], reverse=True)
-                        # Extract just the emoji strings, limit to 2 events per cell
-                        event_emojis = [emoji for priority, emoji in sorted_events[:2]]
-                        cell = "".join(event_emojis)
-
-                        # Emojis render as 2-char width in monospace
-                        # Need 5 chars total before │ to match header
-                        if len(event_emojis) == 2:
-                            # 2 emojis = 4 char widths, need 1 leading space
-                            row += f" {cell}│"
-                        else:
-                            # 1 emoji = 2 char widths, need 1 leading + 2 trailing spaces
-                            row += f" {cell}  │"
+                    # Emojis render as 2-char width in monospace
+                    # Need 5 chars total before │ to match header
+                    if len(event_emojis) == 2:
+                        # 2 emojis = 4 char widths, need 1 leading space
+                        row += f" {cell}│"
                     else:
-                        # Empty cell - use braille blank pattern to match emoji width
-                        # ⠀ (braille blank U+2800) +   (hair space U+200A) + ⠀ (braille blank)
-                        # Pattern: " ⠀ ⠀  │" = 1 + 2 + 2 spaces = 5 chars (matches single emoji cell)
-                        row += " ⠀ ⠀  │"
-                lines.append(row)
+                        # 1 emoji = 2 char widths, need 1 leading + 2 trailing spaces
+                        row += f" {cell}  │"
+                else:
+                    # Empty cell - use braille blank pattern to match emoji width
+                    # ⠀ (braille blank U+2800) +   (hair space U+200A) + ⠀ (braille blank)
+                    # Pattern: " ⠀ ⠀  │" = 1 + 2 + 2 spaces = 5 chars (matches single emoji cell)
+                    row += " ⠀ ⠀  │"
+            lines.append(row)
 
         lines.append("```")
 

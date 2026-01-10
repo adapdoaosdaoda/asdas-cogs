@@ -200,7 +200,7 @@ Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun
 - **Grid Layout**: Easy to see which events are scheduled when at a glance
 - **Monospace Font**: Uses code block for proper alignment
 - **Timezone Display**: Shows "All times in Server Time" at the top
-- **Compact View**: Only shows time slots with scheduled events
+- **Full Schedule View**: Displays all time slots (18:00-24:00) with braille blank pattern for empty cells
 - **Slot Numbers**: Multi-slot events show as ⚡1, ⚡2, 🏆1, 🏆2
 - **Auto-updating**: Use `[p]eventpoll calendar` to post a dedicated calendar that updates automatically
 - **Daily Events**: Party (🎉) appears across all days
