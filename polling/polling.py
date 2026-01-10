@@ -425,18 +425,11 @@ class EventPolling(commands.Cog):
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
 
-        # Create embed with legend
+        # Create embed
         embed = discord.Embed(
             title="📅 Event Calendar",
             description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
             color=discord.Color(0xcb4449)
-        )
-
-        # Add legend field
-        embed.add_field(
-            name="Legend",
-            value="🎉 Party\n🛡️ Hero's Realm\n⚔️ Sword Trial\n⚡ Breaking Army\n🏆 Showdown\n🏰 Guild Wars",
-            inline=False
         )
 
         # Get selections
@@ -552,6 +545,97 @@ class EventPolling(commands.Cog):
 
         return embed
 
+    def format_results_intro(self, selections: Dict) -> str:
+        """Format results introduction with rules explanation
+
+        Args:
+            selections: Dict of user selections
+
+        Returns:
+            Formatted string with voting rules and tiebreak explanation
+        """
+        summary_lines = [
+            "**📊 Current Results** (Weighted Voting System)",
+            f"Total voters: {len(selections)}",
+            "",
+            "**How voting works:**",
+            "• 5 points: Your exact voted time",
+            "• 3 points: 30 minutes before/after your voted time",
+            "• 1 point: 1 hour before/after your voted time",
+            "• For Breaking Army & Showdown: +1 point to same time on all other days",
+            "",
+            "**Event priority and tiebreak rules:**",
+            "• Priority order: Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
+            "• When events conflict: Higher priority gets +5 bonus points",
+            "• After bonus, higher points wins the time slot",
+            "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
+            "",
+            "**Click a button below to see that event's votes:**",
+        ]
+        return "\n".join(summary_lines)
+
+    def format_event_results(self, event_name: str, winning_times: Dict, selections: Dict) -> str:
+        """Format results for a single event category
+
+        Args:
+            event_name: Name of the event
+            winning_times: Dict from _calculate_winning_times_weighted
+            selections: Dict of user selections
+
+        Returns:
+            Formatted string with top 3 results for the event
+        """
+        summary_lines = []
+
+        event_info = self.events.get(event_name)
+        if not event_info:
+            return f"Event '{event_name}' not found."
+
+        emoji = event_info["emoji"]
+        event_slots = winning_times.get(event_name, {})
+
+        if event_slots:
+            for slot_index in range(event_info["slots"]):
+                if slot_index not in event_slots:
+                    continue
+
+                winner_key, winner_points, all_entries = event_slots[slot_index]
+
+                # Format header based on event type
+                if event_info["slots"] > 1:
+                    if event_info["type"] == "fixed_days":
+                        day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
+                        summary_lines.append(f"{emoji} **{event_name} ({day_name[:3]})**:")
+                    else:
+                        summary_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**:")
+                else:
+                    summary_lines.append(f"{emoji} **{event_name}**:")
+
+                # Show top 3 entries
+                for rank, (key, points) in enumerate(all_entries[:3], 1):
+                    day, time = key
+                    if event_info["type"] == "daily":
+                        summary_lines.append(f"  {rank}. {time} - **{points} pts**")
+                    elif event_info["type"] == "fixed_days":
+                        if event_info["slots"] > 1:
+                            summary_lines.append(f"  {rank}. {day[:3]} {time} - **{points} pts**")
+                        else:
+                            days_str = "/".join([d[:3] for d in event_info["days"]])
+                            summary_lines.append(f"  {rank}. {time} ({days_str}) - **{points} pts**")
+                    else:
+                        summary_lines.append(f"  {rank}. {day[:3]} {time} - **{points} pts**")
+
+                summary_lines.append("")
+        else:
+            if event_info["slots"] > 1:
+                for slot_index in range(event_info["slots"]):
+                    summary_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**: No votes yet")
+            else:
+                summary_lines.append(f"{emoji} **{event_name}**: No votes yet")
+            summary_lines.append("")
+
+        return "\n".join(summary_lines)
+
     def format_results_summary_weighted(self, winning_times: Dict, selections: Dict) -> str:
         """Format results summary with weighted points for display
 
@@ -572,6 +656,12 @@ class EventPolling(commands.Cog):
             "• 3 points: 30 minutes before/after your voted time",
             "• 1 point: 1 hour before/after your voted time",
             "• For Breaking Army & Showdown: +1 point to same time on all other days",
+            "",
+            "**Event priority and tiebreak rules:**",
+            "• Priority order: Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
+            "• When events conflict: Higher priority gets +5 bonus points",
+            "• After bonus, higher points wins the time slot",
+            "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
             "",
             "**Top 3 Options Per Event:**",
             ""
@@ -949,7 +1039,206 @@ class EventPolling(commands.Cog):
                         winner_key, winner_points = sorted_entries[0]
                         winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
 
+        # Resolve conflicts between events based on priority
+        winning_times = self._resolve_event_conflicts(winning_times)
+
         return winning_times
+
+    def _resolve_event_conflicts(self, winning_times: Dict) -> Dict:
+        """Resolve conflicts between events based on priority bonus system
+
+        When events conflict at the same time:
+        - Higher priority events get +5 point bonus
+        - After bonus, higher points wins
+        - If still tied, use regular tiebreak rules
+
+        Args:
+            winning_times: Initial winning times from voting
+
+        Returns:
+            Adjusted winning times with conflicts resolved
+        """
+        # Build a mapping of (day, time) -> [(event_name, slot_index, points, priority)]
+        time_slot_candidates = {}
+
+        for event_name, event_info in self.events.items():
+            if event_name not in winning_times:
+                continue
+
+            priority = event_info.get("priority", 0)
+
+            for slot_index, slot_data in winning_times[event_name].items():
+                winner_key, winner_points, all_entries = slot_data
+                day, time = winner_key
+
+                # Get all days this event affects
+                affected_days = self._get_affected_days(event_name, day)
+
+                # Register this event for all time slots it occupies
+                for affected_day in affected_days:
+                    # Find all 30-min slots this event occupies
+                    from datetime import datetime, timedelta
+                    current_time = datetime.strptime(time, "%H:%M")
+                    duration = event_info.get("duration", 30)
+                    slots_needed = max(1, duration // 30)
+
+                    for i in range(slots_needed):
+                        slot_time = current_time + timedelta(minutes=i * 30)
+                        slot_time_str = slot_time.strftime("%H:%M")
+                        slot_key = (affected_day, slot_time_str)
+
+                        if slot_key not in time_slot_candidates:
+                            time_slot_candidates[slot_key] = []
+
+                        time_slot_candidates[slot_key].append({
+                            'event_name': event_name,
+                            'slot_index': slot_index,
+                            'points': winner_points,
+                            'priority': priority,
+                            'start_time': time,
+                            'all_entries': all_entries
+                        })
+
+        # Resolve conflicts for each time slot
+        occupied_by = {}  # {(day, time): event_name} - tracks which event won each slot
+        adjusted_winning_times = {}
+        events_needing_reassignment = set()  # Events that lost their preferred time
+
+        for slot_key, candidates in time_slot_candidates.items():
+            if len(candidates) == 1:
+                # No conflict, event gets this time
+                candidate = candidates[0]
+                occupied_by[slot_key] = candidate['event_name']
+            else:
+                # Conflict! Apply priority bonuses and resolve
+                max_priority = max(c['priority'] for c in candidates)
+
+                for candidate in candidates:
+                    # Higher priority gets +5 bonus
+                    if candidate['priority'] == max_priority:
+                        candidate['adjusted_points'] = candidate['points'] + 5
+                    else:
+                        candidate['adjusted_points'] = candidate['points']
+
+                # Sort by adjusted points (desc), then by priority (desc), then by time (desc for tiebreak)
+                candidates.sort(key=lambda x: (-x['adjusted_points'], -x['priority'], -self._time_to_sort_key(x['start_time'])))
+
+                winner = candidates[0]
+                occupied_by[slot_key] = winner['event_name']
+
+                # Mark losers for reassignment
+                for loser in candidates[1:]:
+                    events_needing_reassignment.add((loser['event_name'], loser['slot_index']))
+
+        # Assign winning times to events
+        for event_name, event_info in self.events.items():
+            if event_name not in winning_times:
+                continue
+
+            adjusted_winning_times[event_name] = {}
+
+            for slot_index, slot_data in winning_times[event_name].items():
+                winner_key, winner_points, all_entries = slot_data
+                day, time = winner_key
+
+                # Check if this event needs reassignment
+                if (event_name, slot_index) in events_needing_reassignment:
+                    # Event needs to find alternative time
+                    selected_entry = None
+                    for candidate_key, candidate_points in all_entries:
+                        if self._is_time_available(event_name, candidate_key, occupied_by):
+                            selected_entry = (candidate_key, candidate_points)
+                            # Mark this time as occupied
+                            self._mark_time_occupied(event_name, candidate_key, occupied_by)
+                            break
+
+                    if selected_entry:
+                        adjusted_winning_times[event_name][slot_index] = (selected_entry[0], selected_entry[1], all_entries)
+                    else:
+                        # Fallback to original
+                        adjusted_winning_times[event_name][slot_index] = slot_data
+                else:
+                    # Event won its preferred time
+                    adjusted_winning_times[event_name][slot_index] = slot_data
+
+        return adjusted_winning_times
+
+    def _get_affected_days(self, event_name: str, day: str) -> list:
+        """Get list of days affected by an event
+
+        Args:
+            event_name: Name of the event
+            day: Day key from winning time
+
+        Returns:
+            List of day names affected
+        """
+        event_info = self.events[event_name]
+
+        if event_info["type"] == "daily" or day == "Daily":
+            return self.days_of_week
+        elif event_info["type"] == "fixed_days":
+            if day in self.days_of_week:
+                return [day]
+            else:
+                return event_info.get("days", [])
+        else:
+            return [day] if day in self.days_of_week else []
+
+    def _is_time_available(self, event_name: str, time_key: tuple, occupied_by: Dict) -> bool:
+        """Check if a time slot is available for an event
+
+        Args:
+            event_name: Name of the event
+            time_key: (day, time) tuple
+            occupied_by: Dictionary mapping slot keys to event names
+
+        Returns:
+            True if available, False otherwise
+        """
+        day, time = time_key
+        event_info = self.events[event_name]
+        affected_days = self._get_affected_days(event_name, day)
+
+        from datetime import datetime, timedelta
+        current_time = datetime.strptime(time, "%H:%M")
+        duration = event_info.get("duration", 30)
+        slots_needed = max(1, duration // 30)
+
+        for affected_day in affected_days:
+            for i in range(slots_needed):
+                slot_time = current_time + timedelta(minutes=i * 30)
+                slot_time_str = slot_time.strftime("%H:%M")
+                slot_key = (affected_day, slot_time_str)
+
+                if slot_key in occupied_by and occupied_by[slot_key] != event_name:
+                    return False
+
+        return True
+
+    def _mark_time_occupied(self, event_name: str, time_key: tuple, occupied_by: Dict):
+        """Mark a time slot as occupied by an event
+
+        Args:
+            event_name: Name of the event
+            time_key: (day, time) tuple
+            occupied_by: Dictionary to update
+        """
+        day, time = time_key
+        event_info = self.events[event_name]
+        affected_days = self._get_affected_days(event_name, day)
+
+        from datetime import datetime, timedelta
+        current_time = datetime.strptime(time, "%H:%M")
+        duration = event_info.get("duration", 30)
+        slots_needed = max(1, duration // 30)
+
+        for affected_day in affected_days:
+            for i in range(slots_needed):
+                slot_time = current_time + timedelta(minutes=i * 30)
+                slot_time_str = slot_time.strftime("%H:%M")
+                slot_key = (affected_day, slot_time_str)
+                occupied_by[slot_key] = event_name
 
     def _time_to_sort_key(self, time_str: str) -> int:
         """Convert time string to sortable integer for sorting
