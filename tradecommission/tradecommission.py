@@ -361,6 +361,28 @@ class TradeCommission(commands.Cog):
 
         return any(role_id in allowed_role_ids for role_id in member_role_ids)
 
+    async def _get_embed_color(self, guild: discord.Guild, ping_role_id: Optional[int]) -> discord.Color:
+        """Get the embed color based on priority: ping role -> bot color -> default color.
+
+        Priority:
+        1. Ping role color (if set and not default)
+        2. Bot's color (if set and not default)
+        3. Default fallback color (#58b99c)
+        """
+        # Try ping role color first
+        if ping_role_id:
+            ping_role = guild.get_role(ping_role_id)
+            if ping_role and ping_role.color != discord.Color.default():
+                return ping_role.color
+
+        # Try bot's color
+        bot_member = guild.get_member(self.bot.user.id)
+        if bot_member and bot_member.color != discord.Color.default():
+            return bot_member.color
+
+        # Fallback to default color
+        return discord.Color(0x58b99c)
+
     async def _delete_notification_after_delay(self, guild: discord.Guild, channel: discord.TextChannel, message_id: int, delay_seconds: int):
         """Delete a notification message after a specified delay in seconds."""
         try:
@@ -665,12 +687,8 @@ class TradeCommission(commands.Cog):
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass  # Message already deleted or no permission
 
-        # Determine embed color from ping role or default
-        embed_color = discord.Color.blue()
-        if config["ping_role_id"]:
-            ping_role = guild.get_role(config["ping_role_id"])
-            if ping_role and ping_role.color != discord.Color.default():
-                embed_color = ping_role.color
+        # Determine embed color using priority: ping role -> bot color -> default
+        embed_color = await self._get_embed_color(guild, config["ping_role_id"])
 
         embed = discord.Embed(
             title=config["message_title"],
@@ -2055,12 +2073,8 @@ class TradeCommission(commands.Cog):
         except discord.NotFound:
             return
 
-        # Determine embed color from ping role or default
-        embed_color = discord.Color.gold()
-        if guild_config["ping_role_id"]:
-            ping_role = guild.get_role(guild_config["ping_role_id"])
-            if ping_role and ping_role.color != discord.Color.default():
-                embed_color = ping_role.color
+        # Determine embed color using priority: ping role -> bot color -> default
+        embed_color = await self._get_embed_color(guild, guild_config["ping_role_id"])
 
         # Build embed with active options
         embed = discord.Embed(
