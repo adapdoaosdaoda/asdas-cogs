@@ -34,7 +34,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             deletion_hours=4,  # Default deletion time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
             event_start_message="{role} The event is starting now!",  # Message sent at event start
-            deletion_warning_message="⚠️ These channels will be deleted in 15 minutes.",  # Warning before deletion
+            deletion_warning_message="⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours.",  # Warning before deletion
             divider_enabled=True,  # Enable divider channel by default
             divider_name="━━━━━━ EVENT CHANNELS ━━━━━━",  # Default divider name
             divider_channel_id=None,  # Stores the divider channel ID
@@ -45,6 +45,8 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             voice_minimum_roles={},  # Dictionary of keyword:minimum_count pairs for enforcing minimum role members
             minimum_retry_intervals=[10, 5, 2],  # Minutes before event start to retry if minimum not met (default: 10min, 5min, 2min)
             whitelisted_roles=[],  # List of role IDs that always have view, read, connect & speak permissions
+            archive_category_id=None,  # Category where channels with messages are moved instead of being deleted
+            deletion_extensions={},  # Maps event_id (str) -> {"delete_time": timestamp, "warning_message_id": int, "text_channel_id": int}
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self._config_lock = asyncio.Lock()  # Protect event_channels config updates

@@ -11,8 +11,30 @@ class UtilsMixin:
 
     async def _startup_scan(self):
         await self.bot.wait_until_ready()
+
+        # Run migration for all guilds
         for guild in self.bot.guilds:
+            await self._migrate_deletion_warning_message(guild)
             await self._schedule_existing_events(guild)
+
+    async def _migrate_deletion_warning_message(self, guild: discord.Guild):
+        """Migrate old deletion warning messages to new default with extension feature.
+
+        This updates the deletion warning message if it's still using the old default value
+        to include the new extension feature instructions.
+        """
+        try:
+            OLD_DEFAULT = "⚠️ These channels will be deleted in 15 minutes."
+            NEW_DEFAULT = "⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours."
+
+            current_message = await self.config.guild(guild).deletion_warning_message()
+
+            # Only update if the message is exactly the old default
+            if current_message == OLD_DEFAULT:
+                await self.config.guild(guild).deletion_warning_message.set(NEW_DEFAULT)
+                log.info(f"Migrated deletion warning message to new default for guild '{guild.name}'")
+        except Exception as e:
+            log.error(f"Error migrating deletion warning message for guild '{guild.name}': {e}")
 
     async def _schedule_existing_events(self, guild: discord.Guild):
         try:
