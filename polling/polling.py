@@ -83,17 +83,17 @@ class EventPolling(commands.Cog):
             }
         }
 
-        # Guild Wars - blocked time event (Sat & Sun 20:30-21:30)
+        # Guild Wars - blocked time event (Sat & Sun 20:30-22:00)
         self.guild_wars_emoji = "🏰"
 
         self.days_of_week = [
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Saturday and Sunday 20:30 - 21:30
+        # Blocked time slots: Saturday and Sunday 20:30 - 22:00
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "21:30"},
-            {"day": "Sunday", "start": "20:30", "end": "21:30"}
+            {"day": "Saturday", "start": "20:30", "end": "22:00"},
+            {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
         # Timezone display - customize this to match your server's timezone
@@ -483,7 +483,7 @@ class EventPolling(commands.Cog):
                 "🎉 **Party** - Daily (10 min, 1 slot)\n"
                 "⚡ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
                 "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
-                "🏰 **Guild Wars** - Sat & Sun 20:30-21:30 (blocked)\n"
+                "🏰 **Guild Wars** - Sat & Sun 20:30-22:00 (blocked)\n"
                 "⚠️ Events cannot have conflicting times"
             ),
             inline=False
@@ -769,7 +769,7 @@ class EventPolling(commands.Cog):
                     event_start, event_end = self._get_event_time_range(event_name, time_str)
 
                     if self._time_ranges_overlap(event_start, event_end, blocked_start, blocked_end):
-                        return True, f"This time conflicts with a blocked period (Sat & Sun 20:30-21:30)"
+                        return True, f"This time conflicts with a blocked period (Sat & Sun 20:30-22:00)"
 
         return False, None
 
