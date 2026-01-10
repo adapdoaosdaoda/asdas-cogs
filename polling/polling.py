@@ -90,15 +90,15 @@ class EventPolling(commands.Cog):
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Saturday and Sunday 20:30 - 22:00
+        # Blocked time slots: Saturday and Sunday 20:30 - 21:30
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "22:00"},
-            {"day": "Sunday", "start": "20:30", "end": "22:00"}
+            {"day": "Saturday", "start": "20:30", "end": "21:30"},
+            {"day": "Sunday", "start": "20:30", "end": "21:30"}
         ]
 
         # Timezone display - customize this to match your server's timezone
         # Examples: "UTC", "UTC+1", "UTC-5", "EST", "PST", "Server Time"
-        self.timezone_display = "Server Time"  # Change this to your timezone (e.g., "UTC+1")
+        self.timezone_display = "Server Time (UTC+1)"
 
         # Initialize calendar renderer
         self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
@@ -369,11 +369,18 @@ class EventPolling(commands.Cog):
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
 
-        # Create embed
+        # Create embed with legend
         embed = discord.Embed(
             title="📅 Event Calendar",
             description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
             color=discord.Color(0xcb4449)
+        )
+
+        # Add legend field
+        embed.add_field(
+            name="Legend",
+            value="🎉 Party\n🛡️ Hero's Realm\n⚔️ Sword Trial\n⚡ Breaking Army\n🏆 Showdown\n🏰 Guild Wars",
+            inline=False
         )
 
         # Get selections

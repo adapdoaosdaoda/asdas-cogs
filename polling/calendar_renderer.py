@@ -44,13 +44,12 @@ class CalendarRenderer:
         "Guild Wars": (156, 163, 175)      # Gray
     }
 
-    # Layout constants
-    CELL_WIDTH = 90
-    CELL_HEIGHT = 40
-    TIME_COL_WIDTH = 70
-    HEADER_HEIGHT = 40
-    LEGEND_HEIGHT = 110
-    PADDING = 10
+    # Layout constants (increased for higher resolution)
+    CELL_WIDTH = 120
+    CELL_HEIGHT = 50
+    TIME_COL_WIDTH = 90
+    HEADER_HEIGHT = 50
+    PADDING = 15
 
     def __init__(self, timezone: str = "UTC"):
         """Initialize calendar renderer
@@ -60,12 +59,12 @@ class CalendarRenderer:
         """
         self.timezone = timezone
 
-        # Try to load a nice font, fallback to default
+        # Try to load a nice font with larger sizes for better clarity
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 17)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -90,8 +89,8 @@ class CalendarRenderer:
         """
         if blocked_times is None:
             blocked_times = [
-                {"day": "Saturday", "start": "20:30", "end": "22:30"},
-                {"day": "Sunday", "start": "20:30", "end": "22:30"}
+                {"day": "Saturday", "start": "20:30", "end": "21:30"},
+                {"day": "Sunday", "start": "20:30", "end": "21:30"}
             ]
 
         # Build schedule data structure
@@ -102,7 +101,7 @@ class CalendarRenderer:
         time_slots = sorted(schedule.keys())
 
         width = self.TIME_COL_WIDTH + (len(days) * self.CELL_WIDTH) + (2 * self.PADDING)
-        height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.LEGEND_HEIGHT + (2 * self.PADDING)
+        height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + (2 * self.PADDING)
 
         # Create image
         img = Image.new('RGB', (width, height), self.BG_COLOR)
@@ -110,7 +109,6 @@ class CalendarRenderer:
 
         # Initialize emoji positions list
         self._emoji_positions = []
-        self._legend_emoji_positions = []
 
         # Draw column headers (days)
         self._draw_day_headers(draw, days)
@@ -118,19 +116,11 @@ class CalendarRenderer:
         # Draw time labels and calendar grid
         self._draw_calendar_grid(draw, days, time_slots, schedule, blocked_times, events)
 
-        # Draw legend at bottom
-        grid_bottom = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.PADDING
-        self._draw_legend(draw, width, grid_bottom, events)
-
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             with Pilmoji(img) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
-                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
-
-                # Draw legend emojis
-                for text_x, text_y, display_text, font in self._legend_emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
         else:
             # Fallback to text labels if pilmoji not available
@@ -296,10 +286,8 @@ class CalendarRenderer:
                         for priority, event_name, slot_num in events_in_cell[:3]:  # Max 3 events per cell
                             emoji = events.get(event_name, {}).get("emoji", "•")
                             label = self.EVENT_LABELS.get(event_name, "?")
-                            if slot_num > 0:  # Multi-slot event - add number after emoji
-                                display_text = f"{emoji}{slot_num}"
-                            else:
-                                display_text = emoji
+                            # Use emoji without slot number
+                            display_text = emoji
                             event_data.append((display_text, event_name, label))
 
                         # Draw emojis/labels
