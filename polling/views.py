@@ -2,8 +2,6 @@ import discord
 from typing import Optional, Dict, List
 from datetime import datetime
 
-from .modals import EventVotingModal
-
 
 class EventPollView(discord.ui.View):
     """Main view with buttons for each event type"""
