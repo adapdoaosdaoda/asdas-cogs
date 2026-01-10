@@ -448,7 +448,12 @@ class EventPolling(commands.Cog):
 
             # Add Guild Wars emoji to all time slots in the blocked range
             for time_slot in times:
-                slot_time = datetime.strptime(time_slot, "%H:%M")
+                # Handle 24:00 special case (treat as 00:00 next day)
+                if time_slot == "24:00":
+                    slot_time = datetime.strptime("00:00", "%H:%M")
+                else:
+                    slot_time = datetime.strptime(time_slot, "%H:%M")
+
                 # Check if this time slot is within the blocked range (inclusive start, exclusive end)
                 if start_time <= slot_time < end_time:
                     schedule[time_slot][blocked_day].append((0, self.guild_wars_emoji))
