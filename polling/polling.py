@@ -32,7 +32,7 @@ class EventPolling(commands.Cog):
                 "time_range": (18, 24),
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 1,
+                "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
                 "color": discord.Color.greyple(),
                 "emoji": "🛡️",
                 "priority": 5  # Highest priority
@@ -43,7 +43,7 @@ class EventPolling(commands.Cog):
                 "time_range": (18, 24),
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 1,
+                "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
                 "color": discord.Color.greyple(),
                 "emoji": "⚔️",
                 "priority": 4
@@ -404,7 +404,12 @@ class EventPolling(commands.Cog):
                             summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
                         elif event_info["type"] == "fixed_days":
                             time_str = winners[0][1]
-                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                            if event_info["slots"] > 1:
+                                # Multi-slot fixed-day event - show day name from slot index
+                                day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Day {slot_index + 1}"
+                                summary_lines.append(f"{emoji} **{event_name} ({day_name})**: {time_str} ({votes} votes)")
+                            else:
+                                summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
                         else:
                             winner_strs = [f"{day} {time}" for day, time in winners]
                             if event_info["slots"] > 1:
@@ -515,14 +520,7 @@ class EventPolling(commands.Cog):
                     winners = [k for k, v in vote_counts.items() if v == max_votes]
                     winning_times[event_name][slot_index] = (winners, max_votes)
 
-        # Create visual calendar table
-        calendar_table = self._create_calendar_table(winning_times)
-        if calendar_table:
-            embed.add_field(
-                name="📊 Weekly Calendar View",
-                value=calendar_table,
-                inline=False
-            )
+        # Calendar removed from poll embed - use [p]eventpoll calendar command for calendar view
 
         # Add summary of each event
         summary_lines = []
@@ -539,7 +537,12 @@ class EventPolling(commands.Cog):
                             summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
                         elif event_info["type"] == "fixed_days":
                             time_str = winners[0][1]
-                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                            if event_info["slots"] > 1:
+                                # Multi-slot fixed-day event - show day name from slot index
+                                day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Day {slot_index + 1}"
+                                summary_lines.append(f"{emoji} **{event_name} ({day_name})**: {time_str} ({votes} votes)")
+                            else:
+                                summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
                         else:
                             winner_strs = [f"{day} {time}" for day, time in winners]
                             if event_info["slots"] > 1:
@@ -594,10 +597,14 @@ class EventPolling(commands.Cog):
                                 schedule[winner_time][day].append((priority, emoji))
                     elif event_info["type"] == "fixed_days":
                         # Fixed-day events appear on their configured days
-                        for day in event_info["days"]:
-                            if event_info["slots"] > 1:
-                                schedule[winner_time][day].append((priority, f"{emoji}{slot_index + 1}"))
-                            else:
+                        if event_info["slots"] > 1:
+                            # Multi-slot: each slot corresponds to one specific day
+                            if slot_index < len(event_info["days"]):
+                                specific_day = event_info["days"][slot_index]
+                                schedule[winner_time][specific_day].append((priority, f"{emoji}{slot_index + 1}"))
+                        else:
+                            # Single slot: appears on all configured days
+                            for day in event_info["days"]:
                                 schedule[winner_time][day].append((priority, emoji))
                     else:
                         # Weekly events appear only on their specific day
@@ -671,14 +678,39 @@ class EventPolling(commands.Cog):
 
         return "\n".join(lines) if len(lines) > 3 else ""
 
-    def generate_time_options(self, start_hour: int = 18, end_hour: int = 24, interval: int = 30) -> List[str]:
-        """Generate time options in HH:MM format"""
+    def generate_time_options(self, start_hour: int = 18, end_hour: int = 24, interval: int = 30, duration: int = 0) -> List[str]:
+        """Generate time options in HH:MM format
+
+        Args:
+            start_hour: Starting hour (default 18)
+            end_hour: Ending hour (default 24)
+            interval: Interval in minutes (default 30)
+            duration: Event duration in minutes (default 0). If > 0, filters out times that would extend past midnight.
+
+        Returns:
+            List of time strings in HH:MM format
+        """
         times = []
         current_hour = start_hour
         current_minute = 0
 
         while current_hour < end_hour or (current_hour == end_hour and current_minute == 0):
-            times.append(f"{current_hour:02d}:{current_minute:02d}")
+            time_str = f"{current_hour:02d}:{current_minute:02d}"
+
+            # If duration is specified, check if event would complete before midnight
+            if duration > 0:
+                # Calculate end time
+                end_minute = current_minute + duration
+                end_hour_calc = current_hour
+                while end_minute >= 60:
+                    end_minute -= 60
+                    end_hour_calc += 1
+
+                # Only include time if event ends at or before midnight (24:00)
+                if end_hour_calc < 24 or (end_hour_calc == 24 and end_minute == 0):
+                    times.append(time_str)
+            else:
+                times.append(time_str)
 
             current_minute += interval
             if current_minute >= 60:
@@ -778,6 +810,10 @@ class EventPolling(commands.Cog):
 
                 new_event_type = self.events[event_name]["type"]
                 existing_event_type = self.events[existing_event]["type"]
+
+                # Skip conflict checking if either event is Party (daily events don't conflict with others)
+                if event_name == "Party" or existing_event == "Party":
+                    continue
 
                 # Daily events conflict with all events if times overlap
                 if new_event_type == "daily":
