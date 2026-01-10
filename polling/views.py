@@ -172,7 +172,6 @@ class SlotSelectView(discord.ui.View):
             button = discord.ui.Button(
                 label=f"Slot {slot_index + 1}",
                 style=discord.ButtonStyle.secondary,
-                custom_id=f"slot_btn:{event_name}:{slot_index}",
                 row=0
             )
             button.callback = self._create_slot_callback(slot_index)
@@ -245,7 +244,6 @@ class DaySelectView(discord.ui.View):
             button = discord.ui.Button(
                 label=day[:3],  # Mon, Tue, Wed, etc.
                 style=discord.ButtonStyle.secondary,  # Grey
-                custom_id=f"day_btn:{event_name}:{day}",
                 row=0  # All day buttons in first row
             )
             button.callback = self._create_day_callback(day)
@@ -449,6 +447,9 @@ class TimeSelectView(discord.ui.View):
                     )
                     updated_embed.set_footer(text="Click the buttons below to set your preferences")
                     await message.edit(embed=updated_embed)
+
+                # Update any calendar messages for this poll
+                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
             except Exception:
                 # Silently fail if we can't update the poll message
                 pass
@@ -491,6 +492,9 @@ class TimeSelectView(discord.ui.View):
                     )
                     updated_embed.set_footer(text="Click the buttons below to set your preferences")
                     await message.edit(embed=updated_embed)
+
+                # Update any calendar messages for this poll
+                await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
             except Exception:
                 # Silently fail if we can't update the poll message
                 pass
