@@ -1290,8 +1290,8 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         # Create calendar renderer with user's timezone
         user_tz_renderer = CalendarRenderer(timezone=timezone_str)
 
-        # Convert winning times from server timezone to user timezone
-        server_tz = pytz.timezone(self.cog.timezone)
+        # Convert winning times from server timezone (UTC+1 / Europe/Berlin) to user timezone
+        server_tz = pytz.timezone('Europe/Berlin')  # Server Time (UTC+1)
         user_tz = pytz.timezone(timezone_str)
 
         converted_winning_times = {}

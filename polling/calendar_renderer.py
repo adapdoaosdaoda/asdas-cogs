@@ -16,7 +16,7 @@ class CalendarRenderer:
 
     # Color scheme - Catppuccin Frappé
     BG_COLOR = (48, 52, 70)  # Base - #303446
-    GRID_COLOR = (65, 69, 89)  # Surface0 - #414559
+    GRID_COLOR = (35, 38, 52)  # Custom border - #232634
     HEADER_BG = (65, 69, 89)  # Surface0 - #414559
     HEADER_TEXT = (198, 208, 245)  # Text - #c6d0f5
     TIME_TEXT = (181, 191, 226)  # Subtext1 - #b5bfe2
@@ -100,15 +100,15 @@ class CalendarRenderer:
             color: RGB color tuple
 
         Returns:
-            Faded RGB color tuple (formula: original * 0.35 + background * 0.65)
+            Faded RGB color tuple (formula: original * 0.55 + background * 0.45)
         """
         r, g, b = color
         bg_r, bg_g, bg_b = self.BG_COLOR
 
-        # Blend color with background (35% original, 65% background)
-        faded_r = int(r * 0.35 + bg_r * 0.65)
-        faded_g = int(g * 0.35 + bg_g * 0.65)
-        faded_b = int(b * 0.35 + bg_b * 0.65)
+        # Blend color with background (55% original, 45% background)
+        faded_r = int(r * 0.55 + bg_r * 0.45)
+        faded_g = int(g * 0.55 + bg_g * 0.45)
+        faded_b = int(b * 0.55 + bg_b * 0.45)
 
         return (faded_r, faded_g, faded_b)
 
