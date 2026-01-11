@@ -1279,13 +1279,45 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         
         poll_data = polls[self.poll_id]
         selections = poll_data.get("selections", {})
-        
+
         # Calculate winning times
         winning_times = self.cog._calculate_winning_times_weighted(selections)
-        
-        # Generate calendar image with the requested timezone
-        calendar_data = self.cog._prepare_calendar_data(winning_times)
-        image_buffer = self.cog.calendar_renderer.render_calendar(
+
+        # Convert winning times to user's timezone
+        from datetime import datetime
+        from .calendar_renderer import CalendarRenderer
+
+        # Create calendar renderer with user's timezone
+        user_tz_renderer = CalendarRenderer(timezone=timezone_str)
+
+        # Convert winning times from server timezone to user timezone
+        server_tz = pytz.timezone(self.cog.timezone)
+        user_tz = pytz.timezone(timezone_str)
+
+        converted_winning_times = {}
+        for event_name, day_times in winning_times.items():
+            converted_winning_times[event_name] = {}
+            for day, time_str in day_times.items():
+                # Parse time in server timezone
+                hour, minute = map(int, time_str.split(':'))
+                # Create a datetime object (use arbitrary date)
+                dt_server = server_tz.localize(datetime(2024, 1, 1, hour, minute))
+                # Convert to user timezone
+                dt_user = dt_server.astimezone(user_tz)
+                # Format back to HH:MM
+                converted_time = dt_user.strftime("%H:%M")
+                # Handle day changes due to timezone conversion
+                day_offset = (dt_user.day - dt_server.day) % 7
+                days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                day_idx = days_list.index(day) if day in days_list else 0
+                new_day_idx = (day_idx + day_offset) % 7
+                new_day = days_list[new_day_idx]
+
+                converted_winning_times[event_name][new_day] = converted_time
+
+        # Generate calendar image with the user's timezone
+        calendar_data = self.cog._prepare_calendar_data(converted_winning_times)
+        image_buffer = user_tz_renderer.render_calendar(
             calendar_data,
             self.cog.events,
             self.cog.blocked_times,
@@ -1324,7 +1356,7 @@ class CalendarTimezoneView(discord.ui.View):
         # Add timezone button
         timezone_button = discord.ui.Button(
             label="View in My Timezone",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             emoji="🌍",
             custom_id=f"calendar_timezone:{poll_id}"
         )
