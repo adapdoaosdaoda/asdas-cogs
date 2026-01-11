@@ -26,12 +26,12 @@ class CalendarRenderer:
 
     # Event-specific cell background colors
     EVENT_BG_COLORS = {
-        "Hero's Realm": (60, 80, 120),      # Blueish
-        "Sword Trial": (70, 75, 85),        # Greyish
-        "Party": (55, 80, 60),              # Greenish
-        "Breaking Army": (90, 85, 55),      # Yellowish
-        "Showdown": (90, 55, 55),           # Redish
-        "Guild War": (90, 70, 50)           # Orangeish
+        "Hero's Realm": (92, 107, 192),     # #5C6BC0 - Indigo
+        "Sword Trial": (255, 202, 40),      # #FFCA28 - Yellow
+        "Party": (233, 30, 99),             # #e91e63 - Pink
+        "Breaking Army": (52, 152, 219),    # #3498db - Blue
+        "Showdown": (230, 126, 34),         # #e67e22 - Orange
+        "Guild War": (216, 27, 96)          # #D81B60 - Pink-red
     }
 
     # Event label mapping (text labels instead of emojis since PIL doesn't support emojis well)
