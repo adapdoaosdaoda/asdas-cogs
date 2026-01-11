@@ -60,7 +60,7 @@ class EventPolling(commands.Cog):
                 "slots": 1,  # Single time slot
                 "color": discord.Color.green(),
                 "emoji": "🎉",
-                "priority": 3
+                "priority": 2
             },
             "Breaking Army": {
                 "type": "once",
@@ -70,7 +70,7 @@ class EventPolling(commands.Cog):
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.blue(),
                 "emoji": "⚡",
-                "priority": 2
+                "priority": 3
             },
             "Showdown": {
                 "type": "once",

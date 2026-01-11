@@ -20,9 +20,18 @@ class CalendarRenderer:
     HEADER_BG = (60, 70, 90)  # Header background
     HEADER_TEXT = (255, 255, 255)  # White header text
     TIME_TEXT = (200, 210, 230)  # Light gray time text
-    CELL_BG = (55, 62, 75)  # Cell background
-    BLOCKED_BG = (80, 50, 50)  # Blocked time cell background
+    CELL_BG = (55, 62, 75)  # Default cell background
+    BLOCKED_BG = (80, 50, 50)  # Blocked time cell background (Guild Wars)
     LEGEND_BG = (50, 58, 70)  # Legend background
+
+    # Event-specific cell background colors
+    EVENT_BG_COLORS = {
+        "Hero's Realm": (60, 80, 120),      # Blueish
+        "Sword Trial": (70, 75, 85),        # Greyish
+        "Party": (55, 80, 60),              # Greenish
+        "Breaking Army": (90, 85, 55),      # Yellowish
+        "Showdown": (90, 55, 55)            # Redish
+    }
 
     # Event label mapping (text labels instead of emojis since PIL doesn't support emojis well)
     EVENT_LABELS = {
@@ -45,12 +54,12 @@ class CalendarRenderer:
     }
 
     # Layout constants (increased for higher resolution)
-    CELL_WIDTH = 120
-    CELL_HEIGHT = 50
-    TIME_COL_WIDTH = 90
-    HEADER_HEIGHT = 50
-    FOOTER_HEIGHT = 40
-    PADDING = 15
+    CELL_WIDTH = 200
+    CELL_HEIGHT = 80
+    TIME_COL_WIDTH = 140
+    HEADER_HEIGHT = 80
+    FOOTER_HEIGHT = 60
+    PADDING = 20
 
     # Event name abbreviations for display
     EVENT_ABBREV = {
@@ -72,10 +81,10 @@ class CalendarRenderer:
 
         # Try to load a nice font with larger sizes for better clarity
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 19)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 34)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -325,7 +334,30 @@ class CalendarRenderer:
                     blocked_times
                 )
 
-                cell_bg = self.BLOCKED_BG if is_blocked else self.CELL_BG
+                # Determine cell background color
+                if is_blocked:
+                    cell_bg = self.BLOCKED_BG
+                else:
+                    # Get events in this cell
+                    events_in_cell = []
+                    if time_str in schedule and day in schedule[time_str]:
+                        events_in_cell = schedule[time_str][day]
+
+                    # Choose background color based on events
+                    if events_in_cell:
+                        # Get event names
+                        event_names = [event_name for _, event_name, _ in events_in_cell]
+
+                        # For combo cells with Party, use the non-Party event's color
+                        if len(event_names) > 1 and "Party" in event_names:
+                            # Find the non-Party event
+                            non_party_event = next((name for name in event_names if name != "Party"), None)
+                            cell_bg = self.EVENT_BG_COLORS.get(non_party_event, self.CELL_BG)
+                        else:
+                            # Use the first (highest priority) event's color
+                            cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                    else:
+                        cell_bg = self.CELL_BG
 
                 # Draw cell background
                 draw.rectangle(
@@ -376,9 +408,9 @@ class CalendarRenderer:
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
-                                    text_y = y + 5
+                                    text_y = y + 10
                                 else:
-                                    text_y = y + 27  # Second line (with line break)
+                                    text_y = y + 45  # Second line (with line break)
 
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
