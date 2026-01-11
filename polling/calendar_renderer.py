@@ -83,10 +83,10 @@ class CalendarRenderer:
         # Try to load a nice font with larger sizes for better clarity
         # Use layout_engine for better rendering if available
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 62, layout_engine=ImageFont.Layout.BASIC)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 58, layout_engine=ImageFont.Layout.BASIC)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 66, layout_engine=ImageFont.Layout.BASIC)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 70, layout_engine=ImageFont.Layout.BASIC)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 72, layout_engine=ImageFont.Layout.BASIC)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 68, layout_engine=ImageFont.Layout.BASIC)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 76, layout_engine=ImageFont.Layout.BASIC)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80, layout_engine=ImageFont.Layout.BASIC)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -115,7 +115,7 @@ class CalendarRenderer:
     def _draw_dotted_border(self, draw: ImageDraw, x1: int, y1: int, x2: int, y2: int,
                            color: Tuple[int, int, int], dash_length: int = 5,
                            skip_right: bool = False, skip_bottom: bool = False,
-                           skip_top: bool = False):
+                           skip_top: bool = False, skip_left: bool = False):
         """Draw a solid, thin border around a rectangle
 
         Args:
@@ -127,13 +127,15 @@ class CalendarRenderer:
             skip_right: Skip drawing the right border
             skip_bottom: Skip drawing the bottom border
             skip_top: Skip drawing the top border
+            skip_left: Skip drawing the left border
         """
         # Top border (if not skipped)
         if not skip_top:
             draw.line([(x1, y1), (x2, y1)], fill=color, width=1)
 
-        # Left border
-        draw.line([(x1, y1), (x1, y2)], fill=color, width=1)
+        # Left border (if not skipped)
+        if not skip_left:
+            draw.line([(x1, y1), (x1, y2)], fill=color, width=1)
 
         # Right border (if not skipped)
         if not skip_right:
@@ -461,11 +463,12 @@ class CalendarRenderer:
                 outline=None
             )
 
-            # Draw border (skip right border except for last column)
+            # Draw border (skip right border except for last column, skip left except first)
             skip_right = (i < len(days) - 1)
+            skip_left = (i > 0)
             self._draw_dotted_border(
                 draw, x, y, x + self.CELL_WIDTH - 1, y + self.HEADER_HEIGHT - 1,
-                self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False
+                self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False, skip_left=skip_left
             )
 
             # Draw day text (centered)
@@ -608,10 +611,13 @@ class CalendarRenderer:
                     )
                 skip_top = has_common_multislot_above
 
-                # Draw dotted border
+                # Skip left border for all columns except the first
+                skip_left = (col > 0)
+
+                # Draw border
                 self._draw_dotted_border(
                     draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
-                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom, skip_top=skip_top
+                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom, skip_top=skip_top, skip_left=skip_left
                 )
 
                 # Draw events in this cell (support up to 2 events)

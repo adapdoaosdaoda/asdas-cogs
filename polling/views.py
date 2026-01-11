@@ -1283,20 +1283,23 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         # Calculate winning times
         winning_times = self.cog._calculate_winning_times_weighted(selections)
 
-        # Convert winning times to user's timezone
+        # Convert to calendar data format first
         from datetime import datetime
         from .calendar_renderer import CalendarRenderer
+
+        # Convert winning times to calendar data format
+        calendar_data = self.cog._prepare_calendar_data(winning_times)
 
         # Create calendar renderer with user's timezone
         user_tz_renderer = CalendarRenderer(timezone=timezone_str)
 
-        # Convert winning times from server timezone (UTC+1 / Europe/Berlin) to user timezone
+        # Convert calendar data from server timezone to user timezone
         server_tz = pytz.timezone('Europe/Berlin')  # Server Time (UTC+1)
         user_tz = pytz.timezone(timezone_str)
 
-        converted_winning_times = {}
-        for event_name, day_times in winning_times.items():
-            converted_winning_times[event_name] = {}
+        converted_calendar_data = {}
+        for event_name, day_times in calendar_data.items():
+            converted_calendar_data[event_name] = {}
             for day, time_str in day_times.items():
                 # Parse time in server timezone
                 hour, minute = map(int, time_str.split(':'))
@@ -1313,12 +1316,11 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
                 new_day_idx = (day_idx + day_offset) % 7
                 new_day = days_list[new_day_idx]
 
-                converted_winning_times[event_name][new_day] = converted_time
+                converted_calendar_data[event_name][new_day] = converted_time
 
         # Generate calendar image with the user's timezone
-        calendar_data = self.cog._prepare_calendar_data(converted_winning_times)
         image_buffer = user_tz_renderer.render_calendar(
-            calendar_data,
+            converted_calendar_data,
             self.cog.events,
             self.cog.blocked_times,
             len(selections)
