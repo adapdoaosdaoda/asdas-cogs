@@ -198,7 +198,20 @@ class CalendarRenderer:
         }
 
         for event_name, day_times in winning_times.items():
-            event_info = events[event_name]
+            # Extract base event name and slot number for multi-slot weekly events
+            # (e.g., "Breaking Army 1" -> "Breaking Army", slot_num = 1)
+            base_event_name = event_name
+            slot_num = 0
+            if event_name.endswith(" 1") or event_name.endswith(" 2"):
+                parts = event_name.rsplit(" ", 1)
+                if parts[1].isdigit():
+                    base_event_name = parts[0]
+                    slot_num = int(parts[1])
+
+            # Get event info using base name
+            event_info = events.get(base_event_name, events.get(event_name))
+            if not event_info:
+                continue
             priority = event_info.get("priority", 0)
 
             # Track slot numbers for multi-slot events
@@ -246,7 +259,8 @@ class CalendarRenderer:
 
                     for short_day in days_to_process:
                         if short_day in schedule[slot_time_str]:
-                            schedule[slot_time_str][short_day].append((priority, event_name, slot_num, time_str, duration))
+                            # Store base event name (without slot number) for rendering
+                            schedule[slot_time_str][short_day].append((priority, base_event_name, slot_num, time_str, duration))
 
         # Generate all time slots from 17:00 to 02:00 (30 min intervals)
         all_times = []

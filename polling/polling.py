@@ -115,15 +115,17 @@ class EventPolling(commands.Cog):
         """Called when the cog is loaded"""
         self.backup_task.start()
         self.weekly_results_update.start()
+        self.weekly_calendar_update.start()
 
     def cog_unload(self):
         """Called when the cog is unloaded"""
         self.backup_task.cancel()
         self.weekly_results_update.cancel()
+        self.weekly_calendar_update.cancel()
 
     @tasks.loop(hours=24)
     async def backup_task(self):
-        """Daily backup task for all poll votes"""
+        """Daily backup task for latest active poll"""
         try:
             all_guilds = await self.config.all_guilds()
 
@@ -137,12 +139,16 @@ class EventPolling(commands.Cog):
                 "guilds": {}
             }
 
-            # Collect all poll data from all guilds
+            # Collect only the latest poll from each guild
             for guild_id, guild_data in all_guilds.items():
                 polls = guild_data.get("polls", {})
                 if polls:
+                    # Find the latest poll (highest message_id = most recent)
+                    latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
                     backup_data["guilds"][str(guild_id)] = {
-                        "polls": polls
+                        "polls": {
+                            latest_poll_id: polls[latest_poll_id]
+                        }
                     }
 
             # Write backup file
@@ -195,6 +201,38 @@ class EventPolling(commands.Cog):
     @weekly_results_update.before_loop
     async def before_weekly_results_update(self):
         """Wait for bot to be ready before starting weekly results update task"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=24)
+    async def weekly_calendar_update(self):
+        """Update weekly calendar embeds every Monday at 10 AM server time"""
+        try:
+            # Get current datetime
+            now = datetime.utcnow()
+
+            # Check if it's Monday (0 = Monday) and 10 AM
+            if now.weekday() != 0 or now.hour != 10:
+                return
+
+            # Get all guilds
+            all_guilds = await self.config.all_guilds()
+
+            for guild_id, guild_data in all_guilds.items():
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+
+                polls = guild_data.get("polls", {})
+                for poll_id, poll_data in polls.items():
+                    # Update all weekly calendar messages for this poll
+                    await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
+
+        except Exception as e:
+            print(f"Error during weekly calendar update: {e}")
+
+    @weekly_calendar_update.before_loop
+    async def before_weekly_calendar_update(self):
+        """Wait for bot to be ready before starting weekly calendar update task"""
         await self.bot.wait_until_ready()
 
     async def _restore_poll_view(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
@@ -406,12 +444,11 @@ class EventPolling(commands.Cog):
                 where winner_key is (day, time) or ("Daily", time) or ("Fixed", time)
 
         Returns:
-            {event_name: {day: time}}
+            {event_name: {day: time}} or {event_name_slot: {day: time}} for multi-slot weekly events
         """
         calendar_data = {}
 
         for event_name, event_info in self.events.items():
-            calendar_data[event_name] = {}
             event_slots = winning_times.get(event_name, {})
 
             for slot_index, slot_data in event_slots.items():
@@ -421,12 +458,23 @@ class EventPolling(commands.Cog):
                 winner_key, points, all_entries = slot_data
                 winner_day, winner_time = winner_key
 
-                if event_info["type"] == "daily":
+                # For multi-slot weekly events, create separate entries with slot number
+                if event_info["type"] == "weekly" and event_info["slots"] > 1:
+                    # Use event name with slot number (e.g., "Breaking Army 1", "Breaking Army 2")
+                    event_key = f"{event_name} {slot_index + 1}"
+                    if event_key not in calendar_data:
+                        calendar_data[event_key] = {}
+                    calendar_data[event_key][winner_day] = winner_time
+                elif event_info["type"] == "daily":
                     # Daily events appear on all days
+                    if event_name not in calendar_data:
+                        calendar_data[event_name] = {}
                     for day in self.days_of_week:
                         calendar_data[event_name][day] = winner_time
                 elif event_info["type"] == "fixed_days":
                     # Fixed-day events
+                    if event_name not in calendar_data:
+                        calendar_data[event_name] = {}
                     if event_info["slots"] > 1:
                         # Multi-slot: winner_day is the specific day
                         calendar_data[event_name][winner_day] = winner_time
@@ -435,7 +483,9 @@ class EventPolling(commands.Cog):
                         for day in event_info["days"]:
                             calendar_data[event_name][day] = winner_time
                 else:
-                    # Weekly events appear only on their specific day
+                    # Single-slot weekly events
+                    if event_name not in calendar_data:
+                        calendar_data[event_name] = {}
                     calendar_data[event_name][winner_day] = winner_time
 
         return calendar_data
@@ -828,6 +878,45 @@ class EventPolling(commands.Cog):
 
         await ctx.tick()
 
+    @eventpoll.command(name="weeklycalendar")
+    async def post_weekly_calendar(self, ctx: commands.Context, message_id: str):
+        """Post a weekly calendar view for a poll (updates only on Monday at 10 AM)
+
+        Example: [p]eventpoll weeklycalendar 123456789
+        Or: [p]eventpoll weeklycalendar https://discord.com/channels/guild/channel/message
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+
+        # Create weekly calendar embed and image
+        embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+
+        # Send the weekly calendar message with image
+        calendar_msg = await ctx.send(embed=embed, file=calendar_file)
+
+        # Store weekly calendar message ID in poll data for auto-updating
+        async with self.config.guild(ctx.guild).polls() as polls:
+            if poll_id in polls:
+                if "weekly_calendar_messages" not in polls[poll_id]:
+                    polls[poll_id]["weekly_calendar_messages"] = []
+                polls[poll_id]["weekly_calendar_messages"].append({
+                    "message_id": calendar_msg.id,
+                    "channel_id": ctx.channel.id
+                })
+
+        await ctx.tick()
+
     @eventpoll.command(name="postresults")
     async def post_results(self, ctx: commands.Context, message_id: str):
         """Post an auto-updating results embed for a poll (updates every Monday at 10 AM)
@@ -926,6 +1015,65 @@ class EventPolling(commands.Cog):
 
         await ctx.send(f"✅ Successfully overwrote message with calendar: {message.jump_url}")
 
+    @eventpoll.command(name="overwriteweeklycalendar")
+    async def overwrite_weekly_calendar(self, ctx: commands.Context, message_id_to_overwrite: str, poll_message_id: str):
+        """Overwrite an existing bot message with a weekly calendar embed
+
+        Example: [p]eventpoll overwriteweeklycalendar 987654321 123456789
+        Or: [p]eventpoll overwriteweeklycalendar <message_link> <poll_link>
+        """
+        # Parse message IDs
+        target_msg_id = self._parse_message_id(message_id_to_overwrite)
+        poll_msg_id = self._parse_message_id(poll_message_id)
+
+        if target_msg_id is None or poll_msg_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(poll_msg_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+
+        # Try to fetch the target message
+        try:
+            message = await ctx.channel.fetch_message(target_msg_id)
+
+            # Verify it's a bot message
+            if message.author.id != self.bot.user.id:
+                await ctx.send("The specified message is not a bot message!")
+                return
+
+        except Exception as e:
+            await ctx.send(f"Error fetching message: {e}")
+            return
+
+        # Create weekly calendar embed and image
+        embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+
+        # Update the message
+        await message.edit(embed=embed, attachments=[calendar_file])
+
+        # Store weekly calendar message ID in poll data for auto-updating
+        async with self.config.guild(ctx.guild).polls() as polls:
+            if poll_id in polls:
+                if "weekly_calendar_messages" not in polls[poll_id]:
+                    polls[poll_id]["weekly_calendar_messages"] = []
+
+                # Check if this message is already tracked
+                weekly_calendar_messages = polls[poll_id]["weekly_calendar_messages"]
+                if not any(msg["message_id"] == target_msg_id for msg in weekly_calendar_messages):
+                    polls[poll_id]["weekly_calendar_messages"].append({
+                        "message_id": target_msg_id,
+                        "channel_id": ctx.channel.id
+                    })
+
+        await ctx.send(f"✅ Successfully overwrote message with weekly calendar: {message.jump_url}")
+
     @eventpoll.command(name="overwriteresults")
     async def overwrite_results(self, ctx: commands.Context, message_id_to_overwrite: str, poll_message_id: str):
         """Overwrite an existing bot message with a results embed
@@ -987,9 +1135,9 @@ class EventPolling(commands.Cog):
 
     @eventpoll.command(name="export")
     async def export_backup(self, ctx: commands.Context):
-        """Manually create a backup of all current poll data
+        """Manually create a backup of the latest active poll
 
-        This creates an immediate backup file instead of waiting for the daily backup.
+        This creates an immediate backup file of the most recent poll.
 
         Example: [p]eventpoll export
         """
@@ -1007,12 +1155,16 @@ class EventPolling(commands.Cog):
                 "guilds": {}
             }
 
-            # Collect all poll data from all guilds
+            # Collect only the latest poll from each guild
             for guild_id, guild_data in all_guilds.items():
                 polls = guild_data.get("polls", {})
                 if polls:
+                    # Find the latest poll (highest message_id = most recent)
+                    latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
                     backup_data["guilds"][str(guild_id)] = {
-                        "polls": polls
+                        "polls": {
+                            latest_poll_id: polls[latest_poll_id]
+                        }
                     }
 
             # Write backup file
@@ -1028,16 +1180,17 @@ class EventPolling(commands.Cog):
             await ctx.send(f"❌ Error creating backup: {e}")
 
     @eventpoll.command(name="import")
-    async def import_backup(self, ctx: commands.Context, backup_filename: str, poll_id: Optional[str] = None, merge: str = "false"):
+    async def import_backup(self, ctx: commands.Context, backup_filename: str, target_poll_id: str, merge: str = "false", source_poll_id: Optional[str] = None):
         """Import votes from a backup file into an existing poll
 
         This command imports VOTES (not entire polls) from a backup file.
-        You must specify the poll message ID to import votes into.
+        By default, it consolidates votes from ALL polls in the backup.
+        Optionally specify source_poll_id to import from a specific poll.
         Use merge="true" to merge imported votes with existing votes.
         Use merge="false" (default) to replace all existing votes.
 
-        Example: [p]eventpoll import poll_backup_20240115_120000.json 123456789 false
-        Example: [p]eventpoll import manual_backup_20240115_120000.json 987654321 true
+        Example: [p]eventpoll import backup.json 123456789 false
+        Example: [p]eventpoll import backup.json 123456789 true 987654321
         """
         # Parse merge parameter
         merge_bool = merge.lower() in ("true", "yes", "1", "y")
@@ -1069,68 +1222,90 @@ class EventPolling(commands.Cog):
                 await ctx.send("❌ Invalid backup file format!")
                 return
 
-            # Poll ID is required - we import votes into existing polls
-            if not poll_id:
-                await ctx.send("❌ You must specify a poll message ID to import votes into!\n"
-                              f"Usage: `{ctx.prefix}eventpoll import <filename> <poll_message_id> <merge>`\n"
-                              f"Example: `{ctx.prefix}eventpoll import backup.json 123456789 false`")
-                return
-
-            # Find the poll in the backup file
-            found_poll_data = None
-            backup_poll_id = None
+            # Consolidate votes from backup polls
+            all_imported_votes = {}
+            polls_processed = 0
+            source_description = ""
 
             for guild_id_str, guild_backup in backup_data["guilds"].items():
                 backup_polls = guild_backup.get("polls", {})
 
-                # Check if poll_id exists in this guild's backup
-                if poll_id in backup_polls:
-                    found_poll_data = backup_polls[poll_id]
-                    backup_poll_id = poll_id
-                    break
+                if not backup_polls:
+                    continue
 
-                # Also check if any poll in backup has matching message_id
-                for backup_pid, backup_pdata in backup_polls.items():
-                    if str(backup_pdata.get("message_id")) == poll_id:
-                        found_poll_data = backup_pdata
-                        backup_poll_id = backup_pid
-                        break
+                if source_poll_id:
+                    # Import from specific poll only
+                    found_poll = None
 
-                if found_poll_data:
-                    break
+                    # Check if source_poll_id exists directly
+                    if source_poll_id in backup_polls:
+                        found_poll = backup_polls[source_poll_id]
+                    else:
+                        # Check if any poll has matching message_id
+                        for backup_pid, backup_pdata in backup_polls.items():
+                            if str(backup_pdata.get("message_id")) == source_poll_id:
+                                found_poll = backup_pdata
+                                break
 
-            if not found_poll_data:
-                await ctx.send(f"❌ Poll ID {poll_id} not found in backup file!\n\n"
-                              "Available polls in backup:")
-                # Show available polls
-                for guild_id_str, guild_backup in backup_data["guilds"].items():
-                    backup_polls = guild_backup.get("polls", {})
-                    if backup_polls:
+                    if not found_poll:
+                        await ctx.send(f"❌ Source poll ID {source_poll_id} not found in backup file!\n\n"
+                                      "Available polls in backup:")
                         poll_list = "\n".join([
                             f"- Poll ID: {pid} (Message: {pdata.get('message_id')}, Title: {pdata.get('title', 'N/A')})"
                             for pid, pdata in backup_polls.items()
                         ])
                         await ctx.send(f"```\n{poll_list}\n```")
-                return
+                        return
 
-            # Extract votes from the backup poll
-            imported_votes = found_poll_data.get("selections", {})
-            vote_count = len(imported_votes)
+                    # Get votes from specific poll
+                    poll_votes = found_poll.get("selections", {})
+                    for user_id, user_votes in poll_votes.items():
+                        if user_id not in all_imported_votes:
+                            all_imported_votes[user_id] = {}
+                        all_imported_votes[user_id].update(user_votes)
+                    polls_processed = 1
+                    source_description = f"poll {source_poll_id}"
+                else:
+                    # No source specified - use latest poll (or all polls if multiple)
+                    if len(backup_polls) == 1:
+                        # Only one poll in backup - use it
+                        poll_id, poll_data = list(backup_polls.items())[0]
+                        poll_votes = poll_data.get("selections", {})
+                        for user_id, user_votes in poll_votes.items():
+                            if user_id not in all_imported_votes:
+                                all_imported_votes[user_id] = {}
+                            all_imported_votes[user_id].update(user_votes)
+                        polls_processed = 1
+                        source_description = f"poll {poll_id}"
+                    else:
+                        # Multiple polls - use the latest one (highest message_id)
+                        latest_poll_id = max(backup_polls.keys(), key=lambda pid: int(pid))
+                        poll_data = backup_polls[latest_poll_id]
+                        poll_votes = poll_data.get("selections", {})
+                        for user_id, user_votes in poll_votes.items():
+                            if user_id not in all_imported_votes:
+                                all_imported_votes[user_id] = {}
+                            all_imported_votes[user_id].update(user_votes)
+                        polls_processed = 1
+                        source_description = f"latest poll {latest_poll_id} (from {len(backup_polls)} polls in backup)"
+
+            vote_count = len(all_imported_votes)
 
             if vote_count == 0:
-                await ctx.send(f"⚠️ No votes found in the backup for poll {poll_id}!")
+                await ctx.send(f"⚠️ No votes found in the backup!")
                 return
 
-            # Import the votes into the target poll
-            success = await self._update_poll_votes(ctx, poll_id, imported_votes, merge_bool)
+            # Import the consolidated votes into the target poll
+            success = await self._update_poll_votes(ctx, target_poll_id, all_imported_votes, merge_bool)
 
             if success:
                 backup_timestamp = backup_data.get("timestamp", "unknown")
                 mode_text = "merged with" if merge_bool else "replaced in"
                 await ctx.send(
-                    f"✅ Successfully {mode_text} poll {poll_id}!\n"
+                    f"✅ Successfully {mode_text} poll {target_poll_id}!\n"
                     f"- Backup timestamp: {backup_timestamp}\n"
-                    f"- Votes imported: {vote_count}\n"
+                    f"- Source: {source_description}\n"
+                    f"- Users with votes imported: {vote_count}\n"
                     f"- Mode: {'Merge' if merge_bool else 'Replace'}"
                 )
 
@@ -1138,6 +1313,87 @@ class EventPolling(commands.Cog):
             await ctx.send("❌ Invalid JSON format in backup file!")
         except Exception as e:
             await ctx.send(f"❌ Error importing backup: {e}")
+
+    @eventpoll.command(name="test")
+    async def test_backup_restore(self, ctx: commands.Context):
+        """Test the export/import functionality
+
+        This command tests the export and import workflow:
+        1. Exports the latest poll to a test backup
+        2. Imports it back to verify the process works
+        3. Reports the results
+
+        Example: [p]eventpoll test
+        """
+        try:
+            # Get current polls
+            polls = await self.config.guild(ctx.guild).polls()
+
+            if not polls:
+                await ctx.send("❌ No polls found to test with! Create a poll first.")
+                return
+
+            # Find the latest poll
+            latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+            latest_poll = polls[latest_poll_id]
+
+            await ctx.send(f"🧪 Starting test with latest poll (ID: {latest_poll_id})...")
+
+            # Step 1: Create a test export
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            test_backup_file = self.backups_dir / f"test_backup_{timestamp}.json"
+
+            backup_data = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "type": "test",
+                "guilds": {
+                    str(ctx.guild.id): {
+                        "polls": {
+                            latest_poll_id: latest_poll
+                        }
+                    }
+                }
+            }
+
+            with open(test_backup_file, 'w', encoding='utf-8') as f:
+                json.dump(backup_data, f, indent=2, ensure_ascii=False)
+
+            vote_count_before = len(latest_poll.get("selections", {}))
+            await ctx.send(f"✅ Step 1: Exported poll with {vote_count_before} users to `{test_backup_file.name}`")
+
+            # Step 2: Test import (merge mode to avoid data loss)
+            imported_votes = latest_poll.get("selections", {})
+            success = await self._update_poll_votes(ctx, latest_poll_id, imported_votes, merge=True)
+
+            if not success:
+                await ctx.send("❌ Step 2: Import test FAILED!")
+                return
+
+            # Step 3: Verify the import
+            polls_after = await self.config.guild(ctx.guild).polls()
+            poll_after = polls_after.get(latest_poll_id)
+
+            if not poll_after:
+                await ctx.send("❌ Step 3: Verification FAILED - Poll not found after import!")
+                return
+
+            vote_count_after = len(poll_after.get("selections", {}))
+
+            await ctx.send(
+                f"✅ **Test PASSED!**\n"
+                f"- Poll ID: {latest_poll_id}\n"
+                f"- Votes before: {vote_count_before}\n"
+                f"- Votes after: {vote_count_after}\n"
+                f"- Test backup: `{test_backup_file.name}`\n\n"
+                f"Export and import are working correctly! ✨"
+            )
+
+            # Clean up test backup
+            test_backup_file.unlink()
+            await ctx.send(f"🗑️ Cleaned up test backup file.")
+
+        except Exception as e:
+            await ctx.send(f"❌ Error during test: {e}")
 
     @eventpoll.command(name="listbackups")
     async def list_backups(self, ctx: commands.Context):
@@ -1203,7 +1459,45 @@ class EventPolling(commands.Cog):
         return f"{size:.1f}TB"
 
     async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
-        """Create a calendar-only embed with image and poll link
+        """Create a live calendar embed with image and poll link (updates on every vote)
+
+        Returns:
+            Tuple of (embed, file) where file is the calendar image
+        """
+        title = poll_data["title"]
+        channel_id = poll_data["channel_id"]
+        message_id = poll_data["message_id"]
+
+        # Create embed
+        embed = discord.Embed(
+            title="📅 Live Calendar",
+            description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
+            color=discord.Color(0xcb4449)
+        )
+
+        # Get selections
+        selections = poll_data.get("selections", {})
+
+        # Calculate winning times using weighted point system
+        winning_times = self._calculate_winning_times_weighted(selections)
+
+        # Generate calendar image
+        calendar_data = self._prepare_calendar_data(winning_times)
+        image_buffer = self.calendar_renderer.render_calendar(
+            calendar_data,
+            self.events,
+            self.blocked_times,
+            len(selections)
+        )
+
+        # Create file attachment
+        calendar_file = discord.File(image_buffer, filename="calendar.png")
+        embed.set_image(url="attachment://calendar.png")
+
+        return embed, calendar_file
+
+    async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
+        """Create a weekly calendar embed with image and poll link (updates only on Monday 10AM)
 
         Returns:
             Tuple of (embed, file) where file is the calendar image
@@ -1244,7 +1538,7 @@ class EventPolling(commands.Cog):
         return embed, calendar_file
 
     async def _update_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
-        """Update all calendar messages associated with this poll"""
+        """Update all live calendar messages associated with this poll"""
         calendar_messages = poll_data.get("calendar_messages", [])
 
         for cal_msg_data in calendar_messages:
@@ -1256,6 +1550,21 @@ class EventPolling(commands.Cog):
                     await message.edit(embed=updated_embed, attachments=[calendar_file])
             except Exception:
                 # Silently fail if we can't update a calendar message
+                pass
+
+    async def _update_weekly_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
+        """Update all weekly calendar messages associated with this poll"""
+        weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
+
+        for cal_msg_data in weekly_calendar_messages:
+            try:
+                channel = guild.get_channel(cal_msg_data["channel_id"])
+                if channel:
+                    message = await channel.fetch_message(cal_msg_data["message_id"])
+                    updated_embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
+                    await message.edit(embed=updated_embed, attachments=[calendar_file])
+            except Exception:
+                # Silently fail if we can't update a weekly calendar message
                 pass
 
     async def _create_results_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> discord.Embed:
@@ -1996,25 +2305,46 @@ class EventPolling(commands.Cog):
                 candidate = candidates[0]
                 occupied_by[slot_key] = candidate['event_name']
             else:
-                # Conflict! Apply priority bonuses and resolve
-                max_priority = max(c['priority'] for c in candidates)
+                # Conflict! Check if Party can coexist with other events
+                party_candidate = None
+                other_candidates = []
 
                 for candidate in candidates:
-                    # Higher priority gets +5 bonus
-                    if candidate['priority'] == max_priority:
-                        candidate['adjusted_points'] = candidate['points'] + 5
+                    if candidate['event_name'] == 'Party':
+                        party_candidate = candidate
                     else:
-                        candidate['adjusted_points'] = candidate['points']
+                        other_candidates.append(candidate)
 
-                # Sort by adjusted points (desc), then by priority (desc), then by time (desc for tiebreak)
-                candidates.sort(key=lambda x: (-x['adjusted_points'], -x['priority'], -self._time_to_sort_key(x['start_time'])))
+                # If Party is involved, allow coexistence (like Guild War)
+                # Only Party can share cells with other events
+                # Other events cannot share cells with each other
+                if party_candidate and len(other_candidates) > 0:
+                    # Both Party and the other event(s) keep their times
+                    # Mark all as occupying this slot (for table splitting)
+                    for candidate in candidates:
+                        occupied_by[slot_key] = candidate['event_name']
+                    # Don't mark anyone for reassignment - they can coexist
+                else:
+                    # Standard conflict resolution when Party is not involved
+                    # Apply priority bonuses and resolve
+                    max_priority = max(c['priority'] for c in candidates)
 
-                winner = candidates[0]
-                occupied_by[slot_key] = winner['event_name']
+                    for candidate in candidates:
+                        # Higher priority gets +5 bonus
+                        if candidate['priority'] == max_priority:
+                            candidate['adjusted_points'] = candidate['points'] + 5
+                        else:
+                            candidate['adjusted_points'] = candidate['points']
 
-                # Mark losers for reassignment
-                for loser in candidates[1:]:
-                    events_needing_reassignment.add((loser['event_name'], loser['slot_index']))
+                    # Sort by adjusted points (desc), then by priority (desc), then by time (desc for tiebreak)
+                    candidates.sort(key=lambda x: (-x['adjusted_points'], -x['priority'], -self._time_to_sort_key(x['start_time'])))
+
+                    winner = candidates[0]
+                    occupied_by[slot_key] = winner['event_name']
+
+                    # Mark losers for reassignment
+                    for loser in candidates[1:]:
+                        events_needing_reassignment.add((loser['event_name'], loser['slot_index']))
 
         # Assign winning times to events
         for event_name, event_info in self.events.items():
@@ -2098,6 +2428,12 @@ class EventPolling(commands.Cog):
                 slot_key = (affected_day, slot_time_str)
 
                 if slot_key in occupied_by and occupied_by[slot_key] != event_name:
+                    occupying_event = occupied_by[slot_key]
+                    # Only Party can coexist with other events (for table splitting)
+                    # Other events cannot share cells with each other
+                    if event_name == 'Party' or occupying_event == 'Party':
+                        continue
+                    # Other events cannot share slots
                     return False
 
         return True
