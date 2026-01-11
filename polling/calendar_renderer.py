@@ -21,7 +21,7 @@ class CalendarRenderer:
     HEADER_TEXT = (255, 255, 255)  # White header text
     TIME_TEXT = (200, 210, 230)  # Light gray time text
     CELL_BG = (55, 62, 75)  # Default cell background
-    BLOCKED_BG = (80, 50, 50)  # Blocked time cell background (Guild Wars)
+    BLOCKED_BG = (90, 70, 50)  # Guild War cell background (Orangeish)
     LEGEND_BG = (50, 58, 70)  # Legend background
 
     # Event-specific cell background colors
@@ -30,7 +30,8 @@ class CalendarRenderer:
         "Sword Trial": (70, 75, 85),        # Greyish
         "Party": (55, 80, 60),              # Greenish
         "Breaking Army": (90, 85, 55),      # Yellowish
-        "Showdown": (90, 55, 55)            # Redish
+        "Showdown": (90, 55, 55),           # Redish
+        "Guild War": (90, 70, 50)           # Orangeish
     }
 
     # Event label mapping (text labels instead of emojis since PIL doesn't support emojis well)
@@ -40,7 +41,7 @@ class CalendarRenderer:
         "Party": "P",
         "Breaking Army": "BA",
         "Showdown": "SD",
-        "Guild Wars": "GW"
+        "Guild War": "GW"
     }
 
     # Event colors for text
@@ -50,7 +51,7 @@ class CalendarRenderer:
         "Party": (253, 224, 71),           # Yellow
         "Breaking Army": (252, 165, 165),  # Light red
         "Showdown": (253, 186, 116),       # Orange
-        "Guild Wars": (156, 163, 175)      # Gray
+        "Guild War": (156, 163, 175)      # Gray
     }
 
     # Layout constants (increased for higher resolution)
@@ -68,7 +69,7 @@ class CalendarRenderer:
         "Party": "Party",
         "Breaking Army": "Breaking Army",
         "Showdown": "Showdown",
-        "Guild Wars": "Guild Wars"
+        "Guild War": "Guild War"
     }
 
     def __init__(self, timezone: str = "UTC"):
@@ -115,7 +116,7 @@ class CalendarRenderer:
             ]
 
         # Build schedule data structure
-        schedule = self._build_schedule(winning_times, events)
+        schedule = self._build_schedule(winning_times, events, blocked_times)
 
         # Calculate image dimensions
         days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -165,7 +166,7 @@ class CalendarRenderer:
                 # Use text labels instead of emojis
                 label_text = display_text
                 # Try to extract label from text (fallback)
-                for event_name, emoji in [("Hero's Realm", "🛡️"), ("Sword Trial", "⚔️"), ("Party", "🎉"), ("Breaking Army", "⚡"), ("Showdown", "🏆"), ("Guild Wars", "🏰")]:
+                for event_name, emoji in [("Hero's Realm", "🛡️"), ("Sword Trial", "⚔️"), ("Party", "🎉"), ("Breaking Army", "⚡"), ("Showdown", "🏆"), ("Guild War", "🏰")]:
                     if emoji in display_text:
                         label = self.EVENT_LABELS.get(event_name, "?")
                         label_text = display_text.replace(emoji, label)
@@ -179,11 +180,16 @@ class CalendarRenderer:
 
         return buffer
 
-    def _build_schedule(self, winning_times: Dict, events: Dict) -> Dict[str, Dict[str, List]]:
+    def _build_schedule(self, winning_times: Dict, events: Dict, blocked_times: List[Dict] = None) -> Dict[str, Dict[str, List]]:
         """Build schedule data structure from winning times
 
+        Args:
+            winning_times: Dict mapping event names to {day: time} for winning times
+            events: Event configuration dict
+            blocked_times: List of blocked time periods for Guild War
+
         Returns:
-            Dict mapping time -> day -> [(priority, event_name, slot_num)]
+            Dict mapping time -> day -> [(priority, event_name, slot_num, start_time, duration)]
         """
         schedule = {}
         day_map = {
@@ -240,7 +246,7 @@ class CalendarRenderer:
 
                     for short_day in days_to_process:
                         if short_day in schedule[slot_time_str]:
-                            schedule[slot_time_str][short_day].append((priority, event_name, slot_num))
+                            schedule[slot_time_str][short_day].append((priority, event_name, slot_num, time_str, duration))
 
         # Generate all time slots from 17:00 to 02:00 (30 min intervals)
         all_times = []
@@ -259,12 +265,111 @@ class CalendarRenderer:
             if time_str not in schedule:
                 schedule[time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
 
-        # Sort events by priority within each cell
-        for time_str in schedule:
-            for day in schedule[time_str]:
-                schedule[time_str][day].sort(reverse=True, key=lambda x: x[0])
+        # Add Guild War events from blocked times
+        if blocked_times:
+            from datetime import datetime, timedelta
+            for blocked in blocked_times:
+                day_full = blocked["day"]
+                short_day = day_map.get(day_full, day_full[:3])
+                start_time_str = blocked["start"]
+                end_time_str = blocked["end"]
+
+                # Parse times
+                start_dt = datetime.strptime(start_time_str, "%H:%M")
+                end_dt = datetime.strptime(end_time_str, "%H:%M")
+
+                # Calculate duration in minutes
+                duration = int((end_dt - start_dt).total_seconds() / 60)
+
+                # Generate all 30-min slots for Guild War
+                current_dt = start_dt
+                while current_dt < end_dt:
+                    slot_time_str = current_dt.strftime("%H:%M")
+                    if slot_time_str in schedule and short_day in schedule[slot_time_str]:
+                        # Add Guild War event (priority 0, will be handled specially)
+                        schedule[slot_time_str][short_day].append((0, "Guild War", 0, start_time_str, duration))
+                    current_dt += timedelta(minutes=30)
+
+        # Note: Events will be sorted dynamically at draw time based on position rules
 
         return schedule
+
+    def _sort_events_for_display(self, events_in_cell: List, current_time: str) -> List:
+        """Sort events for display based on dynamic ordering rules
+
+        Rules:
+        - Multi-slot events (Breaking Army, Showdown, Guild War) that START at current time: go second (Party first)
+        - Multi-slot events that END at current time: go first (Party second)
+        - Single slot events (Hero's Realm, Sword Trial): go second (Party first)
+
+        Args:
+            events_in_cell: List of (priority, event_name, slot_num, start_time, duration)
+            current_time: Current time slot being displayed
+
+        Returns:
+            Sorted list of events
+        """
+        from datetime import datetime, timedelta
+
+        def get_sort_key(event_tuple):
+            priority, event_name, slot_num, start_time, duration = event_tuple
+
+            # Party always uses its base priority with position adjustment
+            if event_name == "Party":
+                return (priority, 0)  # Party's position is determined relative to others
+
+            # Parse times
+            start_dt = datetime.strptime(start_time, "%H:%M")
+            current_dt = datetime.strptime(current_time, "%H:%M")
+
+            # Calculate event span
+            time_slots_spanned = max(1, duration // 30)
+
+            # Determine if this is the start or end of the event
+            is_start = (current_time == start_time)
+
+            # Calculate end time (last slot)
+            end_dt = start_dt + timedelta(minutes=(time_slots_spanned - 1) * 30)
+            end_time = end_dt.strftime("%H:%M")
+            is_end = (current_time == end_time)
+
+            # Multi-slot events
+            if time_slots_spanned > 1:
+                if is_start:
+                    # Event starts here: should go second (lower effective priority)
+                    return (priority - 10, 1)
+                elif is_end:
+                    # Event ends here: should go first (higher effective priority)
+                    return (priority + 10, 0)
+                else:
+                    # Middle of event: use base priority
+                    return (priority, 0)
+            else:
+                # Single slot events (Hero's Realm, Sword Trial): go second
+                return (priority - 10, 1)
+
+        # Separate Party and other events
+        party_events = [e for e in events_in_cell if e[1] == "Party"]
+        other_events = [e for e in events_in_cell if e[1] != "Party"]
+
+        if not other_events:
+            return party_events
+        if not party_events:
+            return sorted(other_events, key=get_sort_key, reverse=True)
+
+        # Sort other events to determine which should go first
+        other_sorted = sorted(other_events, key=get_sort_key, reverse=True)
+
+        # Check the top non-Party event
+        top_event = other_sorted[0]
+        top_key = get_sort_key(top_event)
+
+        # If the top event's position indicator is 1 (should go second), Party goes first
+        if top_key[1] == 1:
+            return party_events + other_sorted
+        else:
+            # Otherwise, other event goes first
+            return other_sorted + party_events
 
     def _draw_timezone_header(self, draw: ImageDraw, width: int):
         """Draw timezone at top of calendar"""
@@ -327,37 +432,26 @@ class CalendarRenderer:
             for col, day in enumerate(days):
                 x = self.TIME_COL_WIDTH + (col * self.CELL_WIDTH) + self.PADDING
 
-                # Check if this cell is blocked
-                is_blocked = self._is_time_blocked(
-                    day_full_names[day],
-                    time_str,
-                    blocked_times
-                )
+                # Get events in this cell
+                events_in_cell = []
+                if time_str in schedule and day in schedule[time_str]:
+                    events_in_cell = schedule[time_str][day]
 
-                # Determine cell background color
-                if is_blocked:
-                    cell_bg = self.BLOCKED_BG
-                else:
-                    # Get events in this cell
-                    events_in_cell = []
-                    if time_str in schedule and day in schedule[time_str]:
-                        events_in_cell = schedule[time_str][day]
+                # Determine cell background color based on events
+                if events_in_cell:
+                    # Get event names (handle 5-element tuple)
+                    event_names = [event_name for _, event_name, _, _, _ in events_in_cell]
 
-                    # Choose background color based on events
-                    if events_in_cell:
-                        # Get event names
-                        event_names = [event_name for _, event_name, _ in events_in_cell]
-
-                        # For combo cells with Party, use the non-Party event's color
-                        if len(event_names) > 1 and "Party" in event_names:
-                            # Find the non-Party event
-                            non_party_event = next((name for name in event_names if name != "Party"), None)
-                            cell_bg = self.EVENT_BG_COLORS.get(non_party_event, self.CELL_BG)
-                        else:
-                            # Use the first (highest priority) event's color
-                            cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                    # For combo cells with Party, use the non-Party event's color
+                    if len(event_names) > 1 and "Party" in event_names:
+                        # Find the non-Party event
+                        non_party_event = next((name for name in event_names if name != "Party"), None)
+                        cell_bg = self.EVENT_BG_COLORS.get(non_party_event, self.CELL_BG)
                     else:
-                        cell_bg = self.CELL_BG
+                        # Use the first event's color
+                        cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                else:
+                    cell_bg = self.CELL_BG
 
                 # Draw cell background
                 draw.rectangle(
@@ -366,29 +460,22 @@ class CalendarRenderer:
                     outline=self.GRID_COLOR
                 )
 
-                # Draw Guild Wars in blocked cells (centered)
-                if is_blocked:
-                    display_text = "🏰 Guild Wars"
-                    # Calculate text width for centering
-                    bbox = draw.textbbox((0, 0), display_text, font=self.font_small)
-                    text_width = bbox[2] - bbox[0]
-                    text_x = x + (self.CELL_WIDTH - text_width) // 2
-                    text_y = y + (self.CELL_HEIGHT // 2) - 8
-                    if not hasattr(self, '_emoji_positions'):
-                        self._emoji_positions = []
-                    self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
-
                 # Draw events in this cell (support up to 2 events)
-                if time_str in schedule and day in schedule[time_str]:
-                    events_in_cell = schedule[time_str][day]
+                if events_in_cell:
+                        # Sort events based on dynamic ordering rules
+                        sorted_events = self._sort_events_for_display(events_in_cell, time_str)
 
-                    if events_in_cell:
                         # Draw up to 2 events per cell
-                        num_events_to_show = min(2, len(events_in_cell))
+                        num_events_to_show = min(2, len(sorted_events))
 
                         for event_idx in range(num_events_to_show):
-                            priority, event_name, slot_num = events_in_cell[event_idx]
-                            emoji = events.get(event_name, {}).get("emoji", "•")
+                            priority, event_name, slot_num, start_time, duration = sorted_events[event_idx]
+
+                            # Get emoji (handle Guild War specially since it's not in events dict)
+                            if event_name == "Guild War":
+                                emoji = "🏰"
+                            else:
+                                emoji = events.get(event_name, {}).get("emoji", "•")
 
                             # Create display text with emoji and name
                             display_text = f"{emoji} {event_name}"
@@ -438,7 +525,7 @@ class CalendarRenderer:
             ("Party", "🎉"),
             ("Breaking Army", "⚡"),
             ("Showdown", "🏆"),
-            ("Guild Wars", "🏰")
+            ("Guild War", "🏰")
         ]
 
         # Draw event names in two columns

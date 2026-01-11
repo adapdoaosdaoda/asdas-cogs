@@ -1074,12 +1074,11 @@ class ResultsCategoryView(discord.ui.View):
             # Format results for this event
             event_results = self.cog.format_event_results(event_name, self.winning_times, self.selections)
 
-            # Send results and auto-dismiss
-            await interaction.response.edit_message(
+            # Send results as ephemeral message (only visible to user who clicked)
+            await interaction.response.send_message(
                 content=event_results,
-                view=None
+                ephemeral=True
             )
-            await interaction.delete_original_response()
 
         return callback
 
