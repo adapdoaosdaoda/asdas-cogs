@@ -3,6 +3,85 @@ from typing import Optional, Dict, List
 from datetime import datetime
 
 
+# City to timezone mapping for common city names
+CITY_TIMEZONE_MAP = {
+    # Europe
+    'london': 'Europe/London',
+    'paris': 'Europe/Paris',
+    'berlin': 'Europe/Berlin',
+    'rome': 'Europe/Rome',
+    'madrid': 'Europe/Madrid',
+    'amsterdam': 'Europe/Amsterdam',
+    'vienna': 'Europe/Vienna',
+    'stockholm': 'Europe/Stockholm',
+    'oslo': 'Europe/Oslo',
+    'helsinki': 'Europe/Helsinki',
+    'dublin': 'Europe/Dublin',
+    'lisbon': 'Europe/Lisbon',
+    'athens': 'Europe/Athens',
+    'prague': 'Europe/Prague',
+    'warsaw': 'Europe/Warsaw',
+    'moscow': 'Europe/Moscow',
+    'istanbul': 'Europe/Istanbul',
+
+    # Americas
+    'new york': 'America/New_York',
+    'nyc': 'America/New_York',
+    'los angeles': 'America/Los_Angeles',
+    'la': 'America/Los_Angeles',
+    'chicago': 'America/Chicago',
+    'toronto': 'America/Toronto',
+    'vancouver': 'America/Vancouver',
+    'mexico city': 'America/Mexico_City',
+    'sao paulo': 'America/Sao_Paulo',
+    'buenos aires': 'America/Argentina/Buenos_Aires',
+    'santiago': 'America/Santiago',
+    'bogota': 'America/Bogota',
+    'lima': 'America/Lima',
+    'denver': 'America/Denver',
+    'phoenix': 'America/Phoenix',
+    'seattle': 'America/Los_Angeles',
+    'miami': 'America/New_York',
+    'boston': 'America/New_York',
+    'washington': 'America/New_York',
+    'montreal': 'America/Toronto',
+
+    # Asia
+    'tokyo': 'Asia/Tokyo',
+    'beijing': 'Asia/Shanghai',
+    'shanghai': 'Asia/Shanghai',
+    'hong kong': 'Asia/Hong_Kong',
+    'singapore': 'Asia/Singapore',
+    'seoul': 'Asia/Seoul',
+    'bangkok': 'Asia/Bangkok',
+    'jakarta': 'Asia/Jakarta',
+    'manila': 'Asia/Manila',
+    'kuala lumpur': 'Asia/Kuala_Lumpur',
+    'mumbai': 'Asia/Kolkata',
+    'delhi': 'Asia/Kolkata',
+    'dubai': 'Asia/Dubai',
+    'riyadh': 'Asia/Riyadh',
+    'tel aviv': 'Asia/Jerusalem',
+    'taipei': 'Asia/Taipei',
+
+    # Oceania
+    'sydney': 'Australia/Sydney',
+    'melbourne': 'Australia/Melbourne',
+    'brisbane': 'Australia/Brisbane',
+    'perth': 'Australia/Perth',
+    'auckland': 'Pacific/Auckland',
+    'wellington': 'Pacific/Auckland',
+
+    # Africa
+    'cairo': 'Africa/Cairo',
+    'johannesburg': 'Africa/Johannesburg',
+    'cape town': 'Africa/Johannesburg',
+    'nairobi': 'Africa/Nairobi',
+    'lagos': 'Africa/Lagos',
+    'casablanca': 'Africa/Casablanca',
+}
+
+
 class DismissibleView(discord.ui.View):
     """Simple view with a close button for dismissible messages"""
 
@@ -1232,7 +1311,7 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
     
     timezone_input = discord.ui.TextInput(
         label="Timezone",
-        placeholder="e.g., US/Eastern, Europe/London, Asia/Tokyo",
+        placeholder="e.g., London, New York, Tokyo, or US/Eastern",
         style=discord.TextStyle.short,
         required=True,
         max_length=50
@@ -1248,21 +1327,29 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         """Handle timezone submission and generate calendar"""
         import pytz
         from io import BytesIO
-        
-        timezone_str = self.timezone_input.value.strip()
-        
+
+        user_input = self.timezone_input.value.strip()
+
+        # Try to map city name to timezone first
+        normalized_input = user_input.lower()
+        if normalized_input in CITY_TIMEZONE_MAP:
+            timezone_str = CITY_TIMEZONE_MAP[normalized_input]
+        else:
+            timezone_str = user_input
+
         # Validate timezone
         try:
             tz = pytz.timezone(timezone_str)
         except pytz.exceptions.UnknownTimeZoneError:
             await interaction.response.send_message(
-                f"❌ Unknown timezone: `{timezone_str}`\n\n"
-                f"Please use a valid timezone like:\n"
-                f"• US/Eastern\n"
-                f"• US/Pacific\n"
-                f"• Europe/London\n"
-                f"• Asia/Tokyo\n"
-                f"• Australia/Sydney\n\n"
+                f"❌ Unknown timezone or city: `{user_input}`\n\n"
+                f"You can use city names like:\n"
+                f"• London, Paris, Berlin\n"
+                f"• New York, Los Angeles, Chicago\n"
+                f"• Tokyo, Singapore, Sydney\n\n"
+                f"Or standard timezone formats like:\n"
+                f"• US/Eastern, US/Pacific\n"
+                f"• Europe/London, Asia/Tokyo\n\n"
                 f"See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
                 ephemeral=True
             )
@@ -1365,7 +1452,7 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         embed = discord.Embed(
             title=f"📅 Calendar ({timezone_str})",
             description=f"This calendar shows times in **{timezone_str}** timezone.",
-            color=discord.Color(0xcb4449)
+            color=self.cog._get_embed_color(interaction.guild)
         )
         
         # Create file attachment
