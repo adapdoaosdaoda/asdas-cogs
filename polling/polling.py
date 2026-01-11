@@ -444,12 +444,11 @@ class EventPolling(commands.Cog):
                 where winner_key is (day, time) or ("Daily", time) or ("Fixed", time)
 
         Returns:
-            {event_name: {day: time}}
+            {event_name: {day: time}} or {event_name_slot: {day: time}} for multi-slot weekly events
         """
         calendar_data = {}
 
         for event_name, event_info in self.events.items():
-            calendar_data[event_name] = {}
             event_slots = winning_times.get(event_name, {})
 
             for slot_index, slot_data in event_slots.items():
@@ -459,12 +458,23 @@ class EventPolling(commands.Cog):
                 winner_key, points, all_entries = slot_data
                 winner_day, winner_time = winner_key
 
-                if event_info["type"] == "daily":
+                # For multi-slot weekly events, create separate entries with slot number
+                if event_info["type"] == "weekly" and event_info["slots"] > 1:
+                    # Use event name with slot number (e.g., "Breaking Army 1", "Breaking Army 2")
+                    event_key = f"{event_name} {slot_index + 1}"
+                    if event_key not in calendar_data:
+                        calendar_data[event_key] = {}
+                    calendar_data[event_key][winner_day] = winner_time
+                elif event_info["type"] == "daily":
                     # Daily events appear on all days
+                    if event_name not in calendar_data:
+                        calendar_data[event_name] = {}
                     for day in self.days_of_week:
                         calendar_data[event_name][day] = winner_time
                 elif event_info["type"] == "fixed_days":
                     # Fixed-day events
+                    if event_name not in calendar_data:
+                        calendar_data[event_name] = {}
                     if event_info["slots"] > 1:
                         # Multi-slot: winner_day is the specific day
                         calendar_data[event_name][winner_day] = winner_time
@@ -473,7 +483,9 @@ class EventPolling(commands.Cog):
                         for day in event_info["days"]:
                             calendar_data[event_name][day] = winner_time
                 else:
-                    # Weekly events appear only on their specific day
+                    # Single-slot weekly events
+                    if event_name not in calendar_data:
+                        calendar_data[event_name] = {}
                     calendar_data[event_name][winner_day] = winner_time
 
         return calendar_data
