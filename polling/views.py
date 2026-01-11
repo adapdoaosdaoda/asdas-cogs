@@ -389,6 +389,9 @@ class PartyModal(discord.ui.View):
 
             # Update any calendar messages for this poll
             await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+
+            # Update any results messages for this poll
+            await self.cog._update_results_messages(interaction.guild, poll_data, self.poll_id)
         except Exception:
             pass
 
@@ -643,6 +646,9 @@ class FixedDaysModal(discord.ui.View):
 
             # Update any calendar messages for this poll
             await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+
+            # Update any results messages for this poll
+            await self.cog._update_results_messages(interaction.guild, poll_data, self.poll_id)
         except Exception:
             pass
 
@@ -1008,6 +1014,9 @@ class WeeklyEventModal(discord.ui.View):
 
             # Update any calendar messages for this poll
             await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+
+            # Update any results messages for this poll
+            await self.cog._update_results_messages(interaction.guild, poll_data, self.poll_id)
         except Exception:
             pass
 

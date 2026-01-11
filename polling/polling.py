@@ -114,10 +114,12 @@ class EventPolling(commands.Cog):
     async def cog_load(self):
         """Called when the cog is loaded"""
         self.backup_task.start()
+        self.weekly_results_update.start()
 
     def cog_unload(self):
         """Called when the cog is unloaded"""
         self.backup_task.cancel()
+        self.weekly_results_update.cancel()
 
     @tasks.loop(hours=24)
     async def backup_task(self):
@@ -161,6 +163,38 @@ class EventPolling(commands.Cog):
     @backup_task.before_loop
     async def before_backup_task(self):
         """Wait for bot to be ready before starting backup task"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=24)
+    async def weekly_results_update(self):
+        """Update weekly results embeds every Monday at 10 AM server time"""
+        try:
+            # Get current datetime
+            now = datetime.utcnow()
+
+            # Check if it's Monday (0 = Monday) and 10 AM
+            if now.weekday() != 0 or now.hour != 10:
+                return
+
+            # Get all guilds
+            all_guilds = await self.config.all_guilds()
+
+            for guild_id, guild_data in all_guilds.items():
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+
+                polls = guild_data.get("polls", {})
+                for poll_id, poll_data in polls.items():
+                    # Update all results messages for this poll
+                    await self._update_results_messages(guild, poll_data, poll_id)
+
+        except Exception as e:
+            print(f"Error during weekly results update: {e}")
+
+    @weekly_results_update.before_loop
+    async def before_weekly_results_update(self):
+        """Wait for bot to be ready before starting weekly results update task"""
         await self.bot.wait_until_ready()
 
     def _parse_message_id(self, message_input: Union[str, int]) -> Optional[int]:
@@ -622,6 +656,45 @@ class EventPolling(commands.Cog):
 
         await ctx.tick()
 
+    @eventpoll.command(name="postresults")
+    async def post_results(self, ctx: commands.Context, message_id: str):
+        """Post an auto-updating results embed for a poll (updates every Monday at 10 AM)
+
+        Example: [p]eventpoll postresults 123456789
+        Or: [p]eventpoll postresults https://discord.com/channels/guild/channel/message
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+
+        # Create results embed
+        embed = await self._create_results_embed(poll_data, ctx.guild.id, poll_id)
+
+        # Send the results message
+        results_msg = await ctx.send(embed=embed)
+
+        # Store results message ID in poll data for auto-updating
+        async with self.config.guild(ctx.guild).polls() as polls:
+            if poll_id in polls:
+                if "results_messages" not in polls[poll_id]:
+                    polls[poll_id]["results_messages"] = []
+                polls[poll_id]["results_messages"].append({
+                    "message_id": results_msg.id,
+                    "channel_id": ctx.channel.id
+                })
+
+        await ctx.tick()
+
     @eventpoll.command(name="export")
     async def export_backup(self, ctx: commands.Context):
         """Manually create a backup of all current poll data
@@ -844,7 +917,8 @@ class EventPolling(commands.Cog):
         calendar_file = discord.File(image_buffer, filename="calendar.png")
         embed.set_image(url="attachment://calendar.png")
 
-        # Footer removed - timestamp and voter count now shown in calendar image
+        # Add footer
+        embed.set_footer(text="times are adjusted every week based on Monday's results")
 
         return embed, calendar_file
 
@@ -861,6 +935,105 @@ class EventPolling(commands.Cog):
                     await message.edit(embed=updated_embed, attachments=[calendar_file])
             except Exception:
                 # Silently fail if we can't update a calendar message
+                pass
+
+    async def _create_results_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> discord.Embed:
+        """Create a results embed showing current poll results
+
+        Returns:
+            Embed with poll results
+        """
+        title = poll_data["title"]
+        channel_id = poll_data["channel_id"]
+        message_id = poll_data["message_id"]
+
+        # Create embed
+        embed = discord.Embed(
+            title=f"📊 Poll Results: {title}",
+            description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
+            color=discord.Color(0xcb4449)
+        )
+
+        # Get selections
+        selections = poll_data.get("selections", {})
+
+        if not selections:
+            embed.add_field(
+                name="No Votes Yet",
+                value="Be the first to vote!",
+                inline=False
+            )
+            embed.set_footer(text="Updated every Monday at 10 AM server time")
+            return embed
+
+        # Calculate winning times using weighted point system
+        winning_times = self._calculate_winning_times_weighted(selections)
+
+        # Format results for each event
+        for event_name, event_info in self.events.items():
+            emoji = event_info["emoji"]
+            event_slots = winning_times.get(event_name, {})
+
+            if event_slots:
+                field_value = ""
+                for slot_index in range(event_info["slots"]):
+                    if slot_index not in event_slots:
+                        continue
+
+                    winner_key, winner_points, all_entries = event_slots[slot_index]
+                    day, time = winner_key
+
+                    # Format header based on event type
+                    if event_info["slots"] > 1:
+                        if event_info["type"] == "fixed_days":
+                            day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
+                            field_value += f"**{day_name[:3]}:** "
+                        else:
+                            field_value += f"**Slot {slot_index + 1}:** "
+
+                    # Show winning time
+                    if event_info["type"] == "daily":
+                        field_value += f"{time} ({winner_points} pts)\n"
+                    elif event_info["type"] == "fixed_days":
+                        if event_info["slots"] > 1:
+                            field_value += f"{day[:3]} {time} ({winner_points} pts)\n"
+                        else:
+                            days_str = "/".join([d[:3] for d in event_info["days"]])
+                            field_value += f"{time} ({days_str}) ({winner_points} pts)\n"
+                    else:
+                        field_value += f"{day[:3]} {time} ({winner_points} pts)\n"
+
+                embed.add_field(
+                    name=f"{emoji} {event_name}",
+                    value=field_value.strip() or "No votes",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name=f"{emoji} {event_name}",
+                    value="No votes yet",
+                    inline=False
+                )
+
+        # Add timestamp and voter count
+        last_updated = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        embed.set_footer(text=f"Total voters: {len(selections)} | Last updated: {last_updated} | Updates every Monday at 10 AM")
+
+        return embed
+
+    async def _update_results_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
+        """Update all results messages associated with this poll"""
+        results_messages = poll_data.get("results_messages", [])
+
+        for res_msg_data in results_messages:
+            try:
+                channel = guild.get_channel(res_msg_data["channel_id"])
+                if channel:
+                    message = await channel.fetch_message(res_msg_data["message_id"])
+                    updated_embed = await self._create_results_embed(poll_data, guild.id, poll_id)
+                    await message.edit(embed=updated_embed)
+            except Exception:
+                # Silently fail if we can't update a results message
                 pass
 
     async def _create_poll_embed(self, title: str, guild_id: int, poll_id: str) -> discord.Embed:
@@ -933,7 +1106,7 @@ class EventPolling(commands.Cog):
 
         # Current Winners removed - use Results button to view
 
-        embed.set_footer(text="⚠️ Events (excluding party) cannot have conflicting times, click 🏆 Results for tiebreak rules")
+        embed.set_footer(text="⚠️ Events (excluding party) cannot have conflicting times, click Results to view votes and tiebreak rules")
 
         return embed
 
