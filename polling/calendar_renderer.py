@@ -16,7 +16,7 @@ class CalendarRenderer:
 
     # Color scheme - Catppuccin Mocha
     BG_COLOR = (30, 30, 46)  # Base - #1e1e2e
-    GRID_COLOR = (42, 42, 59)  # Surface2 at 20% opacity - #585b70
+    GRID_COLOR = (49, 50, 68)  # Surface0 - #313244
     HEADER_BG = (49, 50, 68)  # Surface0 - #313244
     HEADER_TEXT = (205, 214, 244)  # Text - #cdd6f4
     TIME_TEXT = (186, 194, 222)  # Subtext1 - #bac2de
@@ -578,12 +578,19 @@ class CalendarRenderer:
                 # Skip right border if next column has same content (but always draw last column)
                 skip_right = (next_col_content == current_content) and (col < len(days) - 1)
 
-                # Skip bottom border if next row shares any common event types (but always draw last row)
-                has_common_events = False
+                # Multi-slot events that span multiple time slots
+                multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
+
+                # Skip bottom border if next row shares any multi-slot event (but always draw last row)
+                has_common_multislot = False
                 if next_row_content and current_content and row < len(time_slots) - 1:
-                    # Check if any event appears in both cells
-                    has_common_events = any(event in next_row_content for event in current_content)
-                skip_bottom = has_common_events
+                    # Check if any multi-slot event appears in both cells
+                    has_common_multislot = any(
+                        event in next_row_content
+                        for event in current_content
+                        if event in multi_slot_events
+                    )
+                skip_bottom = has_common_multislot
 
                 # Draw dotted border
                 self._draw_dotted_border(
