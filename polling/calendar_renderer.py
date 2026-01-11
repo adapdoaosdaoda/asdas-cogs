@@ -92,6 +92,26 @@ class CalendarRenderer:
             self.font_bold = ImageFont.load_default()
             self.font_large = ImageFont.load_default()
 
+    def _fade_color(self, color: Tuple[int, int, int], fade_amount: float = 0.4) -> Tuple[int, int, int]:
+        """Fade a color by blending with background for better text readability
+
+        Args:
+            color: RGB color tuple
+            fade_amount: Amount to fade (0.0 = original, 1.0 = completely faded to background)
+
+        Returns:
+            Faded RGB color tuple
+        """
+        r, g, b = color
+        bg_r, bg_g, bg_b = self.BG_COLOR
+
+        # Blend color with background
+        faded_r = int(r * (1 - fade_amount) + bg_r * fade_amount)
+        faded_g = int(g * (1 - fade_amount) + bg_g * fade_amount)
+        faded_b = int(b * (1 - fade_amount) + bg_b * fade_amount)
+
+        return (faded_r, faded_g, faded_b)
+
     def render_calendar(
         self,
         winning_times: Dict[str, Dict[str, str]],
@@ -459,42 +479,38 @@ class CalendarRenderer:
 
                     # For cells with 2 events, draw dual-color split background
                     if len(event_names) >= 2:
-                        # Top half: first event's color
+                        # Top half: first event's color (faded)
                         top_color = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                        top_color_faded = self._fade_color(top_color)
                         draw.rectangle(
                             [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT // 2],
-                            fill=top_color,
+                            fill=top_color_faded,
                             outline=None
                         )
 
-                        # Bottom half: second event's color
+                        # Bottom half: second event's color (faded)
                         bottom_color = self.EVENT_BG_COLORS.get(event_names[1], self.CELL_BG)
+                        bottom_color_faded = self._fade_color(bottom_color)
                         draw.rectangle(
                             [x, y + self.CELL_HEIGHT // 2, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                            fill=bottom_color,
+                            fill=bottom_color_faded,
                             outline=None
                         )
-
-                        # Draw outline around entire cell
-                        draw.rectangle(
-                            [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                            fill=None,
-                            outline=self.GRID_COLOR
-                        )
                     else:
-                        # Single event: use single color
+                        # Single event: use single color (faded)
                         cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                        cell_bg_faded = self._fade_color(cell_bg)
                         draw.rectangle(
                             [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                            fill=cell_bg,
-                            outline=self.GRID_COLOR
+                            fill=cell_bg_faded,
+                            outline=None
                         )
                 else:
                     # Empty cell
                     draw.rectangle(
                         [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
                         fill=self.CELL_BG,
-                        outline=self.GRID_COLOR
+                        outline=None
                     )
 
                 # Draw events in this cell (support up to 2 events)
@@ -518,7 +534,7 @@ class CalendarRenderer:
                             display_text = f"{emoji} {event_name}"
 
                             # Calculate text width for centering
-                            bbox = draw.textbbox((0, 0), display_text, font=self.font_small)
+                            bbox = draw.textbbox((0, 0), display_text, font=self.font_bold)
                             text_width = bbox[2] - bbox[0]
                             text_height = bbox[3] - bbox[1]
 
@@ -538,7 +554,7 @@ class CalendarRenderer:
 
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
-                            self._emoji_positions.append((text_x, text_y, display_text, self.font_small))
+                            self._emoji_positions.append((text_x, text_y, display_text, self.font_bold))
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
