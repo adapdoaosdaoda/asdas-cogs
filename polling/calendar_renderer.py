@@ -16,7 +16,7 @@ class CalendarRenderer:
 
     # Color scheme - Catppuccin Mocha
     BG_COLOR = (30, 30, 46)  # Base - #1e1e2e
-    GRID_COLOR = (42, 42, 59)  # Surface2 at 20% opacity - #585b70
+    GRID_COLOR = (49, 50, 68)  # Surface0 - #313244
     HEADER_BG = (49, 50, 68)  # Surface0 - #313244
     HEADER_TEXT = (205, 214, 244)  # Text - #cdd6f4
     TIME_TEXT = (186, 194, 222)  # Subtext1 - #bac2de
@@ -114,46 +114,30 @@ class CalendarRenderer:
     def _draw_dotted_border(self, draw: ImageDraw, x1: int, y1: int, x2: int, y2: int,
                            color: Tuple[int, int, int], dash_length: int = 5,
                            skip_right: bool = False, skip_bottom: bool = False):
-        """Draw a dotted border around a rectangle
+        """Draw a solid, thin border around a rectangle
 
         Args:
             draw: ImageDraw object
             x1, y1: Top-left corner
             x2, y2: Bottom-right corner
             color: RGB color tuple
-            dash_length: Length of dashes in pixels
+            dash_length: Unused (kept for compatibility)
             skip_right: Skip drawing the right border
             skip_bottom: Skip drawing the bottom border
         """
         # Top border
-        x = x1
-        while x < x2:
-            end_x = min(x + dash_length, x2)
-            draw.line([(x, y1), (end_x, y1)], fill=color, width=1)
-            x += dash_length * 2
+        draw.line([(x1, y1), (x2, y1)], fill=color, width=1)
 
         # Left border
-        y = y1
-        while y < y2:
-            end_y = min(y + dash_length, y2)
-            draw.line([(x1, y), (x1, end_y)], fill=color, width=1)
-            y += dash_length * 2
+        draw.line([(x1, y1), (x1, y2)], fill=color, width=1)
 
         # Right border (if not skipped)
         if not skip_right:
-            y = y1
-            while y < y2:
-                end_y = min(y + dash_length, y2)
-                draw.line([(x2, y), (x2, end_y)], fill=color, width=1)
-                y += dash_length * 2
+            draw.line([(x2, y1), (x2, y2)], fill=color, width=1)
 
         # Bottom border (if not skipped)
         if not skip_bottom:
-            x = x1
-            while x < x2:
-                end_x = min(x + dash_length, x2)
-                draw.line([(x, y2), (end_x, y2)], fill=color, width=1)
-                x += dash_length * 2
+            draw.line([(x1, y2), (x2, y2)], fill=color, width=1)
 
     def render_calendar(
         self,
@@ -566,14 +550,9 @@ class CalendarRenderer:
                             outline=None
                         )
 
-                        # Draw dotted horizontal line between the two events
+                        # Draw solid horizontal line between the two events
                         mid_y = y + self.CELL_HEIGHT // 2
-                        dash_x = x
-                        dash_length = 5
-                        while dash_x < x + self.CELL_WIDTH:
-                            end_x = min(dash_x + dash_length, x + self.CELL_WIDTH)
-                            draw.line([(dash_x, mid_y), (end_x, mid_y)], fill=self.GRID_COLOR, width=1)
-                            dash_x += dash_length * 2
+                        draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=1)
                     else:
                         # Single event: use single color (faded)
                         cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
@@ -599,12 +578,19 @@ class CalendarRenderer:
                 # Skip right border if next column has same content (but always draw last column)
                 skip_right = (next_col_content == current_content) and (col < len(days) - 1)
 
-                # Skip bottom border if next row shares any common event types (but always draw last row)
-                has_common_events = False
+                # Multi-slot events that span multiple time slots
+                multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
+
+                # Skip bottom border if next row shares any multi-slot event (but always draw last row)
+                has_common_multislot = False
                 if next_row_content and current_content and row < len(time_slots) - 1:
-                    # Check if any event appears in both cells
-                    has_common_events = any(event in next_row_content for event in current_content)
-                skip_bottom = has_common_events
+                    # Check if any multi-slot event appears in both cells
+                    has_common_multislot = any(
+                        event in next_row_content
+                        for event in current_content
+                        if event in multi_slot_events
+                    )
+                skip_bottom = has_common_multislot
 
                 # Draw dotted border
                 self._draw_dotted_border(
