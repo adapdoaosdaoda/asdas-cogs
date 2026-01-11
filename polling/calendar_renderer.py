@@ -161,6 +161,7 @@ class CalendarRenderer:
         # Create image
         img = Image.new('RGB', (width, height), self.BG_COLOR)
         draw = ImageDraw.Draw(img)
+        draw.fontmode = "L"  # Use antialiased text (8-bit grayscale) instead of 1-bit monochrome
 
         # Initialize emoji positions list
         self._emoji_positions = []
