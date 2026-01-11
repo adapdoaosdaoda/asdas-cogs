@@ -1225,3 +1225,113 @@ class ResultsCategoryView(discord.ui.View):
         """Handle timeout"""
         pass
 
+
+
+class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"):
+    """Modal for entering timezone"""
+    
+    timezone_input = discord.ui.TextInput(
+        label="Timezone",
+        placeholder="e.g., US/Eastern, Europe/London, Asia/Tokyo",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=50
+    )
+    
+    def __init__(self, cog, guild_id: int, poll_id: str):
+        super().__init__()
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle timezone submission and generate calendar"""
+        import pytz
+        from io import BytesIO
+        
+        timezone_str = self.timezone_input.value.strip()
+        
+        # Validate timezone
+        try:
+            tz = pytz.timezone(timezone_str)
+        except pytz.exceptions.UnknownTimeZoneError:
+            await interaction.response.send_message(
+                f"❌ Unknown timezone: `{timezone_str}`\n\n"
+                f"Please use a valid timezone like:\n"
+                f"• US/Eastern\n"
+                f"• US/Pacific\n"
+                f"• Europe/London\n"
+                f"• Asia/Tokyo\n"
+                f"• Australia/Sydney\n\n"
+                f"See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+                ephemeral=True
+            )
+            return
+        
+        # Get poll data
+        polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+        if self.poll_id not in polls:
+            await interaction.response.send_message(
+                "❌ This poll is no longer active!",
+                ephemeral=True
+            )
+            return
+        
+        poll_data = polls[self.poll_id]
+        selections = poll_data.get("selections", {})
+        
+        # Calculate winning times
+        winning_times = self.cog._calculate_winning_times_weighted(selections)
+        
+        # Generate calendar image with the requested timezone
+        calendar_data = self.cog._prepare_calendar_data(winning_times)
+        image_buffer = self.cog.calendar_renderer.render_calendar(
+            calendar_data,
+            self.cog.events,
+            self.cog.blocked_times,
+            len(selections)
+        )
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"📅 Calendar ({timezone_str})",
+            description=f"This calendar shows times in **{timezone_str}** timezone.",
+            color=discord.Color(0xcb4449)
+        )
+        
+        # Create file attachment
+        calendar_file = discord.File(image_buffer, filename=f"calendar_{timezone_str.replace('/', '_')}.png")
+        embed.set_image(url=f"attachment://calendar_{timezone_str.replace('/', '_')}.png")
+        
+        # Send as ephemeral message with dismissible view
+        await interaction.response.send_message(
+            embed=embed,
+            file=calendar_file,
+            view=DismissibleView(),
+            ephemeral=True
+        )
+
+
+class CalendarTimezoneView(discord.ui.View):
+    """View with timezone button for calendar embeds"""
+    
+    def __init__(self, cog, guild_id: int, poll_id: str):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        
+        # Add timezone button
+        timezone_button = discord.ui.Button(
+            label="View in My Timezone",
+            style=discord.ButtonStyle.primary,
+            emoji="🌍",
+            custom_id=f"calendar_timezone:{poll_id}"
+        )
+        timezone_button.callback = self._show_timezone_modal
+        self.add_item(timezone_button)
+    
+    async def _show_timezone_modal(self, interaction: discord.Interaction):
+        """Show the timezone input modal"""
+        modal = TimezoneModal(self.cog, self.guild_id, self.poll_id)
+        await interaction.response.send_modal(modal)
