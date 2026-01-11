@@ -3,6 +3,26 @@ from typing import Optional, Dict, List
 from datetime import datetime
 
 
+class DismissibleView(discord.ui.View):
+    """Simple view with a close button for dismissible messages"""
+
+    def __init__(self):
+        super().__init__(timeout=180)
+
+        close_btn = discord.ui.Button(
+            label="Close",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌"
+        )
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
+    async def _close(self, interaction: discord.Interaction):
+        """Handle close button"""
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
+
 class EventPollView(discord.ui.View):
     """Main view with buttons for each event type"""
 
@@ -72,6 +92,7 @@ class EventPollView(discord.ui.View):
         if poll_id not in polls:
             await interaction.response.send_message(
                 "This poll is no longer active!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -264,6 +285,7 @@ class PartyModal(discord.ui.View):
         if not self.selected_time:
             await interaction.response.send_message(
                 "⚠️ Please select a time before saving!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -280,6 +302,7 @@ class PartyModal(discord.ui.View):
         if has_conflict:
             await interaction.response.send_message(
                 f"⚠️ **Conflict detected!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -348,6 +371,7 @@ class PartyModal(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+        await interaction.delete_original_response()
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
@@ -515,6 +539,7 @@ class FixedDaysModal(discord.ui.View):
         if not self.selected_times:
             await interaction.response.send_message(
                 "⚠️ Please select at least one time before saving!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -600,6 +625,7 @@ class FixedDaysModal(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+        await interaction.delete_original_response()
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
@@ -846,6 +872,7 @@ class WeeklyEventModal(discord.ui.View):
         if not has_slot1 and not has_slot2:
             await interaction.response.send_message(
                 "⚠️ Please select at least one complete slot (day + time) before saving!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -862,6 +889,7 @@ class WeeklyEventModal(discord.ui.View):
             if has_conflict:
                 await interaction.response.send_message(
                     f"⚠️ **Conflict detected in Slot 1!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -877,6 +905,7 @@ class WeeklyEventModal(discord.ui.View):
             if has_conflict:
                 await interaction.response.send_message(
                     f"⚠️ **Conflict detected in Slot 2!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -961,6 +990,7 @@ class WeeklyEventModal(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+        await interaction.delete_original_response()
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
@@ -1026,6 +1056,62 @@ class WeeklyEventModal(discord.ui.View):
         """Handle timeout"""
         pass
 
+class EventResultsView(discord.ui.View):
+    """View with Return and Close buttons for individual event results"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, winning_times: Dict, selections: Dict, events: Dict):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.winning_times = winning_times
+        self.selections = selections
+        self.events = events
+
+        # Return button
+        return_btn = discord.ui.Button(
+            label="Return to Results",
+            style=discord.ButtonStyle.primary,
+            emoji="↩️"
+        )
+        return_btn.callback = self._return_to_results
+        self.add_item(return_btn)
+
+        # Close button
+        close_btn = discord.ui.Button(
+            label="Close",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌"
+        )
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
+    async def _return_to_results(self, interaction: discord.Interaction):
+        """Return to main results view"""
+        # Dismiss current event results message
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
+        # Recreate the results view
+        intro_text = self.cog.format_results_intro(self.selections)
+        results_view = ResultsCategoryView(
+            self.cog, self.guild_id, self.poll_id,
+            self.winning_times, self.selections, self.events
+        )
+
+        # Send new results message
+        await interaction.followup.send(
+            intro_text,
+            view=results_view,
+            ephemeral=True
+        )
+
+    async def _close(self, interaction: discord.Interaction):
+        """Close the event results"""
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
+
 class ResultsCategoryView(discord.ui.View):
     """View with buttons for each event category to show results"""
 
@@ -1038,22 +1124,40 @@ class ResultsCategoryView(discord.ui.View):
         self.selections = selections
         self.events = events
 
-        # Add buttons for each event
-        row = 0
+        # Row 0: Close, Hero's Realm, Sword Trial
+        # Row 1: Party, Breaking Army, Showdown
+
+        # Add close button first (row 0)
+        close_btn = discord.ui.Button(
+            label="Close",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌",
+            row=0
+        )
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
+        # Add buttons for each event in specific rows
         for event_name, event_info in events.items():
-            # Determine button style based on event
+            # Determine button style and row based on event
             if "Hero's Realm" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 0
             elif "Sword Trial" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 0
             elif "Party" in event_name:
                 button_style = discord.ButtonStyle.success  # Green
+                row = 1
             elif "Breaking Army" in event_name:
                 button_style = discord.ButtonStyle.primary  # Blue
+                row = 1
             elif "Showdown" in event_name:
                 button_style = discord.ButtonStyle.danger  # Red
+                row = 1
             else:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 1
 
             button = discord.ui.Button(
                 label=event_name,
@@ -1065,23 +1169,36 @@ class ResultsCategoryView(discord.ui.View):
             button.callback = self._create_results_callback(event_name)
             self.add_item(button)
 
-            # Increment row (max 5 items per row)
-            if len([item for item in self.children if getattr(item, 'row', None) == row]) >= 5:
-                row += 1
-
     def _create_results_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):
+            # Dismiss the results overview message
+            await interaction.response.edit_message(view=None)
+            await interaction.delete_original_response()
+
             # Format results for this event
             event_results = self.cog.format_event_results(event_name, self.winning_times, self.selections)
 
-            # Send results as ephemeral message (only visible to user who clicked)
-            await interaction.response.send_message(
+            # Create view with Return and Close buttons
+            event_results_view = EventResultsView(
+                self.cog, self.guild_id, self.poll_id,
+                self.winning_times, self.selections, self.events
+            )
+
+            # Send event results as new ephemeral message
+            await interaction.followup.send(
                 content=event_results,
+                view=event_results_view,
                 ephemeral=True
             )
 
         return callback
 
+    async def _close(self, interaction: discord.Interaction):
+        """Close the results view"""
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
     async def on_timeout(self):
         """Handle timeout"""
         pass
+

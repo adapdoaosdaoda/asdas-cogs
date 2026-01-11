@@ -1,11 +1,14 @@
 from redbot.core import commands, Config
 from redbot.core.bot import Red
+from redbot.core import tasks
 import discord
 from typing import Optional, Dict, List, Tuple, Union
 from datetime import datetime, time as dt_time, timedelta
 import os
 import tempfile
 import re
+import json
+from pathlib import Path
 
 from .views import EventPollView
 from .calendar_renderer import CalendarRenderer
@@ -103,6 +106,62 @@ class EventPolling(commands.Cog):
 
         # Initialize calendar renderer
         self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+
+        # Backup directory path
+        self.backups_dir = Path.cwd() / "data" / "eventpolling" / "backups"
+        self.backups_dir.mkdir(parents=True, exist_ok=True)
+
+    async def cog_load(self):
+        """Called when the cog is loaded"""
+        self.backup_task.start()
+
+    def cog_unload(self):
+        """Called when the cog is unloaded"""
+        self.backup_task.cancel()
+
+    @tasks.loop(hours=24)
+    async def backup_task(self):
+        """Daily backup task for all poll votes"""
+        try:
+            all_guilds = await self.config.all_guilds()
+
+            # Create timestamp for backup filename
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            backup_file = self.backups_dir / f"poll_backup_{timestamp}.json"
+
+            # Prepare backup data
+            backup_data = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "guilds": {}
+            }
+
+            # Collect all poll data from all guilds
+            for guild_id, guild_data in all_guilds.items():
+                polls = guild_data.get("polls", {})
+                if polls:
+                    backup_data["guilds"][str(guild_id)] = {
+                        "polls": polls
+                    }
+
+            # Write backup file
+            if backup_data["guilds"]:
+                with open(backup_file, 'w', encoding='utf-8') as f:
+                    json.dump(backup_data, f, indent=2, ensure_ascii=False)
+
+                # Keep only last 30 backups (delete older ones)
+                backup_files = sorted(self.backups_dir.glob("poll_backup_*.json"))
+                if len(backup_files) > 30:
+                    for old_backup in backup_files[:-30]:
+                        old_backup.unlink()
+
+        except Exception as e:
+            # Log error but don't crash
+            print(f"Error during poll backup: {e}")
+
+    @backup_task.before_loop
+    async def before_backup_task(self):
+        """Wait for bot to be ready before starting backup task"""
+        await self.bot.wait_until_ready()
 
     def _parse_message_id(self, message_input: Union[str, int]) -> Optional[int]:
         """Parse message ID from either an integer or a Discord message link
@@ -214,6 +273,99 @@ class EventPolling(commands.Cog):
 
         view.poll_id = poll_id
         await ctx.tick()
+
+    @eventpoll.command(name="overwrite")
+    async def overwrite_poll(self, ctx: commands.Context, message_id: str, *, title: Optional[str] = None):
+        """Overwrite an existing bot message with a new event poll
+
+        This will replace the existing message content with a new poll while preserving the message ID.
+        The old poll data will be backed up before being replaced.
+
+        Example: [p]eventpoll overwrite 123456789 New Poll Title
+        Or: [p]eventpoll overwrite https://discord.com/channels/guild/channel/message New Title
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        if not title:
+            title = "Event Schedule Poll"
+
+        poll_id = str(parsed_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        # Try to fetch the message to ensure it exists and is a bot message
+        try:
+            # Try to find the message in any channel
+            message = None
+            if poll_id in polls:
+                # Poll exists, try to get the message from stored channel
+                channel = ctx.guild.get_channel(polls[poll_id]["channel_id"])
+                if channel:
+                    try:
+                        message = await channel.fetch_message(parsed_id)
+                    except:
+                        pass
+
+            # If not found in stored location, try current channel
+            if not message:
+                try:
+                    message = await ctx.channel.fetch_message(parsed_id)
+                except:
+                    await ctx.send("Could not find the specified message. Make sure the message ID is correct and the message is in an accessible channel.")
+                    return
+
+            # Verify it's a bot message
+            if message.author.id != self.bot.user.id:
+                await ctx.send("The specified message is not a bot message!")
+                return
+
+        except Exception as e:
+            await ctx.send(f"Error fetching message: {e}")
+            return
+
+        # Backup old poll data if it exists
+        if poll_id in polls:
+            old_poll_data = polls[poll_id].copy()
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            backup_file = self.backups_dir / f"overwrite_backup_{ctx.guild.id}_{poll_id}_{timestamp}.json"
+
+            backup_data = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "guild_id": ctx.guild.id,
+                "poll_id": poll_id,
+                "old_poll_data": old_poll_data
+            }
+
+            with open(backup_file, 'w', encoding='utf-8') as f:
+                json.dump(backup_data, f, indent=2, ensure_ascii=False)
+
+            await ctx.send(f"Old poll data backed up to: `{backup_file.name}`")
+
+        # Create the new poll view
+        view = EventPollView(self, ctx.guild.id, ctx.author.id, self.events, self.days_of_week, self.blocked_times)
+
+        # Create the initial embed
+        embed = await self._create_poll_embed(title, ctx.guild.id, str(0))
+        embed.set_footer(text="Click the buttons below to set your preferences")
+
+        # Update the existing message
+        await message.edit(embed=embed, view=view)
+
+        # Update or create poll data
+        async with self.config.guild(ctx.guild).polls() as polls:
+            polls[poll_id] = {
+                "message_id": message.id,
+                "channel_id": message.channel.id,
+                "creator_id": ctx.author.id,
+                "title": title,
+                "selections": {},
+                "created_at": datetime.utcnow().isoformat()
+            }
+
+        view.poll_id = poll_id
+        await ctx.send(f"Successfully overwrote message with new poll: {message.jump_url}")
 
     @eventpoll.command(name="results")
     async def show_results(self, ctx: commands.Context, message_id: str):
@@ -415,6 +567,192 @@ class EventPolling(commands.Cog):
 
         await ctx.tick()
 
+    @eventpoll.command(name="export")
+    async def export_backup(self, ctx: commands.Context):
+        """Manually create a backup of all current poll data
+
+        This creates an immediate backup file instead of waiting for the daily backup.
+
+        Example: [p]eventpoll export
+        """
+        try:
+            all_guilds = await self.config.all_guilds()
+
+            # Create timestamp for backup filename
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            backup_file = self.backups_dir / f"manual_backup_{timestamp}.json"
+
+            # Prepare backup data
+            backup_data = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "type": "manual",
+                "guilds": {}
+            }
+
+            # Collect all poll data from all guilds
+            for guild_id, guild_data in all_guilds.items():
+                polls = guild_data.get("polls", {})
+                if polls:
+                    backup_data["guilds"][str(guild_id)] = {
+                        "polls": polls
+                    }
+
+            # Write backup file
+            if backup_data["guilds"]:
+                with open(backup_file, 'w', encoding='utf-8') as f:
+                    json.dump(backup_data, f, indent=2, ensure_ascii=False)
+
+                await ctx.send(f"✅ Backup created successfully: `{backup_file.name}`\nLocation: `{backup_file}`")
+            else:
+                await ctx.send("No poll data to backup!")
+
+        except Exception as e:
+            await ctx.send(f"❌ Error creating backup: {e}")
+
+    @eventpoll.command(name="import")
+    async def import_backup(self, ctx: commands.Context, backup_filename: str, merge: bool = False):
+        """Import poll data from a backup file
+
+        By default, this will REPLACE all current poll data.
+        Use merge=True to merge the backup data with existing polls.
+
+        Example: [p]eventpoll import poll_backup_20240115_120000.json
+        Example: [p]eventpoll import manual_backup_20240115_120000.json True
+        """
+        try:
+            # Find the backup file
+            backup_file = self.backups_dir / backup_filename
+
+            if not backup_file.exists():
+                # Try to find it with pattern matching
+                matching_files = list(self.backups_dir.glob(f"*{backup_filename}*"))
+                if matching_files:
+                    backup_file = matching_files[0]
+                else:
+                    await ctx.send(f"❌ Backup file not found: `{backup_filename}`\n\nAvailable backups:")
+                    backup_files = sorted(self.backups_dir.glob("*.json"), reverse=True)
+                    if backup_files:
+                        file_list = "\n".join([f"- {f.name}" for f in backup_files[:10]])
+                        await ctx.send(f"```\n{file_list}\n```")
+                    else:
+                        await ctx.send("No backup files found!")
+                    return
+
+            # Read backup file
+            with open(backup_file, 'r', encoding='utf-8') as f:
+                backup_data = json.load(f)
+
+            # Validate backup data
+            if "guilds" not in backup_data:
+                await ctx.send("❌ Invalid backup file format!")
+                return
+
+            # Import data
+            imported_count = 0
+            skipped_count = 0
+
+            for guild_id_str, guild_backup in backup_data["guilds"].items():
+                guild_id = int(guild_id_str)
+
+                # Check if this is the current guild or if user has permission
+                if guild_id != ctx.guild.id and not await self.bot.is_owner(ctx.author):
+                    skipped_count += 1
+                    continue
+
+                # Get current polls
+                if merge:
+                    # Merge mode: keep existing polls and add new ones
+                    async with self.config.guild_from_id(guild_id).polls() as polls:
+                        backup_polls = guild_backup.get("polls", {})
+                        for poll_id, poll_data in backup_polls.items():
+                            if poll_id not in polls:
+                                polls[poll_id] = poll_data
+                                imported_count += 1
+                            else:
+                                skipped_count += 1
+                else:
+                    # Replace mode: replace all polls
+                    backup_polls = guild_backup.get("polls", {})
+                    await self.config.guild_from_id(guild_id).polls.set(backup_polls)
+                    imported_count += len(backup_polls)
+
+            backup_timestamp = backup_data.get("timestamp", "unknown")
+            await ctx.send(
+                f"✅ Import completed!\n"
+                f"- Backup timestamp: {backup_timestamp}\n"
+                f"- Polls imported: {imported_count}\n"
+                f"- Polls skipped: {skipped_count}\n"
+                f"- Mode: {'Merge' if merge else 'Replace'}"
+            )
+
+        except json.JSONDecodeError:
+            await ctx.send("❌ Invalid JSON format in backup file!")
+        except Exception as e:
+            await ctx.send(f"❌ Error importing backup: {e}")
+
+    @eventpoll.command(name="listbackups")
+    async def list_backups(self, ctx: commands.Context):
+        """List all available backup files
+
+        Example: [p]eventpoll listbackups
+        """
+        try:
+            backup_files = sorted(self.backups_dir.glob("*.json"), reverse=True)
+
+            if not backup_files:
+                await ctx.send("No backup files found!")
+                return
+
+            # Group backups by type
+            daily_backups = [f for f in backup_files if f.name.startswith("poll_backup_")]
+            manual_backups = [f for f in backup_files if f.name.startswith("manual_backup_")]
+            overwrite_backups = [f for f in backup_files if f.name.startswith("overwrite_backup_")]
+
+            embed = discord.Embed(
+                title="📦 Available Backups",
+                color=discord.Color(0xcb4449)
+            )
+
+            if daily_backups:
+                daily_list = "\n".join([f"- `{f.name}` ({self._format_file_size(f)})" for f in daily_backups[:5]])
+                embed.add_field(
+                    name=f"🕐 Daily Backups (Last 5 of {len(daily_backups)})",
+                    value=daily_list,
+                    inline=False
+                )
+
+            if manual_backups:
+                manual_list = "\n".join([f"- `{f.name}` ({self._format_file_size(f)})" for f in manual_backups[:5]])
+                embed.add_field(
+                    name=f"📝 Manual Backups (Last 5 of {len(manual_backups)})",
+                    value=manual_list,
+                    inline=False
+                )
+
+            if overwrite_backups:
+                overwrite_list = "\n".join([f"- `{f.name}` ({self._format_file_size(f)})" for f in overwrite_backups[:5]])
+                embed.add_field(
+                    name=f"🔄 Overwrite Backups (Last 5 of {len(overwrite_backups)})",
+                    value=overwrite_list,
+                    inline=False
+                )
+
+            embed.set_footer(text=f"Total backups: {len(backup_files)} | Location: {self.backups_dir}")
+
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            await ctx.send(f"❌ Error listing backups: {e}")
+
+    def _format_file_size(self, file_path: Path) -> str:
+        """Format file size in human-readable format"""
+        size = file_path.stat().st_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.1f}{unit}"
+            size /= 1024.0
+        return f"{size:.1f}TB"
+
     async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
         """Create a calendar-only embed with image and poll link
 
@@ -474,7 +812,7 @@ class EventPolling(commands.Cog):
         """Create calendar-style embed showing winning times"""
         embed = discord.Embed(
             title=f"📅 {title}",
-            description="Vote for your preferred times by clicking the buttons below!",
+            description="Click an event button below to vote for your preferred times.\nUse the 🏆 **Results** button to view current voting results.",
             color=discord.Color(0xcb4449)
         )
 
@@ -1394,10 +1732,11 @@ class EventPolling(commands.Cog):
         Returns:
             (has_conflict: bool, conflict_message: Optional[str])
         """
-        # First check if the time is blocked
-        is_blocked, block_msg = self.is_time_blocked(new_day, new_time, event_name)
-        if is_blocked:
-            return True, block_msg
+        # First check if the time is blocked (skip for Party events)
+        if event_name != "Party":
+            is_blocked, block_msg = self.is_time_blocked(new_day, new_time, event_name)
+            if is_blocked:
+                return True, block_msg
 
         # Get time range for new event
         new_start, new_end = self._get_event_time_range(event_name, new_time)
