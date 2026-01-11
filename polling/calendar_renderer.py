@@ -82,10 +82,10 @@ class CalendarRenderer:
 
         # Try to load a nice font with larger sizes for better clarity
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 42)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 38)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 62)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 58)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 66)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 70)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -99,21 +99,22 @@ class CalendarRenderer:
             color: RGB color tuple
 
         Returns:
-            Faded RGB color tuple (formula: original * 0.4 + background * 0.6)
+            Faded RGB color tuple (formula: original * 0.2 + background * 0.8)
         """
         r, g, b = color
         bg_r, bg_g, bg_b = self.BG_COLOR
 
-        # Blend color with background (40% original, 60% background)
-        faded_r = int(r * 0.4 + bg_r * 0.6)
-        faded_g = int(g * 0.4 + bg_g * 0.6)
-        faded_b = int(b * 0.4 + bg_b * 0.6)
+        # Blend color with background (20% original, 80% background)
+        faded_r = int(r * 0.2 + bg_r * 0.8)
+        faded_g = int(g * 0.2 + bg_g * 0.8)
+        faded_b = int(b * 0.2 + bg_b * 0.8)
 
         return (faded_r, faded_g, faded_b)
 
     def _draw_dotted_border(self, draw: ImageDraw, x1: int, y1: int, x2: int, y2: int,
                            color: Tuple[int, int, int], dash_length: int = 5,
-                           skip_right: bool = False, skip_bottom: bool = False):
+                           skip_right: bool = False, skip_bottom: bool = False,
+                           skip_top: bool = False):
         """Draw a solid, thin border around a rectangle
 
         Args:
@@ -124,9 +125,11 @@ class CalendarRenderer:
             dash_length: Unused (kept for compatibility)
             skip_right: Skip drawing the right border
             skip_bottom: Skip drawing the bottom border
+            skip_top: Skip drawing the top border
         """
-        # Top border
-        draw.line([(x1, y1), (x2, y1)], fill=color, width=1)
+        # Top border (if not skipped)
+        if not skip_top:
+            draw.line([(x1, y1), (x2, y1)], fill=color, width=1)
 
         # Left border
         draw.line([(x1, y1), (x1, y2)], fill=color, width=1)
@@ -457,11 +460,11 @@ class CalendarRenderer:
                 outline=None
             )
 
-            # Draw dotted border (skip right border except for last column)
+            # Draw border (skip right border except for last column)
             skip_right = (i < len(days) - 1)
             self._draw_dotted_border(
                 draw, x, y, x + self.CELL_WIDTH - 1, y + self.HEADER_HEIGHT - 1,
-                self.GRID_COLOR, skip_right=skip_right
+                self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False
             )
 
             # Draw day text (centered)
@@ -570,32 +573,44 @@ class CalendarRenderer:
                         outline=None
                     )
 
-                # Determine if we should skip right/bottom borders
+                # Determine if we should skip right/bottom/top borders
                 current_content = cell_contents.get((row, col), ())
                 next_col_content = cell_contents.get((row, col + 1), None)
                 next_row_content = cell_contents.get((row + 1, col), None)
+                prev_row_content = cell_contents.get((row - 1, col), None)
 
-                # Skip right border if next column has same content (but always draw last column)
-                skip_right = (next_col_content == current_content) and (col < len(days) - 1)
+                # Skip right border if next column has same content OR if this is the last column
+                skip_right = ((next_col_content == current_content) and (col < len(days) - 1)) or (col == len(days) - 1)
 
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
 
-                # Skip bottom border if next row shares any multi-slot event (but always draw last row)
-                has_common_multislot = False
+                # Skip bottom border if next row shares any multi-slot event OR if this is the last row
+                has_common_multislot_below = False
                 if next_row_content and current_content and row < len(time_slots) - 1:
                     # Check if any multi-slot event appears in both cells
-                    has_common_multislot = any(
+                    has_common_multislot_below = any(
                         event in next_row_content
                         for event in current_content
                         if event in multi_slot_events
                     )
-                skip_bottom = has_common_multislot
+                skip_bottom = has_common_multislot_below or (row == len(time_slots) - 1)
+
+                # Skip top border if previous row shares any multi-slot event (but always draw first row)
+                has_common_multislot_above = False
+                if prev_row_content and current_content and row > 0:
+                    # Check if any multi-slot event appears in both cells
+                    has_common_multislot_above = any(
+                        event in prev_row_content
+                        for event in current_content
+                        if event in multi_slot_events
+                    )
+                skip_top = has_common_multislot_above
 
                 # Draw dotted border
                 self._draw_dotted_border(
                     draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
-                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom
+                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom, skip_top=skip_top
                 )
 
                 # Draw events in this cell (support up to 2 events)

@@ -864,10 +864,10 @@ class EventPolling(commands.Cog):
         poll_data = polls[poll_id]
 
         # Create calendar embed and image
-        embed, calendar_file = await self._create_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        embed, calendar_file, view = await self._create_calendar_embed(poll_data, ctx.guild.id, poll_id)
 
-        # Send the calendar message with image
-        calendar_msg = await ctx.send(embed=embed, file=calendar_file)
+        # Send the calendar message with image and timezone button
+        calendar_msg = await ctx.send(embed=embed, file=calendar_file, view=view)
 
         # Store calendar message ID in poll data for auto-updating
         async with self.config.guild(ctx.guild).polls() as polls:
@@ -997,10 +997,10 @@ class EventPolling(commands.Cog):
             return
 
         # Create calendar embed and image
-        embed, calendar_file = await self._create_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        embed, calendar_file, view = await self._create_calendar_embed(poll_data, ctx.guild.id, poll_id)
 
-        # Update the message
-        await message.edit(embed=embed, attachments=[calendar_file])
+        # Update the message with timezone button
+        await message.edit(embed=embed, attachments=[calendar_file], view=view)
 
         # Store calendar message ID in poll data for auto-updating
         async with self.config.guild(ctx.guild).polls() as polls:
@@ -1461,12 +1461,14 @@ class EventPolling(commands.Cog):
             size /= 1024.0
         return f"{size:.1f}TB"
 
-    async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
+    async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File, discord.ui.View]:
         """Create a live calendar embed with image and poll link (updates on every vote)
 
         Returns:
-            Tuple of (embed, file) where file is the calendar image
+            Tuple of (embed, file, view) where file is the calendar image and view contains timezone button
         """
+        from .views import CalendarTimezoneView
+
         title = poll_data["title"]
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
@@ -1474,7 +1476,6 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Live Calendar",
-            description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
             color=discord.Color(0xcb4449)
         )
 
@@ -1497,7 +1498,10 @@ class EventPolling(commands.Cog):
         calendar_file = discord.File(image_buffer, filename="calendar.png")
         embed.set_image(url="attachment://calendar.png")
 
-        return embed, calendar_file
+        # Create view with timezone button
+        view = CalendarTimezoneView(self, guild_id, poll_id)
+
+        return embed, calendar_file, view
 
     async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
         """Create a weekly calendar embed with image and poll link (updates only on Monday 10AM)
@@ -1549,8 +1553,8 @@ class EventPolling(commands.Cog):
                 channel = guild.get_channel(cal_msg_data["channel_id"])
                 if channel:
                     message = await channel.fetch_message(cal_msg_data["message_id"])
-                    updated_embed, calendar_file = await self._create_calendar_embed(poll_data, guild.id, poll_id)
-                    await message.edit(embed=updated_embed, attachments=[calendar_file])
+                    updated_embed, calendar_file, view = await self._create_calendar_embed(poll_data, guild.id, poll_id)
+                    await message.edit(embed=updated_embed, attachments=[calendar_file], view=view)
             except Exception:
                 # Silently fail if we can't update a calendar message
                 pass
@@ -1583,7 +1587,6 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title=f"📊 Poll Results: {title}",
-            description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
             color=discord.Color(0xcb4449)
         )
 
