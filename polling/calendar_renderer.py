@@ -565,6 +565,15 @@ class CalendarRenderer:
                             fill=bottom_color_faded,
                             outline=None
                         )
+
+                        # Draw dotted horizontal line between the two events
+                        mid_y = y + self.CELL_HEIGHT // 2
+                        dash_x = x
+                        dash_length = 5
+                        while dash_x < x + self.CELL_WIDTH:
+                            end_x = min(dash_x + dash_length, x + self.CELL_WIDTH)
+                            draw.line([(dash_x, mid_y), (end_x, mid_y)], fill=self.GRID_COLOR, width=1)
+                            dash_x += dash_length * 2
                     else:
                         # Single event: use single color (faded)
                         cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
