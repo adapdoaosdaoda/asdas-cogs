@@ -14,15 +14,15 @@ except ImportError:
 class CalendarRenderer:
     """Renders event calendar as an image"""
 
-    # Color scheme - Catppuccin Mocha
-    BG_COLOR = (30, 30, 46)  # Base - #1e1e2e
-    GRID_COLOR = (49, 50, 68)  # Surface0 - #313244
-    HEADER_BG = (49, 50, 68)  # Surface0 - #313244
-    HEADER_TEXT = (205, 214, 244)  # Text - #cdd6f4
-    TIME_TEXT = (186, 194, 222)  # Subtext1 - #bac2de
-    CELL_BG = (24, 24, 37)  # Mantle - #181825
-    BLOCKED_BG = (69, 71, 90)  # Surface1 - #45475a
-    LEGEND_BG = (49, 50, 68)  # Surface0 - #313244
+    # Color scheme - Catppuccin Frappé
+    BG_COLOR = (48, 52, 70)  # Base - #303446
+    GRID_COLOR = (65, 69, 89)  # Surface0 - #414559
+    HEADER_BG = (65, 69, 89)  # Surface0 - #414559
+    HEADER_TEXT = (198, 208, 245)  # Text - #c6d0f5
+    TIME_TEXT = (181, 191, 226)  # Subtext1 - #b5bfe2
+    CELL_BG = (41, 44, 60)  # Mantle - #292c3c
+    BLOCKED_BG = (81, 87, 109)  # Surface1 - #51576d
+    LEGEND_BG = (65, 69, 89)  # Surface0 - #414559
 
     # Event-specific cell background colors
     EVENT_BG_COLORS = {
@@ -81,11 +81,12 @@ class CalendarRenderer:
         self.timezone = timezone
 
         # Try to load a nice font with larger sizes for better clarity
+        # Use layout_engine for better rendering if available
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 62)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 58)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 66)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 70)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 62, layout_engine=ImageFont.Layout.BASIC)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 58, layout_engine=ImageFont.Layout.BASIC)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 66, layout_engine=ImageFont.Layout.BASIC)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 70, layout_engine=ImageFont.Layout.BASIC)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -99,15 +100,15 @@ class CalendarRenderer:
             color: RGB color tuple
 
         Returns:
-            Faded RGB color tuple (formula: original * 0.2 + background * 0.8)
+            Faded RGB color tuple (formula: original * 0.35 + background * 0.65)
         """
         r, g, b = color
         bg_r, bg_g, bg_b = self.BG_COLOR
 
-        # Blend color with background (20% original, 80% background)
-        faded_r = int(r * 0.2 + bg_r * 0.8)
-        faded_g = int(g * 0.2 + bg_g * 0.8)
-        faded_b = int(b * 0.2 + bg_b * 0.8)
+        # Blend color with background (35% original, 65% background)
+        faded_r = int(r * 0.35 + bg_r * 0.65)
+        faded_g = int(g * 0.35 + bg_g * 0.65)
+        faded_b = int(b * 0.35 + bg_b * 0.65)
 
         return (faded_r, faded_g, faded_b)
 
