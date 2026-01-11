@@ -476,8 +476,11 @@ class EventPolling(commands.Cog):
                     if event_name not in calendar_data:
                         calendar_data[event_name] = {}
                     if event_info["slots"] > 1:
-                        # Multi-slot: winner_day is the specific day
-                        calendar_data[event_name][winner_day] = winner_time
+                        # Multi-slot: map slot_index to the specific day
+                        # slot_index corresponds to position in event_info["days"]
+                        if slot_index < len(event_info["days"]):
+                            actual_day = event_info["days"][slot_index]
+                            calendar_data[event_name][actual_day] = winner_time
                     else:
                         # Single slot: appears on all configured days
                         for day in event_info["days"]:

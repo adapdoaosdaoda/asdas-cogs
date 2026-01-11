@@ -544,6 +544,29 @@ class FixedDaysModal(discord.ui.View):
             )
             return
 
+        # Check for conflicts for each selected day/time
+        event_info = self.events[self.event_name]
+        days = event_info["days"]
+
+        for day, time in self.selected_times.items():
+            # Get the slot index for this day
+            slot_index = days.index(day) if day in days else None
+
+            has_conflict, conflict_msg = self.cog.check_time_conflict(
+                self.user_selections,
+                self.event_name,
+                day,
+                time,
+                slot_index
+            )
+            if has_conflict:
+                await interaction.response.send_message(
+                    f"⚠️ **Conflict detected for {day}!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                    view=DismissibleView(),
+                    ephemeral=True
+                )
+                return
+
         # Save the selections
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
