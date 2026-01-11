@@ -16,7 +16,7 @@ class CalendarRenderer:
 
     # Color scheme
     BG_COLOR = (45, 52, 64)  # Dark background
-    GRID_COLOR = (100, 110, 130)  # Grid lines
+    GRID_COLOR = (56, 64, 77)  # Grid lines at 20% opacity
     HEADER_BG = (60, 70, 90)  # Header background
     HEADER_TEXT = (255, 255, 255)  # White header text
     TIME_TEXT = (200, 210, 230)  # Light gray time text
@@ -82,10 +82,10 @@ class CalendarRenderer:
 
         # Try to load a nice font with larger sizes for better clarity
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 42)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 38)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -598,8 +598,13 @@ class CalendarRenderer:
 
                 # Skip right border if next column has same content (but always draw last column)
                 skip_right = (next_col_content == current_content) and (col < len(days) - 1)
-                # Skip bottom border if next row has same content (but always draw last row)
-                skip_bottom = (next_row_content == current_content) and (row < len(time_slots) - 1)
+
+                # Skip bottom border if next row shares any common event types (but always draw last row)
+                has_common_events = False
+                if next_row_content and current_content and row < len(time_slots) - 1:
+                    # Check if any event appears in both cells
+                    has_common_events = any(event in next_row_content for event in current_content)
+                skip_bottom = has_common_events
 
                 # Draw dotted border
                 self._draw_dotted_border(
