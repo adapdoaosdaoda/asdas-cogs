@@ -1056,6 +1056,62 @@ class WeeklyEventModal(discord.ui.View):
         """Handle timeout"""
         pass
 
+class EventResultsView(discord.ui.View):
+    """View with Return and Close buttons for individual event results"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, winning_times: Dict, selections: Dict, events: Dict):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.winning_times = winning_times
+        self.selections = selections
+        self.events = events
+
+        # Return button
+        return_btn = discord.ui.Button(
+            label="Return to Results",
+            style=discord.ButtonStyle.primary,
+            emoji="↩️"
+        )
+        return_btn.callback = self._return_to_results
+        self.add_item(return_btn)
+
+        # Close button
+        close_btn = discord.ui.Button(
+            label="Close",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌"
+        )
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
+    async def _return_to_results(self, interaction: discord.Interaction):
+        """Return to main results view"""
+        # Dismiss current event results message
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
+        # Recreate the results view
+        intro_text = self.cog.format_results_intro(self.selections)
+        results_view = ResultsCategoryView(
+            self.cog, self.guild_id, self.poll_id,
+            self.winning_times, self.selections, self.events
+        )
+
+        # Send new results message
+        await interaction.followup.send(
+            intro_text,
+            view=results_view,
+            ephemeral=True
+        )
+
+    async def _close(self, interaction: discord.Interaction):
+        """Close the event results"""
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
+
 class ResultsCategoryView(discord.ui.View):
     """View with buttons for each event category to show results"""
 
@@ -1099,19 +1155,46 @@ class ResultsCategoryView(discord.ui.View):
             if len([item for item in self.children if getattr(item, 'row', None) == row]) >= 5:
                 row += 1
 
+        # Add close button on the last row
+        close_btn = discord.ui.Button(
+            label="Close",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌",
+            row=row
+        )
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
     def _create_results_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):
+            # Dismiss the results overview message
+            await interaction.response.edit_message(view=None)
+            await interaction.delete_original_response()
+
             # Format results for this event
             event_results = self.cog.format_event_results(event_name, self.winning_times, self.selections)
 
-            # Send results as ephemeral message (only visible to user who clicked)
-            await interaction.response.send_message(
+            # Create view with Return and Close buttons
+            event_results_view = EventResultsView(
+                self.cog, self.guild_id, self.poll_id,
+                self.winning_times, self.selections, self.events
+            )
+
+            # Send event results as new ephemeral message
+            await interaction.followup.send(
                 content=event_results,
+                view=event_results_view,
                 ephemeral=True
             )
 
         return callback
 
+    async def _close(self, interaction: discord.Interaction):
+        """Close the results view"""
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
     async def on_timeout(self):
         """Handle timeout"""
         pass
+
