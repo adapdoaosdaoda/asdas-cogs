@@ -1318,11 +1318,46 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
 
                 converted_calendar_data[event_name][new_day] = converted_time
 
+        # Also convert blocked times (Guild War) to user timezone
+        converted_blocked_times = []
+        for blocked in self.cog.blocked_times:
+            # Parse start and end times
+            start_hour, start_minute = map(int, blocked['start'].split(':'))
+            end_hour, end_minute = map(int, blocked['end'].split(':'))
+
+            # Convert start time
+            dt_start_server = server_tz.localize(datetime(2024, 1, 1, start_hour, start_minute))
+            dt_start_user = dt_start_server.astimezone(user_tz)
+
+            # Convert end time
+            dt_end_server = server_tz.localize(datetime(2024, 1, 1, end_hour, end_minute))
+            dt_end_user = dt_end_server.astimezone(user_tz)
+
+            # Handle day changes
+            day_offset_start = (dt_start_user.day - dt_start_server.day) % 7
+            day_offset_end = (dt_end_user.day - dt_end_server.day) % 7
+            days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+            # Convert start day
+            orig_day = blocked['day']
+            if orig_day in days_list:
+                day_idx = days_list.index(orig_day)
+                new_day_idx = (day_idx + day_offset_start) % 7
+                new_day = days_list[new_day_idx]
+            else:
+                new_day = orig_day
+
+            converted_blocked_times.append({
+                'day': new_day,
+                'start': dt_start_user.strftime("%H:%M"),
+                'end': dt_end_user.strftime("%H:%M")
+            })
+
         # Generate calendar image with the user's timezone
         image_buffer = user_tz_renderer.render_calendar(
             converted_calendar_data,
             self.cog.events,
-            self.cog.blocked_times,
+            converted_blocked_times,
             len(selections)
         )
         

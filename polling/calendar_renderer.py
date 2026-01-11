@@ -116,7 +116,7 @@ class CalendarRenderer:
                            color: Tuple[int, int, int], dash_length: int = 5,
                            skip_right: bool = False, skip_bottom: bool = False,
                            skip_top: bool = False, skip_left: bool = False):
-        """Draw a solid, thin border around a rectangle
+        """Draw a solid, thick border around a rectangle
 
         Args:
             draw: ImageDraw object
@@ -131,19 +131,19 @@ class CalendarRenderer:
         """
         # Top border (if not skipped)
         if not skip_top:
-            draw.line([(x1, y1), (x2, y1)], fill=color, width=1)
+            draw.line([(x1, y1), (x2, y1)], fill=color, width=2)
 
         # Left border (if not skipped)
         if not skip_left:
-            draw.line([(x1, y1), (x1, y2)], fill=color, width=1)
+            draw.line([(x1, y1), (x1, y2)], fill=color, width=2)
 
         # Right border (if not skipped)
         if not skip_right:
-            draw.line([(x2, y1), (x2, y2)], fill=color, width=1)
+            draw.line([(x2, y1), (x2, y2)], fill=color, width=2)
 
         # Bottom border (if not skipped)
         if not skip_bottom:
-            draw.line([(x1, y2), (x2, y2)], fill=color, width=1)
+            draw.line([(x1, y2), (x2, y2)], fill=color, width=2)
 
     def render_calendar(
         self,
@@ -577,42 +577,39 @@ class CalendarRenderer:
                         outline=None
                     )
 
-                # Determine if we should skip right/bottom/top borders
+                # Determine if we should skip borders
                 current_content = cell_contents.get((row, col), ())
-                next_col_content = cell_contents.get((row, col + 1), None)
                 next_row_content = cell_contents.get((row + 1, col), None)
                 prev_row_content = cell_contents.get((row - 1, col), None)
 
-                # Skip right border if next column has same content OR if this is the last column
-                skip_right = ((next_col_content == current_content) and (col < len(days) - 1)) or (col == len(days) - 1)
+                # Horizontal borders: skip to avoid double-drawing (each cell draws left, last column also draws right)
+                skip_left = (col > 0)
+                skip_right = (col < len(days) - 1)
 
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
 
-                # Skip bottom border if next row shares any multi-slot event OR if this is the last row
+                # Vertical borders: skip ONLY if same multi-slot event is above/below
+                # Skip bottom border if next row shares any multi-slot event
                 has_common_multislot_below = False
-                if next_row_content and current_content and row < len(time_slots) - 1:
-                    # Check if any multi-slot event appears in both cells
+                if next_row_content and current_content:
                     has_common_multislot_below = any(
                         event in next_row_content
                         for event in current_content
                         if event in multi_slot_events
                     )
+                # Also skip if this is the last row (to avoid drawing outside grid)
                 skip_bottom = has_common_multislot_below or (row == len(time_slots) - 1)
 
-                # Skip top border if previous row shares any multi-slot event (but always draw first row)
+                # Skip top border if previous row shares any multi-slot event
                 has_common_multislot_above = False
-                if prev_row_content and current_content and row > 0:
-                    # Check if any multi-slot event appears in both cells
+                if prev_row_content and current_content:
                     has_common_multislot_above = any(
                         event in prev_row_content
                         for event in current_content
                         if event in multi_slot_events
                     )
                 skip_top = has_common_multislot_above
-
-                # Skip left border for all columns except the first
-                skip_left = (col > 0)
 
                 # Draw border
                 self._draw_dotted_border(
