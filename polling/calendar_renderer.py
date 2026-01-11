@@ -14,15 +14,15 @@ except ImportError:
 class CalendarRenderer:
     """Renders event calendar as an image"""
 
-    # Color scheme
-    BG_COLOR = (45, 52, 64)  # Dark background
-    GRID_COLOR = (56, 64, 77)  # Grid lines at 20% opacity
-    HEADER_BG = (60, 70, 90)  # Header background
-    HEADER_TEXT = (255, 255, 255)  # White header text
-    TIME_TEXT = (200, 210, 230)  # Light gray time text
-    CELL_BG = (55, 62, 75)  # Default cell background
-    BLOCKED_BG = (90, 70, 50)  # Guild War cell background (Orangeish)
-    LEGEND_BG = (50, 58, 70)  # Legend background
+    # Color scheme - Catppuccin Mocha
+    BG_COLOR = (30, 30, 46)  # Base - #1e1e2e
+    GRID_COLOR = (42, 42, 59)  # Surface2 at 20% opacity - #585b70
+    HEADER_BG = (49, 50, 68)  # Surface0 - #313244
+    HEADER_TEXT = (205, 214, 244)  # Text - #cdd6f4
+    TIME_TEXT = (186, 194, 222)  # Subtext1 - #bac2de
+    CELL_BG = (24, 24, 37)  # Mantle - #181825
+    BLOCKED_BG = (69, 71, 90)  # Surface1 - #45475a
+    LEGEND_BG = (49, 50, 68)  # Surface0 - #313244
 
     # Event-specific cell background colors
     EVENT_BG_COLORS = {
