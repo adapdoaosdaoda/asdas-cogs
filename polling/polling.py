@@ -9,8 +9,10 @@ import tempfile
 import re
 import json
 from pathlib import Path
+import importlib
 
 from .views import EventPollView
+from . import calendar_renderer
 from .calendar_renderer import CalendarRenderer
 
 
@@ -113,6 +115,12 @@ class EventPolling(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded"""
+        # Reload the calendar_renderer module to ensure we have the latest code
+        importlib.reload(calendar_renderer)
+        from .calendar_renderer import CalendarRenderer
+        # Reinitialize the calendar renderer with the reloaded class
+        self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+
         self.backup_task.start()
         self.weekly_results_update.start()
         self.weekly_calendar_update.start()
