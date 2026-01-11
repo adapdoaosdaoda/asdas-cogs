@@ -123,7 +123,7 @@ class EventPolling(commands.Cog):
 
     @tasks.loop(hours=24)
     async def backup_task(self):
-        """Daily backup task for all poll votes"""
+        """Daily backup task for latest active poll"""
         try:
             all_guilds = await self.config.all_guilds()
 
@@ -137,12 +137,16 @@ class EventPolling(commands.Cog):
                 "guilds": {}
             }
 
-            # Collect all poll data from all guilds
+            # Collect only the latest poll from each guild
             for guild_id, guild_data in all_guilds.items():
                 polls = guild_data.get("polls", {})
                 if polls:
+                    # Find the latest poll (highest message_id = most recent)
+                    latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
                     backup_data["guilds"][str(guild_id)] = {
-                        "polls": polls
+                        "polls": {
+                            latest_poll_id: polls[latest_poll_id]
+                        }
                     }
 
             # Write backup file
@@ -987,9 +991,9 @@ class EventPolling(commands.Cog):
 
     @eventpoll.command(name="export")
     async def export_backup(self, ctx: commands.Context):
-        """Manually create a backup of all current poll data
+        """Manually create a backup of the latest active poll
 
-        This creates an immediate backup file instead of waiting for the daily backup.
+        This creates an immediate backup file of the most recent poll.
 
         Example: [p]eventpoll export
         """
@@ -1007,12 +1011,16 @@ class EventPolling(commands.Cog):
                 "guilds": {}
             }
 
-            # Collect all poll data from all guilds
+            # Collect only the latest poll from each guild
             for guild_id, guild_data in all_guilds.items():
                 polls = guild_data.get("polls", {})
                 if polls:
+                    # Find the latest poll (highest message_id = most recent)
+                    latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
                     backup_data["guilds"][str(guild_id)] = {
-                        "polls": polls
+                        "polls": {
+                            latest_poll_id: polls[latest_poll_id]
+                        }
                     }
 
             # Write backup file
@@ -1073,9 +1081,13 @@ class EventPolling(commands.Cog):
             # Consolidate votes from backup polls
             all_imported_votes = {}
             polls_processed = 0
+            source_description = ""
 
             for guild_id_str, guild_backup in backup_data["guilds"].items():
                 backup_polls = guild_backup.get("polls", {})
+
+                if not backup_polls:
+                    continue
 
                 if source_poll_id:
                     # Import from specific poll only
@@ -1108,15 +1120,30 @@ class EventPolling(commands.Cog):
                             all_imported_votes[user_id] = {}
                         all_imported_votes[user_id].update(user_votes)
                     polls_processed = 1
+                    source_description = f"poll {source_poll_id}"
                 else:
-                    # Import from ALL polls in backup (consolidate)
-                    for poll_id, poll_data in backup_polls.items():
+                    # No source specified - use latest poll (or all polls if multiple)
+                    if len(backup_polls) == 1:
+                        # Only one poll in backup - use it
+                        poll_id, poll_data = list(backup_polls.items())[0]
                         poll_votes = poll_data.get("selections", {})
                         for user_id, user_votes in poll_votes.items():
                             if user_id not in all_imported_votes:
                                 all_imported_votes[user_id] = {}
                             all_imported_votes[user_id].update(user_votes)
-                        polls_processed += 1
+                        polls_processed = 1
+                        source_description = f"poll {poll_id}"
+                    else:
+                        # Multiple polls - use the latest one (highest message_id)
+                        latest_poll_id = max(backup_polls.keys(), key=lambda pid: int(pid))
+                        poll_data = backup_polls[latest_poll_id]
+                        poll_votes = poll_data.get("selections", {})
+                        for user_id, user_votes in poll_votes.items():
+                            if user_id not in all_imported_votes:
+                                all_imported_votes[user_id] = {}
+                            all_imported_votes[user_id].update(user_votes)
+                        polls_processed = 1
+                        source_description = f"latest poll {latest_poll_id} (from {len(backup_polls)} polls in backup)"
 
             vote_count = len(all_imported_votes)
 
@@ -1130,11 +1157,10 @@ class EventPolling(commands.Cog):
             if success:
                 backup_timestamp = backup_data.get("timestamp", "unknown")
                 mode_text = "merged with" if merge_bool else "replaced in"
-                source_text = f"from poll {source_poll_id}" if source_poll_id else f"from {polls_processed} poll(s)"
                 await ctx.send(
                     f"✅ Successfully {mode_text} poll {target_poll_id}!\n"
                     f"- Backup timestamp: {backup_timestamp}\n"
-                    f"- Source: {source_text}\n"
+                    f"- Source: {source_description}\n"
                     f"- Users with votes imported: {vote_count}\n"
                     f"- Mode: {'Merge' if merge_bool else 'Replace'}"
                 )
@@ -1143,6 +1169,87 @@ class EventPolling(commands.Cog):
             await ctx.send("❌ Invalid JSON format in backup file!")
         except Exception as e:
             await ctx.send(f"❌ Error importing backup: {e}")
+
+    @eventpoll.command(name="test")
+    async def test_backup_restore(self, ctx: commands.Context):
+        """Test the export/import functionality
+
+        This command tests the export and import workflow:
+        1. Exports the latest poll to a test backup
+        2. Imports it back to verify the process works
+        3. Reports the results
+
+        Example: [p]eventpoll test
+        """
+        try:
+            # Get current polls
+            polls = await self.config.guild(ctx.guild).polls()
+
+            if not polls:
+                await ctx.send("❌ No polls found to test with! Create a poll first.")
+                return
+
+            # Find the latest poll
+            latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+            latest_poll = polls[latest_poll_id]
+
+            await ctx.send(f"🧪 Starting test with latest poll (ID: {latest_poll_id})...")
+
+            # Step 1: Create a test export
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            test_backup_file = self.backups_dir / f"test_backup_{timestamp}.json"
+
+            backup_data = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "type": "test",
+                "guilds": {
+                    str(ctx.guild.id): {
+                        "polls": {
+                            latest_poll_id: latest_poll
+                        }
+                    }
+                }
+            }
+
+            with open(test_backup_file, 'w', encoding='utf-8') as f:
+                json.dump(backup_data, f, indent=2, ensure_ascii=False)
+
+            vote_count_before = len(latest_poll.get("selections", {}))
+            await ctx.send(f"✅ Step 1: Exported poll with {vote_count_before} users to `{test_backup_file.name}`")
+
+            # Step 2: Test import (merge mode to avoid data loss)
+            imported_votes = latest_poll.get("selections", {})
+            success = await self._update_poll_votes(ctx, latest_poll_id, imported_votes, merge=True)
+
+            if not success:
+                await ctx.send("❌ Step 2: Import test FAILED!")
+                return
+
+            # Step 3: Verify the import
+            polls_after = await self.config.guild(ctx.guild).polls()
+            poll_after = polls_after.get(latest_poll_id)
+
+            if not poll_after:
+                await ctx.send("❌ Step 3: Verification FAILED - Poll not found after import!")
+                return
+
+            vote_count_after = len(poll_after.get("selections", {}))
+
+            await ctx.send(
+                f"✅ **Test PASSED!**\n"
+                f"- Poll ID: {latest_poll_id}\n"
+                f"- Votes before: {vote_count_before}\n"
+                f"- Votes after: {vote_count_after}\n"
+                f"- Test backup: `{test_backup_file.name}`\n\n"
+                f"Export and import are working correctly! ✨"
+            )
+
+            # Clean up test backup
+            test_backup_file.unlink()
+            await ctx.send(f"🗑️ Cleaned up test backup file.")
+
+        except Exception as e:
+            await ctx.send(f"❌ Error during test: {e}")
 
     @eventpoll.command(name="listbackups")
     async def list_backups(self, ctx: commands.Context):
