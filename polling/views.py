@@ -3,6 +3,26 @@ from typing import Optional, Dict, List
 from datetime import datetime
 
 
+class DismissibleView(discord.ui.View):
+    """Simple view with a close button for dismissible messages"""
+
+    def __init__(self):
+        super().__init__(timeout=180)
+
+        close_btn = discord.ui.Button(
+            label="Close",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌"
+        )
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
+    async def _close(self, interaction: discord.Interaction):
+        """Handle close button"""
+        await interaction.response.edit_message(view=None)
+        await interaction.delete_original_response()
+
+
 class EventPollView(discord.ui.View):
     """Main view with buttons for each event type"""
 
@@ -72,6 +92,7 @@ class EventPollView(discord.ui.View):
         if poll_id not in polls:
             await interaction.response.send_message(
                 "This poll is no longer active!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -264,6 +285,7 @@ class PartyModal(discord.ui.View):
         if not self.selected_time:
             await interaction.response.send_message(
                 "⚠️ Please select a time before saving!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -280,6 +302,7 @@ class PartyModal(discord.ui.View):
         if has_conflict:
             await interaction.response.send_message(
                 f"⚠️ **Conflict detected!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -348,6 +371,7 @@ class PartyModal(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+        await interaction.delete_original_response()
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
@@ -515,6 +539,7 @@ class FixedDaysModal(discord.ui.View):
         if not self.selected_times:
             await interaction.response.send_message(
                 "⚠️ Please select at least one time before saving!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -600,6 +625,7 @@ class FixedDaysModal(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+        await interaction.delete_original_response()
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
@@ -846,6 +872,7 @@ class WeeklyEventModal(discord.ui.View):
         if not has_slot1 and not has_slot2:
             await interaction.response.send_message(
                 "⚠️ Please select at least one complete slot (day + time) before saving!",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -862,6 +889,7 @@ class WeeklyEventModal(discord.ui.View):
             if has_conflict:
                 await interaction.response.send_message(
                     f"⚠️ **Conflict detected in Slot 1!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -877,6 +905,7 @@ class WeeklyEventModal(discord.ui.View):
             if has_conflict:
                 await interaction.response.send_message(
                     f"⚠️ **Conflict detected in Slot 2!**\n{conflict_msg}\n\nPlease choose a different time or clear your conflicting selection first.",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -961,6 +990,7 @@ class WeeklyEventModal(discord.ui.View):
             content="Selection cancelled.",
             view=None
         )
+        await interaction.delete_original_response()
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
