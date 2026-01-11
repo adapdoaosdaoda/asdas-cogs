@@ -2305,26 +2305,26 @@ class EventPolling(commands.Cog):
                 candidate = candidates[0]
                 occupied_by[slot_key] = candidate['event_name']
             else:
-                # Conflict! Check if Party can coexist with other events
-                party_candidate = None
+                # Conflict! Check if Party or Showdown can coexist with other events
+                coexist_candidate = None
                 other_candidates = []
 
                 for candidate in candidates:
-                    if candidate['event_name'] == 'Party':
-                        party_candidate = candidate
+                    if candidate['event_name'] in ['Party', 'Showdown']:
+                        coexist_candidate = candidate
                     else:
                         other_candidates.append(candidate)
 
-                # If Party is involved, allow coexistence (like Guild War)
-                # Party can share cells with any other event
-                if party_candidate and len(other_candidates) > 0:
-                    # Both Party and the other event(s) keep their times
+                # If Party or Showdown is involved, allow coexistence (like Guild War)
+                # Party and Showdown can share cells with any other event
+                if coexist_candidate and len(other_candidates) > 0:
+                    # Both Party/Showdown and the other event(s) keep their times
                     # Mark all as occupying this slot (for table splitting)
                     for candidate in candidates:
                         occupied_by[slot_key] = candidate['event_name']
                     # Don't mark anyone for reassignment - they can coexist
                 else:
-                    # Standard conflict resolution when Party is not involved
+                    # Standard conflict resolution when Party/Showdown is not involved
                     # Apply priority bonuses and resolve
                     max_priority = max(c['priority'] for c in candidates)
 
@@ -2428,8 +2428,8 @@ class EventPolling(commands.Cog):
 
                 if slot_key in occupied_by and occupied_by[slot_key] != event_name:
                     occupying_event = occupied_by[slot_key]
-                    # Party can coexist with any other event (for table splitting)
-                    if event_name == 'Party' or occupying_event == 'Party':
+                    # Party and Showdown can coexist with any other event (for table splitting)
+                    if event_name in ['Party', 'Showdown'] or occupying_event in ['Party', 'Showdown']:
                         continue
                     # Other events cannot share slots
                     return False
