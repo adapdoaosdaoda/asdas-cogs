@@ -463,9 +463,9 @@ class CalendarRenderer:
                 outline=None
             )
 
-            # Draw border (skip right border except for last column, skip left except first)
+            # Draw border (always draw left, only last column draws right to avoid double borders)
             skip_right = (i < len(days) - 1)
-            skip_left = (i > 0)
+            skip_left = False  # Always draw left border
             self._draw_dotted_border(
                 draw, x, y, x + self.CELL_WIDTH - 1, y + self.HEADER_HEIGHT - 1,
                 self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False, skip_left=skip_left
@@ -559,7 +559,7 @@ class CalendarRenderer:
 
                         # Draw solid horizontal line between the two events
                         mid_y = y + self.CELL_HEIGHT // 2
-                        draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=1)
+                        draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=2)
                     else:
                         # Single event: use single color (faded)
                         cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
@@ -582,9 +582,9 @@ class CalendarRenderer:
                 next_row_content = cell_contents.get((row + 1, col), None)
                 prev_row_content = cell_contents.get((row - 1, col), None)
 
-                # Horizontal borders: skip to avoid double-drawing (each cell draws left, last column also draws right)
-                skip_left = (col > 0)
-                skip_right = (col < len(days) - 1)
+                # Horizontal borders: Always draw left, only last column draws right (avoids double borders)
+                skip_left = False  # Always draw left border
+                skip_right = (col < len(days) - 1)  # Skip right for all except last column
 
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
@@ -598,8 +598,7 @@ class CalendarRenderer:
                         for event in current_content
                         if event in multi_slot_events
                     )
-                # Also skip if this is the last row (to avoid drawing outside grid)
-                skip_bottom = has_common_multislot_below or (row == len(time_slots) - 1)
+                skip_bottom = has_common_multislot_below  # Don't skip for last row
 
                 # Skip top border if previous row shares any multi-slot event
                 has_common_multislot_above = False
