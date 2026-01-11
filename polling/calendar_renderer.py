@@ -82,35 +82,78 @@ class CalendarRenderer:
 
         # Try to load a nice font with larger sizes for better clarity
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 34)
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
         except:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
             self.font_bold = ImageFont.load_default()
             self.font_large = ImageFont.load_default()
 
-    def _fade_color(self, color: Tuple[int, int, int], fade_amount: float = 0.4) -> Tuple[int, int, int]:
+    def _fade_color(self, color: Tuple[int, int, int]) -> Tuple[int, int, int]:
         """Fade a color by blending with background for better text readability
 
         Args:
             color: RGB color tuple
-            fade_amount: Amount to fade (0.0 = original, 1.0 = completely faded to background)
 
         Returns:
-            Faded RGB color tuple
+            Faded RGB color tuple (formula: original * 0.4 + background * 0.6)
         """
         r, g, b = color
         bg_r, bg_g, bg_b = self.BG_COLOR
 
-        # Blend color with background
-        faded_r = int(r * (1 - fade_amount) + bg_r * fade_amount)
-        faded_g = int(g * (1 - fade_amount) + bg_g * fade_amount)
-        faded_b = int(b * (1 - fade_amount) + bg_b * fade_amount)
+        # Blend color with background (40% original, 60% background)
+        faded_r = int(r * 0.4 + bg_r * 0.6)
+        faded_g = int(g * 0.4 + bg_g * 0.6)
+        faded_b = int(b * 0.4 + bg_b * 0.6)
 
         return (faded_r, faded_g, faded_b)
+
+    def _draw_dotted_border(self, draw: ImageDraw, x1: int, y1: int, x2: int, y2: int,
+                           color: Tuple[int, int, int], dash_length: int = 5,
+                           skip_right: bool = False, skip_bottom: bool = False):
+        """Draw a dotted border around a rectangle
+
+        Args:
+            draw: ImageDraw object
+            x1, y1: Top-left corner
+            x2, y2: Bottom-right corner
+            color: RGB color tuple
+            dash_length: Length of dashes in pixels
+            skip_right: Skip drawing the right border
+            skip_bottom: Skip drawing the bottom border
+        """
+        # Top border
+        x = x1
+        while x < x2:
+            end_x = min(x + dash_length, x2)
+            draw.line([(x, y1), (end_x, y1)], fill=color, width=1)
+            x += dash_length * 2
+
+        # Left border
+        y = y1
+        while y < y2:
+            end_y = min(y + dash_length, y2)
+            draw.line([(x1, y), (x1, end_y)], fill=color, width=1)
+            y += dash_length * 2
+
+        # Right border (if not skipped)
+        if not skip_right:
+            y = y1
+            while y < y2:
+                end_y = min(y + dash_length, y2)
+                draw.line([(x2, y), (x2, end_y)], fill=color, width=1)
+                y += dash_length * 2
+
+        # Bottom border (if not skipped)
+        if not skip_bottom:
+            x = x1
+            while x < x2:
+                end_x = min(x + dash_length, x2)
+                draw.line([(x, y2), (end_x, y2)], fill=color, width=1)
+                x += dash_length * 2
 
     def render_calendar(
         self,
@@ -427,7 +470,14 @@ class CalendarRenderer:
             draw.rectangle(
                 [x, y, x + self.CELL_WIDTH, y + self.HEADER_HEIGHT],
                 fill=self.HEADER_BG,
-                outline=self.GRID_COLOR
+                outline=None
+            )
+
+            # Draw dotted border (skip right border except for last column)
+            skip_right = (i < len(days) - 1)
+            self._draw_dotted_border(
+                draw, x, y, x + self.CELL_WIDTH - 1, y + self.HEADER_HEIGHT - 1,
+                self.GRID_COLOR, skip_right=skip_right
             )
 
             # Draw day text (centered)
@@ -455,12 +505,30 @@ class CalendarRenderer:
             "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"
         }
 
+        # Build a grid of cell contents for border optimization
+        cell_contents = {}  # (row, col) -> sorted event names tuple
+        for row, time_str in enumerate(time_slots):
+            for col, day in enumerate(days):
+                events_in_cell = []
+                if time_str in schedule and day in schedule[time_str]:
+                    events_in_cell = schedule[time_str][day]
+
+                if events_in_cell:
+                    sorted_events = self._sort_events_for_display(events_in_cell, time_str)
+                    event_names = tuple(event_name for _, event_name, _, _, _ in sorted_events)
+                    cell_contents[(row, col)] = event_names
+                else:
+                    cell_contents[(row, col)] = ()
+
         for row, time_str in enumerate(time_slots):
             y = start_y + (row * self.CELL_HEIGHT)
 
-            # Draw time label
-            time_x = self.PADDING + 5
-            time_y = y + (self.CELL_HEIGHT - 14) // 2
+            # Draw time label (right-aligned)
+            bbox = draw.textbbox((0, 0), time_str, font=self.font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            time_x = self.TIME_COL_WIDTH + self.PADDING - text_width - 10
+            time_y = y + (self.CELL_HEIGHT - text_height) // 2
             draw.text((time_x, time_y), time_str, fill=self.TIME_TEXT, font=self.font)
 
             # Draw cells for each day
@@ -497,6 +565,15 @@ class CalendarRenderer:
                             fill=bottom_color_faded,
                             outline=None
                         )
+
+                        # Draw dotted horizontal line between the two events
+                        mid_y = y + self.CELL_HEIGHT // 2
+                        dash_x = x
+                        dash_length = 5
+                        while dash_x < x + self.CELL_WIDTH:
+                            end_x = min(dash_x + dash_length, x + self.CELL_WIDTH)
+                            draw.line([(dash_x, mid_y), (end_x, mid_y)], fill=self.GRID_COLOR, width=1)
+                            dash_x += dash_length * 2
                     else:
                         # Single event: use single color (faded)
                         cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
@@ -513,6 +590,22 @@ class CalendarRenderer:
                         fill=self.CELL_BG,
                         outline=None
                     )
+
+                # Determine if we should skip right/bottom borders
+                current_content = cell_contents.get((row, col), ())
+                next_col_content = cell_contents.get((row, col + 1), None)
+                next_row_content = cell_contents.get((row + 1, col), None)
+
+                # Skip right border if next column has same content (but always draw last column)
+                skip_right = (next_col_content == current_content) and (col < len(days) - 1)
+                # Skip bottom border if next row has same content (but always draw last row)
+                skip_bottom = (next_row_content == current_content) and (row < len(time_slots) - 1)
+
+                # Draw dotted border
+                self._draw_dotted_border(
+                    draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
+                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom
+                )
 
                 # Draw events in this cell (support up to 2 events)
                 if events_in_cell:
