@@ -115,11 +115,13 @@ class EventPolling(commands.Cog):
         """Called when the cog is loaded"""
         self.backup_task.start()
         self.weekly_results_update.start()
+        self.weekly_calendar_update.start()
 
     def cog_unload(self):
         """Called when the cog is unloaded"""
         self.backup_task.cancel()
         self.weekly_results_update.cancel()
+        self.weekly_calendar_update.cancel()
 
     @tasks.loop(hours=24)
     async def backup_task(self):
@@ -199,6 +201,38 @@ class EventPolling(commands.Cog):
     @weekly_results_update.before_loop
     async def before_weekly_results_update(self):
         """Wait for bot to be ready before starting weekly results update task"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=24)
+    async def weekly_calendar_update(self):
+        """Update weekly calendar embeds every Monday at 10 AM server time"""
+        try:
+            # Get current datetime
+            now = datetime.utcnow()
+
+            # Check if it's Monday (0 = Monday) and 10 AM
+            if now.weekday() != 0 or now.hour != 10:
+                return
+
+            # Get all guilds
+            all_guilds = await self.config.all_guilds()
+
+            for guild_id, guild_data in all_guilds.items():
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+
+                polls = guild_data.get("polls", {})
+                for poll_id, poll_data in polls.items():
+                    # Update all weekly calendar messages for this poll
+                    await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
+
+        except Exception as e:
+            print(f"Error during weekly calendar update: {e}")
+
+    @weekly_calendar_update.before_loop
+    async def before_weekly_calendar_update(self):
+        """Wait for bot to be ready before starting weekly calendar update task"""
         await self.bot.wait_until_ready()
 
     async def _restore_poll_view(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
@@ -832,6 +866,45 @@ class EventPolling(commands.Cog):
 
         await ctx.tick()
 
+    @eventpoll.command(name="weeklycalendar")
+    async def post_weekly_calendar(self, ctx: commands.Context, message_id: str):
+        """Post a weekly calendar view for a poll (updates only on Monday at 10 AM)
+
+        Example: [p]eventpoll weeklycalendar 123456789
+        Or: [p]eventpoll weeklycalendar https://discord.com/channels/guild/channel/message
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+
+        # Create weekly calendar embed and image
+        embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+
+        # Send the weekly calendar message with image
+        calendar_msg = await ctx.send(embed=embed, file=calendar_file)
+
+        # Store weekly calendar message ID in poll data for auto-updating
+        async with self.config.guild(ctx.guild).polls() as polls:
+            if poll_id in polls:
+                if "weekly_calendar_messages" not in polls[poll_id]:
+                    polls[poll_id]["weekly_calendar_messages"] = []
+                polls[poll_id]["weekly_calendar_messages"].append({
+                    "message_id": calendar_msg.id,
+                    "channel_id": ctx.channel.id
+                })
+
+        await ctx.tick()
+
     @eventpoll.command(name="postresults")
     async def post_results(self, ctx: commands.Context, message_id: str):
         """Post an auto-updating results embed for a poll (updates every Monday at 10 AM)
@@ -929,6 +1002,65 @@ class EventPolling(commands.Cog):
                     })
 
         await ctx.send(f"✅ Successfully overwrote message with calendar: {message.jump_url}")
+
+    @eventpoll.command(name="overwriteweeklycalendar")
+    async def overwrite_weekly_calendar(self, ctx: commands.Context, message_id_to_overwrite: str, poll_message_id: str):
+        """Overwrite an existing bot message with a weekly calendar embed
+
+        Example: [p]eventpoll overwriteweeklycalendar 987654321 123456789
+        Or: [p]eventpoll overwriteweeklycalendar <message_link> <poll_link>
+        """
+        # Parse message IDs
+        target_msg_id = self._parse_message_id(message_id_to_overwrite)
+        poll_msg_id = self._parse_message_id(poll_message_id)
+
+        if target_msg_id is None or poll_msg_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(poll_msg_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+
+        # Try to fetch the target message
+        try:
+            message = await ctx.channel.fetch_message(target_msg_id)
+
+            # Verify it's a bot message
+            if message.author.id != self.bot.user.id:
+                await ctx.send("The specified message is not a bot message!")
+                return
+
+        except Exception as e:
+            await ctx.send(f"Error fetching message: {e}")
+            return
+
+        # Create weekly calendar embed and image
+        embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+
+        # Update the message
+        await message.edit(embed=embed, attachments=[calendar_file])
+
+        # Store weekly calendar message ID in poll data for auto-updating
+        async with self.config.guild(ctx.guild).polls() as polls:
+            if poll_id in polls:
+                if "weekly_calendar_messages" not in polls[poll_id]:
+                    polls[poll_id]["weekly_calendar_messages"] = []
+
+                # Check if this message is already tracked
+                weekly_calendar_messages = polls[poll_id]["weekly_calendar_messages"]
+                if not any(msg["message_id"] == target_msg_id for msg in weekly_calendar_messages):
+                    polls[poll_id]["weekly_calendar_messages"].append({
+                        "message_id": target_msg_id,
+                        "channel_id": ctx.channel.id
+                    })
+
+        await ctx.send(f"✅ Successfully overwrote message with weekly calendar: {message.jump_url}")
 
     @eventpoll.command(name="overwriteresults")
     async def overwrite_results(self, ctx: commands.Context, message_id_to_overwrite: str, poll_message_id: str):
@@ -1315,7 +1447,45 @@ class EventPolling(commands.Cog):
         return f"{size:.1f}TB"
 
     async def _create_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
-        """Create a calendar-only embed with image and poll link
+        """Create a live calendar embed with image and poll link (updates on every vote)
+
+        Returns:
+            Tuple of (embed, file) where file is the calendar image
+        """
+        title = poll_data["title"]
+        channel_id = poll_data["channel_id"]
+        message_id = poll_data["message_id"]
+
+        # Create embed
+        embed = discord.Embed(
+            title="📅 Live Calendar",
+            description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
+            color=discord.Color(0xcb4449)
+        )
+
+        # Get selections
+        selections = poll_data.get("selections", {})
+
+        # Calculate winning times using weighted point system
+        winning_times = self._calculate_winning_times_weighted(selections)
+
+        # Generate calendar image
+        calendar_data = self._prepare_calendar_data(winning_times)
+        image_buffer = self.calendar_renderer.render_calendar(
+            calendar_data,
+            self.events,
+            self.blocked_times,
+            len(selections)
+        )
+
+        # Create file attachment
+        calendar_file = discord.File(image_buffer, filename="calendar.png")
+        embed.set_image(url="attachment://calendar.png")
+
+        return embed, calendar_file
+
+    async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
+        """Create a weekly calendar embed with image and poll link (updates only on Monday 10AM)
 
         Returns:
             Tuple of (embed, file) where file is the calendar image
@@ -1356,7 +1526,7 @@ class EventPolling(commands.Cog):
         return embed, calendar_file
 
     async def _update_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
-        """Update all calendar messages associated with this poll"""
+        """Update all live calendar messages associated with this poll"""
         calendar_messages = poll_data.get("calendar_messages", [])
 
         for cal_msg_data in calendar_messages:
@@ -1368,6 +1538,21 @@ class EventPolling(commands.Cog):
                     await message.edit(embed=updated_embed, attachments=[calendar_file])
             except Exception:
                 # Silently fail if we can't update a calendar message
+                pass
+
+    async def _update_weekly_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
+        """Update all weekly calendar messages associated with this poll"""
+        weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
+
+        for cal_msg_data in weekly_calendar_messages:
+            try:
+                channel = guild.get_channel(cal_msg_data["channel_id"])
+                if channel:
+                    message = await channel.fetch_message(cal_msg_data["message_id"])
+                    updated_embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
+                    await message.edit(embed=updated_embed, attachments=[calendar_file])
+            except Exception:
+                # Silently fail if we can't update a weekly calendar message
                 pass
 
     async def _create_results_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> discord.Embed:
