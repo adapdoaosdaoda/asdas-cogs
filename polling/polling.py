@@ -1028,16 +1028,17 @@ class EventPolling(commands.Cog):
             await ctx.send(f"❌ Error creating backup: {e}")
 
     @eventpoll.command(name="import")
-    async def import_backup(self, ctx: commands.Context, backup_filename: str, poll_id: Optional[str] = None, merge: str = "false"):
+    async def import_backup(self, ctx: commands.Context, backup_filename: str, target_poll_id: str, merge: str = "false", source_poll_id: Optional[str] = None):
         """Import votes from a backup file into an existing poll
 
         This command imports VOTES (not entire polls) from a backup file.
-        You must specify the poll message ID to import votes into.
+        By default, it consolidates votes from ALL polls in the backup.
+        Optionally specify source_poll_id to import from a specific poll.
         Use merge="true" to merge imported votes with existing votes.
         Use merge="false" (default) to replace all existing votes.
 
-        Example: [p]eventpoll import poll_backup_20240115_120000.json 123456789 false
-        Example: [p]eventpoll import manual_backup_20240115_120000.json 987654321 true
+        Example: [p]eventpoll import backup.json 123456789 false
+        Example: [p]eventpoll import backup.json 123456789 true 987654321
         """
         # Parse merge parameter
         merge_bool = merge.lower() in ("true", "yes", "1", "y")
@@ -1069,68 +1070,72 @@ class EventPolling(commands.Cog):
                 await ctx.send("❌ Invalid backup file format!")
                 return
 
-            # Poll ID is required - we import votes into existing polls
-            if not poll_id:
-                await ctx.send("❌ You must specify a poll message ID to import votes into!\n"
-                              f"Usage: `{ctx.prefix}eventpoll import <filename> <poll_message_id> <merge>`\n"
-                              f"Example: `{ctx.prefix}eventpoll import backup.json 123456789 false`")
-                return
-
-            # Find the poll in the backup file
-            found_poll_data = None
-            backup_poll_id = None
+            # Consolidate votes from backup polls
+            all_imported_votes = {}
+            polls_processed = 0
 
             for guild_id_str, guild_backup in backup_data["guilds"].items():
                 backup_polls = guild_backup.get("polls", {})
 
-                # Check if poll_id exists in this guild's backup
-                if poll_id in backup_polls:
-                    found_poll_data = backup_polls[poll_id]
-                    backup_poll_id = poll_id
-                    break
+                if source_poll_id:
+                    # Import from specific poll only
+                    found_poll = None
 
-                # Also check if any poll in backup has matching message_id
-                for backup_pid, backup_pdata in backup_polls.items():
-                    if str(backup_pdata.get("message_id")) == poll_id:
-                        found_poll_data = backup_pdata
-                        backup_poll_id = backup_pid
-                        break
+                    # Check if source_poll_id exists directly
+                    if source_poll_id in backup_polls:
+                        found_poll = backup_polls[source_poll_id]
+                    else:
+                        # Check if any poll has matching message_id
+                        for backup_pid, backup_pdata in backup_polls.items():
+                            if str(backup_pdata.get("message_id")) == source_poll_id:
+                                found_poll = backup_pdata
+                                break
 
-                if found_poll_data:
-                    break
-
-            if not found_poll_data:
-                await ctx.send(f"❌ Poll ID {poll_id} not found in backup file!\n\n"
-                              "Available polls in backup:")
-                # Show available polls
-                for guild_id_str, guild_backup in backup_data["guilds"].items():
-                    backup_polls = guild_backup.get("polls", {})
-                    if backup_polls:
+                    if not found_poll:
+                        await ctx.send(f"❌ Source poll ID {source_poll_id} not found in backup file!\n\n"
+                                      "Available polls in backup:")
                         poll_list = "\n".join([
                             f"- Poll ID: {pid} (Message: {pdata.get('message_id')}, Title: {pdata.get('title', 'N/A')})"
                             for pid, pdata in backup_polls.items()
                         ])
                         await ctx.send(f"```\n{poll_list}\n```")
-                return
+                        return
 
-            # Extract votes from the backup poll
-            imported_votes = found_poll_data.get("selections", {})
-            vote_count = len(imported_votes)
+                    # Get votes from specific poll
+                    poll_votes = found_poll.get("selections", {})
+                    for user_id, user_votes in poll_votes.items():
+                        if user_id not in all_imported_votes:
+                            all_imported_votes[user_id] = {}
+                        all_imported_votes[user_id].update(user_votes)
+                    polls_processed = 1
+                else:
+                    # Import from ALL polls in backup (consolidate)
+                    for poll_id, poll_data in backup_polls.items():
+                        poll_votes = poll_data.get("selections", {})
+                        for user_id, user_votes in poll_votes.items():
+                            if user_id not in all_imported_votes:
+                                all_imported_votes[user_id] = {}
+                            all_imported_votes[user_id].update(user_votes)
+                        polls_processed += 1
+
+            vote_count = len(all_imported_votes)
 
             if vote_count == 0:
-                await ctx.send(f"⚠️ No votes found in the backup for poll {poll_id}!")
+                await ctx.send(f"⚠️ No votes found in the backup!")
                 return
 
-            # Import the votes into the target poll
-            success = await self._update_poll_votes(ctx, poll_id, imported_votes, merge_bool)
+            # Import the consolidated votes into the target poll
+            success = await self._update_poll_votes(ctx, target_poll_id, all_imported_votes, merge_bool)
 
             if success:
                 backup_timestamp = backup_data.get("timestamp", "unknown")
                 mode_text = "merged with" if merge_bool else "replaced in"
+                source_text = f"from poll {source_poll_id}" if source_poll_id else f"from {polls_processed} poll(s)"
                 await ctx.send(
-                    f"✅ Successfully {mode_text} poll {poll_id}!\n"
+                    f"✅ Successfully {mode_text} poll {target_poll_id}!\n"
                     f"- Backup timestamp: {backup_timestamp}\n"
-                    f"- Votes imported: {vote_count}\n"
+                    f"- Source: {source_text}\n"
+                    f"- Users with votes imported: {vote_count}\n"
                     f"- Mode: {'Merge' if merge_bool else 'Replace'}"
                 )
 
