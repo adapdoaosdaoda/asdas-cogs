@@ -1,6 +1,6 @@
 from redbot.core import commands, Config
 from redbot.core.bot import Red
-from redbot.core import tasks
+from discord.ext import tasks
 import discord
 from typing import Optional, Dict, List, Tuple, Union
 from datetime import datetime, time as dt_time, timedelta
