@@ -367,6 +367,61 @@ class EventPolling(commands.Cog):
         view.poll_id = poll_id
         await ctx.send(f"Successfully overwrote message with new poll: {message.jump_url}")
 
+    @eventpoll.command(name="updateembed")
+    async def update_embed(self, ctx: commands.Context, message_id: str):
+        """Update an existing poll embed without altering poll results
+
+        This refreshes the embed text and appearance while preserving all votes.
+        Useful for updating descriptions or fixing formatting.
+
+        Example: [p]eventpoll updateembed 123456789
+        Or: [p]eventpoll updateembed https://discord.com/channels/guild/channel/message
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+        title = poll_data["title"]
+
+        # Try to fetch the message
+        try:
+            channel = ctx.guild.get_channel(poll_data["channel_id"])
+            if not channel:
+                await ctx.send("Could not find the poll's channel!")
+                return
+
+            message = await channel.fetch_message(parsed_id)
+
+            # Verify it's a bot message
+            if message.author.id != self.bot.user.id:
+                await ctx.send("The specified message is not a bot message!")
+                return
+
+        except Exception as e:
+            await ctx.send(f"Error fetching message: {e}")
+            return
+
+        # Create the updated poll view
+        view = EventPollView(self, ctx.guild.id, poll_data["creator_id"], self.events, self.days_of_week, self.blocked_times)
+        view.poll_id = poll_id
+
+        # Create the updated embed (this will use the new text)
+        embed = await self._create_poll_embed(title, ctx.guild.id, poll_id)
+
+        # Update the existing message
+        await message.edit(embed=embed, view=view)
+
+        await ctx.send(f"✅ Successfully updated poll embed: {message.jump_url}")
+
     @eventpoll.command(name="results")
     async def show_results(self, ctx: commands.Context, message_id: str):
         """Show the results of a poll
@@ -812,7 +867,7 @@ class EventPolling(commands.Cog):
         """Create calendar-style embed showing winning times"""
         embed = discord.Embed(
             title=f"📅 {title}",
-            description="Click an event button below to vote for your preferred times.\nUse the 🏆 **Results** button to view current voting results.",
+            description="Click an event button below to vote for your preferred times.",
             color=discord.Color(0xcb4449)
         )
 
@@ -826,13 +881,12 @@ class EventPolling(commands.Cog):
         embed.add_field(
             name="📋 Events",
             value=(
-                "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
-                "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min, 1 slot)\n"
-                "🎉 **Party** - Daily (10 min, 1 slot)\n"
-                "⚡ **Breaking Army** - Weekly (1 hour, 2 slots)\n"
-                "🏆 **Showdown** - Weekly (1 hour, 2 slots)\n\n"
-                "🏰 **Guild Wars** - Sat & Sun 20:30-22:00 (blocked)\n"
-                "⚠️ Events cannot have conflicting times"
+                "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min)\n"
+                "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min)\n"
+                "🎉 **Party** - Daily (10 min)\n"
+                "⚡ **Breaking Army** - Weekly (60 min, 2 slots)\n"
+                "🏆 **Showdown** - Weekly (60 min, 2 slots)\n\n"
+                "🏰 **Guild War** - Sat & Sun 20:30-22:00 (blocked)"
             ),
             inline=False
         )
@@ -879,7 +933,7 @@ class EventPolling(commands.Cog):
 
         # Current Winners removed - use Results button to view
 
-        embed.set_footer(text=f"Total voters: {len(selections)}")
+        embed.set_footer(text="⚠️ Events (excluding party) cannot have conflicting times, click 🏆 Results for tiebreak rules")
 
         return embed
 

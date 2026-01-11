@@ -439,26 +439,49 @@ class CalendarRenderer:
 
                 # Determine cell background color based on events
                 if events_in_cell:
-                    # Get event names (handle 5-element tuple)
-                    event_names = [event_name for _, event_name, _, _, _ in events_in_cell]
+                    # Sort events first to determine display order
+                    sorted_events = self._sort_events_for_display(events_in_cell, time_str)
+                    event_names = [event_name for _, event_name, _, _, _ in sorted_events]
 
-                    # For combo cells with Party, use the non-Party event's color
-                    if len(event_names) > 1 and "Party" in event_names:
-                        # Find the non-Party event
-                        non_party_event = next((name for name in event_names if name != "Party"), None)
-                        cell_bg = self.EVENT_BG_COLORS.get(non_party_event, self.CELL_BG)
+                    # For cells with 2 events, draw dual-color split background
+                    if len(event_names) >= 2:
+                        # Top half: first event's color
+                        top_color = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                        draw.rectangle(
+                            [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT // 2],
+                            fill=top_color,
+                            outline=None
+                        )
+
+                        # Bottom half: second event's color
+                        bottom_color = self.EVENT_BG_COLORS.get(event_names[1], self.CELL_BG)
+                        draw.rectangle(
+                            [x, y + self.CELL_HEIGHT // 2, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
+                            fill=bottom_color,
+                            outline=None
+                        )
+
+                        # Draw outline around entire cell
+                        draw.rectangle(
+                            [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
+                            fill=None,
+                            outline=self.GRID_COLOR
+                        )
                     else:
-                        # Use the first event's color
+                        # Single event: use single color
                         cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                        draw.rectangle(
+                            [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
+                            fill=cell_bg,
+                            outline=self.GRID_COLOR
+                        )
                 else:
-                    cell_bg = self.CELL_BG
-
-                # Draw cell background
-                draw.rectangle(
-                    [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                    fill=cell_bg,
-                    outline=self.GRID_COLOR
-                )
+                    # Empty cell
+                    draw.rectangle(
+                        [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
+                        fill=self.CELL_BG,
+                        outline=self.GRID_COLOR
+                    )
 
                 # Draw events in this cell (support up to 2 events)
                 if events_in_cell:
