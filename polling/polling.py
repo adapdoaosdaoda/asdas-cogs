@@ -812,7 +812,7 @@ class EventPolling(commands.Cog):
         """Create calendar-style embed showing winning times"""
         embed = discord.Embed(
             title=f"📅 {title}",
-            description="Vote for your preferred times by clicking the buttons below!",
+            description="Click an event button below to vote for your preferred times.\nUse the 🏆 **Results** button to view current voting results.",
             color=discord.Color(0xcb4449)
         )
 

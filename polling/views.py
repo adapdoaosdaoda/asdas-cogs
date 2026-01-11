@@ -1124,7 +1124,10 @@ class ResultsCategoryView(discord.ui.View):
         self.selections = selections
         self.events = events
 
-        # Add close button first
+        # Row 0: Close, Hero's Realm, Sword Trial
+        # Row 1: Party, Breaking Army, Showdown
+
+        # Add close button first (row 0)
         close_btn = discord.ui.Button(
             label="Close",
             style=discord.ButtonStyle.secondary,
@@ -1134,22 +1137,27 @@ class ResultsCategoryView(discord.ui.View):
         close_btn.callback = self._close
         self.add_item(close_btn)
 
-        # Add buttons for each event
-        row = 0
+        # Add buttons for each event in specific rows
         for event_name, event_info in events.items():
-            # Determine button style based on event
+            # Determine button style and row based on event
             if "Hero's Realm" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 0
             elif "Sword Trial" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 0
             elif "Party" in event_name:
                 button_style = discord.ButtonStyle.success  # Green
+                row = 1
             elif "Breaking Army" in event_name:
                 button_style = discord.ButtonStyle.primary  # Blue
+                row = 1
             elif "Showdown" in event_name:
                 button_style = discord.ButtonStyle.danger  # Red
+                row = 1
             else:
                 button_style = discord.ButtonStyle.secondary  # Grey
+                row = 1
 
             button = discord.ui.Button(
                 label=event_name,
@@ -1160,10 +1168,6 @@ class ResultsCategoryView(discord.ui.View):
             )
             button.callback = self._create_results_callback(event_name)
             self.add_item(button)
-
-            # Increment row (max 5 items per row)
-            if len([item for item in self.children if getattr(item, 'row', None) == row]) >= 5:
-                row += 1
 
     def _create_results_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):
