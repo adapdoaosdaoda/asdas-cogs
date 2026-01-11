@@ -1124,6 +1124,16 @@ class ResultsCategoryView(discord.ui.View):
         self.selections = selections
         self.events = events
 
+        # Add close button first
+        close_btn = discord.ui.Button(
+            label="Close",
+            style=discord.ButtonStyle.secondary,
+            emoji="❌",
+            row=0
+        )
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
         # Add buttons for each event
         row = 0
         for event_name, event_info in events.items():
@@ -1154,16 +1164,6 @@ class ResultsCategoryView(discord.ui.View):
             # Increment row (max 5 items per row)
             if len([item for item in self.children if getattr(item, 'row', None) == row]) >= 5:
                 row += 1
-
-        # Add close button on the last row
-        close_btn = discord.ui.Button(
-            label="Close",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌",
-            row=row
-        )
-        close_btn.callback = self._close
-        self.add_item(close_btn)
 
     def _create_results_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):
