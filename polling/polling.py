@@ -1732,10 +1732,11 @@ class EventPolling(commands.Cog):
         Returns:
             (has_conflict: bool, conflict_message: Optional[str])
         """
-        # First check if the time is blocked
-        is_blocked, block_msg = self.is_time_blocked(new_day, new_time, event_name)
-        if is_blocked:
-            return True, block_msg
+        # First check if the time is blocked (skip for Party events)
+        if event_name != "Party":
+            is_blocked, block_msg = self.is_time_blocked(new_day, new_time, event_name)
+            if is_blocked:
+                return True, block_msg
 
         # Get time range for new event
         new_start, new_end = self._get_event_time_range(event_name, new_time)
