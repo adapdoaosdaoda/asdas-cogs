@@ -9,8 +9,10 @@ import tempfile
 import re
 import json
 from pathlib import Path
+import importlib
 
 from .views import EventPollView
+from . import calendar_renderer
 from .calendar_renderer import CalendarRenderer
 
 
@@ -113,6 +115,12 @@ class EventPolling(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded"""
+        # Reload the calendar_renderer module to ensure we have the latest code
+        importlib.reload(calendar_renderer)
+        from .calendar_renderer import CalendarRenderer
+        # Reinitialize the calendar renderer with the reloaded class
+        self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+
         self.backup_task.start()
         self.weekly_results_update.start()
         self.weekly_calendar_update.start()
@@ -122,6 +130,18 @@ class EventPolling(commands.Cog):
         self.backup_task.cancel()
         self.weekly_results_update.cancel()
         self.weekly_calendar_update.cancel()
+
+    def _get_embed_color(self, guild: discord.Guild) -> discord.Color:
+        """Get the bot's color in the guild, or fallback to default"""
+        try:
+            if guild and guild.me:
+                # Use the bot's top role color if it's not default
+                if guild.me.color != discord.Color.default():
+                    return guild.me.color
+        except:
+            pass
+        # Fallback to default color
+        return discord.Color(0xcb4449)
 
     @tasks.loop(hours=24)
     async def backup_task(self):
@@ -710,7 +730,7 @@ class EventPolling(commands.Cog):
         # Create results embed
         embed = discord.Embed(
             title=f"📊 Results: {poll_data['title']}",
-            color=discord.Color(0xcb4449)
+            color=self._get_embed_color(ctx.guild)
         )
 
         # Organize results by event
@@ -1418,7 +1438,7 @@ class EventPolling(commands.Cog):
 
             embed = discord.Embed(
                 title="📦 Available Backups",
-                color=discord.Color(0xcb4449)
+                color=self._get_embed_color(ctx.guild)
             )
 
             if daily_backups:
@@ -1473,10 +1493,13 @@ class EventPolling(commands.Cog):
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
 
+        # Get guild for color
+        guild = self.bot.get_guild(guild_id)
+
         # Create embed
         embed = discord.Embed(
             title="📅 Live Calendar",
-            color=discord.Color(0xcb4449)
+            color=self._get_embed_color(guild)
         )
 
         # Get selections
@@ -1513,11 +1536,14 @@ class EventPolling(commands.Cog):
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
 
+        # Get guild for color
+        guild = self.bot.get_guild(guild_id)
+
         # Create embed
         embed = discord.Embed(
             title="📅 Event Calendar",
             description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
-            color=discord.Color(0xcb4449)
+            color=self._get_embed_color(guild)
         )
 
         # Get selections
@@ -1584,10 +1610,13 @@ class EventPolling(commands.Cog):
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
 
+        # Get guild for color
+        guild = self.bot.get_guild(guild_id)
+
         # Create embed
         embed = discord.Embed(
             title=f"📊 Poll Results: {title}",
-            color=discord.Color(0xcb4449)
+            color=self._get_embed_color(guild)
         )
 
         # Get selections
@@ -1674,10 +1703,13 @@ class EventPolling(commands.Cog):
 
     async def _create_poll_embed(self, title: str, guild_id: int, poll_id: str) -> discord.Embed:
         """Create calendar-style embed showing winning times"""
+        # Get guild for color
+        guild = self.bot.get_guild(guild_id)
+
         embed = discord.Embed(
             title=f"📅 {title}",
             description="Click an event button below to vote for your preferred times.",
-            color=discord.Color(0xcb4449)
+            color=self._get_embed_color(guild)
         )
 
         # Get poll data if it exists
