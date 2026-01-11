@@ -238,6 +238,64 @@ class EventPolling(commands.Cog):
             # Silently fail if we can't restore the view
             print(f"Could not restore poll view for poll {poll_id}: {e}")
 
+    async def _update_poll_votes(self, ctx: commands.Context, target_poll_id: str, imported_votes: Dict, merge: bool) -> bool:
+        """Update votes on an existing poll without recreating the message
+
+        Args:
+            ctx: The command context
+            target_poll_id: The message ID of the target poll to update
+            imported_votes: The votes dictionary from the backup file
+            merge: If True, merge with existing votes; if False, replace all votes
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            async with self.config.guild(ctx.guild).polls() as polls:
+                if target_poll_id not in polls:
+                    await ctx.send(f"❌ Poll with ID {target_poll_id} not found in this server!")
+                    return False
+
+                poll_data = polls[target_poll_id]
+
+                if merge:
+                    # Merge: Add imported votes to existing votes
+                    existing_selections = poll_data.get("selections", {})
+                    for user_id, user_votes in imported_votes.items():
+                        if user_id in existing_selections:
+                            # Merge user's votes
+                            existing_selections[user_id].update(user_votes)
+                        else:
+                            # Add new user's votes
+                            existing_selections[user_id] = user_votes
+                    poll_data["selections"] = existing_selections
+                else:
+                    # Replace: Completely replace all votes
+                    poll_data["selections"] = imported_votes
+
+                # Update the poll in config
+                polls[target_poll_id] = poll_data
+
+                # Update the poll message embed to reflect new votes
+                try:
+                    channel = ctx.guild.get_channel(poll_data.get("channel_id"))
+                    if channel:
+                        message = await channel.fetch_message(int(target_poll_id))
+                        title = poll_data.get("title", "Event Schedule Poll")
+                        embed = await self._create_poll_embed(title, ctx.guild.id, target_poll_id)
+                        embed.set_footer(text="Click the buttons below to set your preferences")
+                        await message.edit(embed=embed)
+                except Exception as e:
+                    print(f"Could not update poll message embed: {e}")
+                    # Continue anyway - votes are saved even if embed update fails
+
+            return True
+
+        except Exception as e:
+            print(f"Could not update poll votes: {e}")
+            await ctx.send(f"❌ Error updating poll votes: {e}")
+            return False
+
     async def _recreate_poll_message(self, ctx: commands.Context, poll_data: Dict, poll_id: str, current_polls: Dict) -> bool:
         """Recreate a poll message from imported data, replacing any existing active poll
 
@@ -970,16 +1028,16 @@ class EventPolling(commands.Cog):
             await ctx.send(f"❌ Error creating backup: {e}")
 
     @eventpoll.command(name="import")
-    async def import_backup(self, ctx: commands.Context, backup_filename: str, merge: str = "false", poll_id: Optional[str] = None):
-        """Import poll data from a backup file
+    async def import_backup(self, ctx: commands.Context, backup_filename: str, poll_id: Optional[str] = None, merge: str = "false"):
+        """Import votes from a backup file into an existing poll
 
-        By default, this will REPLACE all current poll data.
-        Use merge="true" to merge the backup data with existing polls.
-        Specify poll_id to import/replace only a specific poll.
+        This command imports VOTES (not entire polls) from a backup file.
+        You must specify the poll message ID to import votes into.
+        Use merge="true" to merge imported votes with existing votes.
+        Use merge="false" (default) to replace all existing votes.
 
-        Example: [p]eventpoll import poll_backup_20240115_120000.json
-        Example: [p]eventpoll import manual_backup_20240115_120000.json true
-        Example: [p]eventpoll import manual_backup_20240115_120000.json true 123456789
+        Example: [p]eventpoll import poll_backup_20240115_120000.json 123456789 false
+        Example: [p]eventpoll import manual_backup_20240115_120000.json 987654321 true
         """
         # Parse merge parameter
         merge_bool = merge.lower() in ("true", "yes", "1", "y")
@@ -1011,100 +1069,70 @@ class EventPolling(commands.Cog):
                 await ctx.send("❌ Invalid backup file format!")
                 return
 
-            # Import data
-            imported_count = 0
-            skipped_count = 0
-            updated_count = 0
+            # Poll ID is required - we import votes into existing polls
+            if not poll_id:
+                await ctx.send("❌ You must specify a poll message ID to import votes into!\n"
+                              f"Usage: `{ctx.prefix}eventpoll import <filename> <poll_message_id> <merge>`\n"
+                              f"Example: `{ctx.prefix}eventpoll import backup.json 123456789 false`")
+                return
+
+            # Find the poll in the backup file
+            found_poll_data = None
+            backup_poll_id = None
 
             for guild_id_str, guild_backup in backup_data["guilds"].items():
-                guild_id = int(guild_id_str)
-
-                # Check if this is the current guild or if user has permission
-                if guild_id != ctx.guild.id and not await self.bot.is_owner(ctx.author):
-                    skipped_count += 1
-                    continue
-
                 backup_polls = guild_backup.get("polls", {})
 
-                # If specific poll_id is provided, only import that poll
-                if poll_id:
-                    if poll_id not in backup_polls:
-                        await ctx.send(f"❌ Poll ID {poll_id} not found in backup file!")
-                        return
+                # Check if poll_id exists in this guild's backup
+                if poll_id in backup_polls:
+                    found_poll_data = backup_polls[poll_id]
+                    backup_poll_id = poll_id
+                    break
 
-                    async with self.config.guild_from_id(guild_id).polls() as polls:
-                        if poll_id in polls and not merge_bool:
-                            # Replace existing poll - recreate the message
-                            success = await self._recreate_poll_message(ctx, backup_polls[poll_id], poll_id, polls)
-                            if success:
-                                updated_count += 1
-                        elif poll_id not in polls:
-                            # Import new poll - recreate the message
-                            success = await self._recreate_poll_message(ctx, backup_polls[poll_id], poll_id, polls)
-                            if success:
-                                imported_count += 1
-                        else:
-                            # Merge mode but poll exists
-                            await ctx.send(f"⚠️ Poll {poll_id} already exists. Use merge=false to replace it.")
-                            return
+                # Also check if any poll in backup has matching message_id
+                for backup_pid, backup_pdata in backup_polls.items():
+                    if str(backup_pdata.get("message_id")) == poll_id:
+                        found_poll_data = backup_pdata
+                        backup_poll_id = backup_pid
+                        break
 
-                else:
-                    # Import all polls
-                    if merge_bool:
-                        # Merge mode: keep existing polls and add new ones
-                        async with self.config.guild_from_id(guild_id).polls() as polls:
-                            for p_id, poll_data in backup_polls.items():
-                                if p_id not in polls:
-                                    # Recreate the poll message
-                                    success = await self._recreate_poll_message(ctx, poll_data, p_id, polls)
-                                    if success:
-                                        imported_count += 1
-                                else:
-                                    skipped_count += 1
-                    else:
-                        # Replace mode: disable all current polls and recreate from backup
-                        async with self.config.guild_from_id(guild_id).polls() as polls:
-                            # First, disable all existing poll messages that aren't in the backup
-                            for old_poll_id, old_poll_data in list(polls.items()):
-                                if old_poll_id not in backup_polls:
-                                    try:
-                                        old_channel = ctx.guild.get_channel(old_poll_data.get("channel_id"))
-                                        if old_channel:
-                                            old_message = await old_channel.fetch_message(old_poll_data.get("message_id"))
-                                            # Disable the old poll message
-                                            view = discord.ui.View()
-                                            for item in range(5):
-                                                button = discord.ui.Button(
-                                                    label="Ended",
-                                                    style=discord.ButtonStyle.secondary,
-                                                    disabled=True
-                                                )
-                                                view.add_item(button)
-                                            await old_message.edit(view=view)
-                                    except:
-                                        pass
+                if found_poll_data:
+                    break
 
-                            # Clear all current polls
-                            polls.clear()
+            if not found_poll_data:
+                await ctx.send(f"❌ Poll ID {poll_id} not found in backup file!\n\n"
+                              "Available polls in backup:")
+                # Show available polls
+                for guild_id_str, guild_backup in backup_data["guilds"].items():
+                    backup_polls = guild_backup.get("polls", {})
+                    if backup_polls:
+                        poll_list = "\n".join([
+                            f"- Poll ID: {pid} (Message: {pdata.get('message_id')}, Title: {pdata.get('title', 'N/A')})"
+                            for pid, pdata in backup_polls.items()
+                        ])
+                        await ctx.send(f"```\n{poll_list}\n```")
+                return
 
-                            # Recreate all poll messages from backup
-                            for p_id, poll_data in backup_polls.items():
-                                success = await self._recreate_poll_message(ctx, poll_data, p_id, polls)
-                                if success:
-                                    imported_count += 1
+            # Extract votes from the backup poll
+            imported_votes = found_poll_data.get("selections", {})
+            vote_count = len(imported_votes)
 
-            backup_timestamp = backup_data.get("timestamp", "unknown")
-            status_msg = f"✅ Import completed!\n"
-            status_msg += f"- Backup timestamp: {backup_timestamp}\n"
-            if imported_count > 0:
-                status_msg += f"- Polls imported: {imported_count}\n"
-            if updated_count > 0:
-                status_msg += f"- Polls updated: {updated_count}\n"
-            if skipped_count > 0:
-                status_msg += f"- Polls skipped: {skipped_count}\n"
-            status_msg += f"- Mode: {'Merge' if merge_bool else 'Replace'}"
+            if vote_count == 0:
+                await ctx.send(f"⚠️ No votes found in the backup for poll {poll_id}!")
+                return
 
-            await ctx.send(status_msg)
+            # Import the votes into the target poll
+            success = await self._update_poll_votes(ctx, poll_id, imported_votes, merge_bool)
+
+            if success:
+                backup_timestamp = backup_data.get("timestamp", "unknown")
+                mode_text = "merged with" if merge_bool else "replaced in"
+                await ctx.send(
+                    f"✅ Successfully {mode_text} poll {poll_id}!\n"
+                    f"- Backup timestamp: {backup_timestamp}\n"
+                    f"- Votes imported: {vote_count}\n"
+                    f"- Mode: {'Merge' if merge_bool else 'Replace'}"
+                )
 
         except json.JSONDecodeError:
             await ctx.send("❌ Invalid JSON format in backup file!")
