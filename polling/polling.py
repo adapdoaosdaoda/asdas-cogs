@@ -2305,25 +2305,45 @@ class EventPolling(commands.Cog):
                 candidate = candidates[0]
                 occupied_by[slot_key] = candidate['event_name']
             else:
-                # Conflict! Apply priority bonuses and resolve
-                max_priority = max(c['priority'] for c in candidates)
+                # Conflict! Check if Party can coexist with other events
+                party_candidate = None
+                other_candidates = []
 
                 for candidate in candidates:
-                    # Higher priority gets +5 bonus
-                    if candidate['priority'] == max_priority:
-                        candidate['adjusted_points'] = candidate['points'] + 5
+                    if candidate['event_name'] == 'Party':
+                        party_candidate = candidate
                     else:
-                        candidate['adjusted_points'] = candidate['points']
+                        other_candidates.append(candidate)
 
-                # Sort by adjusted points (desc), then by priority (desc), then by time (desc for tiebreak)
-                candidates.sort(key=lambda x: (-x['adjusted_points'], -x['priority'], -self._time_to_sort_key(x['start_time'])))
+                # If Party is involved, allow coexistence (like Guild War)
+                # Party can share cells with any other event
+                if party_candidate and len(other_candidates) > 0:
+                    # Both Party and the other event(s) keep their times
+                    # Mark all as occupying this slot (for table splitting)
+                    for candidate in candidates:
+                        occupied_by[slot_key] = candidate['event_name']
+                    # Don't mark anyone for reassignment - they can coexist
+                else:
+                    # Standard conflict resolution when Party is not involved
+                    # Apply priority bonuses and resolve
+                    max_priority = max(c['priority'] for c in candidates)
 
-                winner = candidates[0]
-                occupied_by[slot_key] = winner['event_name']
+                    for candidate in candidates:
+                        # Higher priority gets +5 bonus
+                        if candidate['priority'] == max_priority:
+                            candidate['adjusted_points'] = candidate['points'] + 5
+                        else:
+                            candidate['adjusted_points'] = candidate['points']
 
-                # Mark losers for reassignment
-                for loser in candidates[1:]:
-                    events_needing_reassignment.add((loser['event_name'], loser['slot_index']))
+                    # Sort by adjusted points (desc), then by priority (desc), then by time (desc for tiebreak)
+                    candidates.sort(key=lambda x: (-x['adjusted_points'], -x['priority'], -self._time_to_sort_key(x['start_time'])))
+
+                    winner = candidates[0]
+                    occupied_by[slot_key] = winner['event_name']
+
+                    # Mark losers for reassignment
+                    for loser in candidates[1:]:
+                        events_needing_reassignment.add((loser['event_name'], loser['slot_index']))
 
         # Assign winning times to events
         for event_name, event_info in self.events.items():
@@ -2407,6 +2427,11 @@ class EventPolling(commands.Cog):
                 slot_key = (affected_day, slot_time_str)
 
                 if slot_key in occupied_by and occupied_by[slot_key] != event_name:
+                    occupying_event = occupied_by[slot_key]
+                    # Party can coexist with any other event (for table splitting)
+                    if event_name == 'Party' or occupying_event == 'Party':
+                        continue
+                    # Other events cannot share slots
                     return False
 
         return True
