@@ -238,6 +238,79 @@ class EventPolling(commands.Cog):
             # Silently fail if we can't restore the view
             print(f"Could not restore poll view for poll {poll_id}: {e}")
 
+    async def _recreate_poll_message(self, ctx: commands.Context, poll_data: Dict, poll_id: str, current_polls: Dict) -> bool:
+        """Recreate a poll message from imported data, replacing any existing active poll
+
+        Args:
+            ctx: The command context
+            poll_data: The imported poll data dictionary
+            poll_id: The poll ID
+            current_polls: The current polls dictionary (will be modified)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # If there's an existing active poll with this ID, disable its message
+            if poll_id in current_polls:
+                old_poll_data = current_polls[poll_id]
+                try:
+                    old_channel = ctx.guild.get_channel(old_poll_data.get("channel_id"))
+                    if old_channel:
+                        old_message = await old_channel.fetch_message(old_poll_data.get("message_id"))
+                        # Disable the old poll message
+                        view = discord.ui.View()
+                        for item in range(5):
+                            button = discord.ui.Button(
+                                label="Replaced",
+                                style=discord.ButtonStyle.secondary,
+                                disabled=True
+                            )
+                            view.add_item(button)
+                        await old_message.edit(view=view)
+                except:
+                    # If we can't disable the old message, continue anyway
+                    pass
+
+            # Create a new poll view
+            view = EventPollView(
+                self,
+                ctx.guild.id,
+                poll_data.get("creator_id"),
+                self.events,
+                self.days_of_week,
+                self.blocked_times
+            )
+
+            # Create the poll embed
+            title = poll_data.get("title", "Event Schedule Poll")
+            embed = await self._create_poll_embed(title, ctx.guild.id, poll_id)
+            embed.set_footer(text="Click the buttons below to set your preferences")
+
+            # Send the new message
+            message = await ctx.send(embed=embed, view=view)
+
+            # Update the poll data with the new message and channel IDs
+            poll_data["message_id"] = message.id
+            poll_data["channel_id"] = ctx.channel.id
+
+            # Update the poll ID to match the new message ID
+            new_poll_id = str(message.id)
+            current_polls[new_poll_id] = poll_data
+
+            # Remove old poll ID if it's different
+            if poll_id != new_poll_id and poll_id in current_polls:
+                del current_polls[poll_id]
+
+            # Set the view's poll ID
+            view.poll_id = new_poll_id
+
+            return True
+
+        except Exception as e:
+            print(f"Could not recreate poll message for poll {poll_id}: {e}")
+            return False
+
     def _parse_message_id(self, message_input: Union[str, int]) -> Optional[int]:
         """Parse message ID from either an integer or a Discord message link
 
@@ -961,20 +1034,19 @@ class EventPolling(commands.Cog):
 
                     async with self.config.guild_from_id(guild_id).polls() as polls:
                         if poll_id in polls and not merge_bool:
-                            # Replace existing poll
-                            polls[poll_id] = backup_polls[poll_id]
-                            updated_count += 1
+                            # Replace existing poll - recreate the message
+                            success = await self._recreate_poll_message(ctx, backup_polls[poll_id], poll_id, polls)
+                            if success:
+                                updated_count += 1
                         elif poll_id not in polls:
-                            # Import new poll
-                            polls[poll_id] = backup_polls[poll_id]
-                            imported_count += 1
+                            # Import new poll - recreate the message
+                            success = await self._recreate_poll_message(ctx, backup_polls[poll_id], poll_id, polls)
+                            if success:
+                                imported_count += 1
                         else:
                             # Merge mode but poll exists
                             await ctx.send(f"⚠️ Poll {poll_id} already exists. Use merge=false to replace it.")
                             return
-
-                    # Try to restore the poll view
-                    await self._restore_poll_view(ctx.guild, polls[poll_id], poll_id)
 
                 else:
                     # Import all polls
@@ -983,20 +1055,43 @@ class EventPolling(commands.Cog):
                         async with self.config.guild_from_id(guild_id).polls() as polls:
                             for p_id, poll_data in backup_polls.items():
                                 if p_id not in polls:
-                                    polls[p_id] = poll_data
-                                    imported_count += 1
-                                    # Try to restore the poll view
-                                    await self._restore_poll_view(ctx.guild, poll_data, p_id)
+                                    # Recreate the poll message
+                                    success = await self._recreate_poll_message(ctx, poll_data, p_id, polls)
+                                    if success:
+                                        imported_count += 1
                                 else:
                                     skipped_count += 1
                     else:
-                        # Replace mode: replace all polls
-                        await self.config.guild_from_id(guild_id).polls.set(backup_polls)
-                        imported_count += len(backup_polls)
+                        # Replace mode: disable all current polls and recreate from backup
+                        async with self.config.guild_from_id(guild_id).polls() as polls:
+                            # First, disable all existing poll messages that aren't in the backup
+                            for old_poll_id, old_poll_data in list(polls.items()):
+                                if old_poll_id not in backup_polls:
+                                    try:
+                                        old_channel = ctx.guild.get_channel(old_poll_data.get("channel_id"))
+                                        if old_channel:
+                                            old_message = await old_channel.fetch_message(old_poll_data.get("message_id"))
+                                            # Disable the old poll message
+                                            view = discord.ui.View()
+                                            for item in range(5):
+                                                button = discord.ui.Button(
+                                                    label="Ended",
+                                                    style=discord.ButtonStyle.secondary,
+                                                    disabled=True
+                                                )
+                                                view.add_item(button)
+                                            await old_message.edit(view=view)
+                                    except:
+                                        pass
 
-                        # Try to restore all poll views
-                        for p_id, poll_data in backup_polls.items():
-                            await self._restore_poll_view(ctx.guild, poll_data, p_id)
+                            # Clear all current polls
+                            polls.clear()
+
+                            # Recreate all poll messages from backup
+                            for p_id, poll_data in backup_polls.items():
+                                success = await self._recreate_poll_message(ctx, poll_data, p_id, polls)
+                                if success:
+                                    imported_count += 1
 
             backup_timestamp = backup_data.get("timestamp", "unknown")
             status_msg = f"✅ Import completed!\n"
