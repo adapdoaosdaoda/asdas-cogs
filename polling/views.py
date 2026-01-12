@@ -412,11 +412,15 @@ class PartyModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.edit_original_response(
-            content=f"✅ Selection saved for **{self.event_name}**!",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.edit_original_response(
+                content=f"✅ Selection saved for **{self.event_name}**!",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -444,19 +448,27 @@ class PartyModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.edit_original_response(
-            content=f"🗑️ Cleared selection for **{self.event_name}**",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.edit_original_response(
+                content=f"🗑️ Cleared selection for **{self.event_name}**",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
-        await interaction.response.edit_message(
-            content="Selection cancelled.",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.response.edit_message(
+                content="Selection cancelled.",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
@@ -695,11 +707,15 @@ class FixedDaysModal(discord.ui.View):
 
         # Auto-dismiss the ephemeral message
         selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
-        await interaction.edit_original_response(
-            content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.edit_original_response(
+                content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -727,19 +743,27 @@ class FixedDaysModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.edit_original_response(
-            content=f"🗑️ Cleared selection for **{self.event_name}**",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.edit_original_response(
+                content=f"🗑️ Cleared selection for **{self.event_name}**",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
-        await interaction.response.edit_message(
-            content="Selection cancelled.",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.response.edit_message(
+                content="Selection cancelled.",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
@@ -1066,11 +1090,15 @@ class WeeklyEventModal(discord.ui.View):
         if has_slot2:
             selection_parts.append(f"Slot 2: {self.selected_slot2_day} at {self.selected_slot2_time}")
 
-        await interaction.edit_original_response(
-            content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.edit_original_response(
+                content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -1098,19 +1126,27 @@ class WeeklyEventModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.edit_original_response(
-            content=f"🗑️ Cleared selection for **{self.event_name}**",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.edit_original_response(
+                content=f"🗑️ Cleared selection for **{self.event_name}**",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _cancel(self, interaction: discord.Interaction):
         """Handle cancel"""
-        await interaction.response.edit_message(
-            content="Selection cancelled.",
-            view=None
-        )
-        await interaction.delete_original_response()
+        try:
+            await interaction.response.edit_message(
+                content="Selection cancelled.",
+                view=None
+            )
+            await interaction.delete_original_response()
+        except discord.errors.NotFound:
+            # Message was already deleted or interaction expired, which is fine
+            pass
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
