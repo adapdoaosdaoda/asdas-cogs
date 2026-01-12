@@ -543,13 +543,13 @@ class CalendarRenderer:
         for row, time_str in enumerate(time_slots):
             y = start_y + (row * self.CELL_HEIGHT)
 
-            # Draw time label (right-aligned)
-            bbox = draw.textbbox((0, 0), time_str, font=self.font)
+            # Draw time label (right-aligned, bold)
+            bbox = draw.textbbox((0, 0), time_str, font=self.font_bold)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
             time_x = self.TIME_COL_WIDTH + self.PADDING - text_width - 5
             time_y = y + (self.CELL_HEIGHT - text_height) // 2
-            draw.text((time_x, time_y), time_str, fill=self.TIME_TEXT, font=self.font)
+            draw.text((time_x, time_y), time_str, fill=self.TIME_TEXT, font=self.font_bold)
 
             # Draw cells for each day
             for col, day in enumerate(days):
@@ -654,21 +654,21 @@ class CalendarRenderer:
                 is_last_col = (col == len(days) - 1)
 
                 # Calculate width for each border individually
-                # Top: 4px if first row (external), 2px if internal, 0 if skipped
+                # Top: 4px always (external and internal), 0 if skipped
                 top_width = 0
                 if not skip_top:
-                    top_width = 4 if is_first_row else 2
+                    top_width = 4
 
                 # Left: 4px if first column (external), 0 if skipped (non-first columns)
                 left_width = 4 if is_first_col and not skip_left else 0
 
-                # Right: always drawn, 4px if last column (external), 2px if internal
-                right_width = 4 if is_last_col else 2
+                # Right: always drawn, 4px always (external and internal)
+                right_width = 4
 
-                # Bottom: 4px if last row (external), 2px if internal, 0 if skipped
+                # Bottom: 4px always (external and internal), 0 if skipped
                 bottom_width = 0
                 if not skip_bottom:
-                    bottom_width = 4 if is_last_row else 2
+                    bottom_width = 4
 
                 # Draw borders with individual widths
                 self._draw_borders(
