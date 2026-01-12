@@ -81,18 +81,59 @@ class CalendarRenderer:
         """
         self.timezone = timezone
 
-        # Try to load a nice font with larger sizes for better clarity
-        # Use layout_engine for better rendering if available
-        try:
-            # Drastically increased font sizes - if these don't show up, there's a caching/reload issue
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 120, layout_engine=ImageFont.Layout.BASIC)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 110, layout_engine=ImageFont.Layout.BASIC)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 140, layout_engine=ImageFont.Layout.BASIC)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 150, layout_engine=ImageFont.Layout.BASIC)
-        except Exception as e:
-            print(f"Font loading error: {e}")
+        # Try to load fonts with multiple fallback paths (Windows & Linux)
+        font_paths = [
+            # Windows paths
+            "C:\\Windows\\Fonts\\arial.ttf",
+            "C:\\Windows\\Fonts\\DejaVuSans.ttf",
+            # Linux paths
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu-sans/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        ]
+
+        font_bold_paths = [
+            # Windows paths
+            "C:\\Windows\\Fonts\\arialbd.ttf",
+            "C:\\Windows\\Fonts\\DejaVuSans-Bold.ttf",
+            # Linux paths
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu-sans/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        ]
+
+        # Try loading fonts without layout_engine parameter (may cause compatibility issues)
+        loaded = False
+        for font_path in font_paths:
+            try:
+                self.font = ImageFont.truetype(font_path, 120)
+                self.font_small = ImageFont.truetype(font_path, 110)
+                print(f"Successfully loaded regular font from: {font_path}")
+                loaded = True
+                break
+            except Exception as e:
+                print(f"Failed to load font from {font_path}: {e}")
+                continue
+
+        if not loaded:
+            print("ERROR: Could not load regular font from any path, using default")
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
+
+        loaded_bold = False
+        for font_bold_path in font_bold_paths:
+            try:
+                self.font_bold = ImageFont.truetype(font_bold_path, 140)
+                self.font_large = ImageFont.truetype(font_bold_path, 150)
+                print(f"Successfully loaded bold font from: {font_bold_path}")
+                loaded_bold = True
+                break
+            except Exception as e:
+                print(f"Failed to load bold font from {font_bold_path}: {e}")
+                continue
+
+        if not loaded_bold:
+            print("ERROR: Could not load bold font from any path, using default")
             self.font_bold = ImageFont.load_default()
             self.font_large = ImageFont.load_default()
 
@@ -134,19 +175,19 @@ class CalendarRenderer:
         """
         # Top border (if not skipped)
         if not skip_top:
-            draw.line([(x1, y1), (x2 + 1, y1)], fill=color, width=2)
+            draw.line([(x1, y1), (x2 + 1, y1)], fill=color, width=4)
 
         # Left border (if not skipped)
         if not skip_left:
-            draw.line([(x1, y1), (x1, y2 + 1)], fill=color, width=2)
+            draw.line([(x1, y1), (x1, y2 + 1)], fill=color, width=4)
 
         # Right border (if not skipped)
         if not skip_right:
-            draw.line([(x2, y1), (x2, y2 + 1)], fill=color, width=2)
+            draw.line([(x2, y1), (x2, y2 + 1)], fill=color, width=4)
 
         # Bottom border (if not skipped)
         if not skip_bottom:
-            draw.line([(x1, y2), (x2 + 1, y2)], fill=color, width=2)
+            draw.line([(x1, y2), (x2 + 1, y2)], fill=color, width=4)
 
     def render_calendar(
         self,
@@ -563,7 +604,7 @@ class CalendarRenderer:
 
                         # Draw solid horizontal line between the two events
                         mid_y = y + self.CELL_HEIGHT // 2
-                        draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=2)
+                        draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=4)
                     else:
                         # Single event: use single color (faded)
                         cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
