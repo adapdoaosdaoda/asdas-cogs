@@ -1200,10 +1200,15 @@ class HandlersMixin:
                     )
 
             # Move channel to archive category and update permissions
+            # Ensure archived name doesn't exceed Discord's 100-character limit
+            max_base_length = 100 - len("archived-")  # 91 characters
+            base_name = text_channel.name[:max_base_length] if len(text_channel.name) > max_base_length else text_channel.name
+            archived_name = f"archived-{base_name}"
+
             await text_channel.edit(
                 category=archive_category,
                 overwrites=archived_overwrites,
-                name=f"archived-{text_channel.name}",
+                name=archived_name,
                 reason=f"Archived event channel for '{event_name}' (had user messages)"
             )
 
