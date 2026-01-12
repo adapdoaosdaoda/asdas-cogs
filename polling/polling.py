@@ -950,14 +950,17 @@ class EventPolling(commands.Cog):
         poll_data = polls[poll_id]
 
         # Create weekly calendar embed and image
-        embed, calendar_file, view = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        embed, calendar_file, view, winning_times = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
 
         # Send the weekly calendar message with image and timezone button
         calendar_msg = await ctx.send(embed=embed, file=calendar_file, view=view)
 
-        # Store weekly calendar message ID in poll data for auto-updating
+        # Store weekly calendar message ID and snapshot in poll data for auto-updating
         async with self.config.guild(ctx.guild).polls() as polls:
             if poll_id in polls:
+                # Store the winning_times snapshot for timezone conversions
+                polls[poll_id]["weekly_snapshot_winning_times"] = winning_times
+
                 if "weekly_calendar_messages" not in polls[poll_id]:
                     polls[poll_id]["weekly_calendar_messages"] = []
                 polls[poll_id]["weekly_calendar_messages"].append({
@@ -1103,14 +1106,17 @@ class EventPolling(commands.Cog):
             return
 
         # Create weekly calendar embed and image
-        embed, calendar_file, view = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        embed, calendar_file, view, winning_times = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
 
         # Update the message with timezone button
         await message.edit(embed=embed, attachments=[calendar_file], view=view)
 
-        # Store weekly calendar message ID in poll data for auto-updating
+        # Store weekly calendar message ID and snapshot in poll data for auto-updating
         async with self.config.guild(ctx.guild).polls() as polls:
             if poll_id in polls:
+                # Store the winning_times snapshot for timezone conversions
+                polls[poll_id]["weekly_snapshot_winning_times"] = winning_times
+
                 if "weekly_calendar_messages" not in polls[poll_id]:
                     polls[poll_id]["weekly_calendar_messages"] = []
 
@@ -1123,6 +1129,52 @@ class EventPolling(commands.Cog):
                     })
 
         await ctx.send(f"✅ Successfully overwrote message with weekly calendar: {message.jump_url}")
+
+    @eventpoll.command(name="updateweeklysnapshot")
+    async def update_weekly_snapshot(self, ctx: commands.Context, message_id: str):
+        """Manually update the weekly calendar snapshot with current poll results
+
+        This updates the cached winning times used by weekly calendars. Use this if
+        the automatic Monday 10 AM update didn't trigger or you want to update it manually.
+
+        Example: [p]eventpoll updateweeklysnapshot 123456789
+        Or: [p]eventpoll updateweeklysnapshot https://discord.com/channels/guild/channel/message
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            await ctx.send("Invalid message ID or link!")
+            return
+
+        poll_id = str(parsed_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            await ctx.send("Poll not found!")
+            return
+
+        poll_data = polls[poll_id]
+
+        # Check if there are any weekly calendar messages for this poll
+        weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
+        if not weekly_calendar_messages:
+            await ctx.send("⚠️ This poll has no weekly calendar messages. Use `[p]eventpoll weeklycalendar` first.")
+            return
+
+        # Calculate current winning times from live selections
+        selections = poll_data.get("selections", {})
+        winning_times = self._calculate_winning_times_weighted(selections)
+
+        # Store the new snapshot
+        async with self.config.guild(ctx.guild).polls() as polls:
+            if poll_id in polls:
+                polls[poll_id]["weekly_snapshot_winning_times"] = winning_times
+
+        # Update all weekly calendar message images
+        try:
+            await self._update_weekly_calendar_messages(ctx.guild, poll_data, poll_id)
+            await ctx.send(f"✅ Successfully updated weekly calendar snapshot with current poll results! All weekly calendar images have been refreshed.")
+        except Exception as e:
+            await ctx.send(f"✅ Snapshot updated, but failed to update some calendar images: {e}")
 
     @eventpoll.command(name="overwriteresults")
     async def overwrite_results(self, ctx: commands.Context, message_id_to_overwrite: str, poll_message_id: str):
@@ -1553,11 +1605,12 @@ class EventPolling(commands.Cog):
 
         return embed, calendar_file, view
 
-    async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File, discord.ui.View]:
+    async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File, discord.ui.View, Dict]:
         """Create a weekly calendar embed with image and poll link (updates only on Monday 10AM)
 
         Returns:
-            Tuple of (embed, file, view) where file is the calendar image and view contains timezone button
+            Tuple of (embed, file, view, winning_times) where file is the calendar image,
+            view contains timezone button, and winning_times is the snapshot data
         """
         from .views import CalendarTimezoneView
 
@@ -1597,10 +1650,10 @@ class EventPolling(commands.Cog):
         # Add footer
         embed.set_footer(text="times are adjusted every week based on Monday's results")
 
-        # Create view with timezone button
-        view = CalendarTimezoneView(self, guild_id, poll_id)
+        # Create view with timezone button (is_weekly=True)
+        view = CalendarTimezoneView(self, guild_id, poll_id, is_weekly=True)
 
-        return embed, calendar_file, view
+        return embed, calendar_file, view, winning_times
 
     async def _update_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
         """Update all live calendar messages associated with this poll"""
@@ -1617,17 +1670,70 @@ class EventPolling(commands.Cog):
                 # Silently fail if we can't update a calendar message
                 pass
 
+    async def _check_and_create_initial_snapshot(self, guild: discord.Guild, poll_id: str):
+        """Check if this is the first vote and create initial weekly snapshot if needed"""
+        async with self.config.guild(guild).polls() as polls:
+            if poll_id not in polls:
+                return
+
+            poll_data = polls[poll_id]
+
+            # Check if snapshot already exists
+            if "weekly_snapshot_winning_times" in poll_data:
+                return
+
+            # Check if there are any weekly calendar messages
+            weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
+            if not weekly_calendar_messages:
+                return
+
+            # Calculate and store the initial snapshot
+            selections = poll_data.get("selections", {})
+            if not selections:
+                return
+
+            winning_times = self._calculate_winning_times_weighted(selections)
+            polls[poll_id]["weekly_snapshot_winning_times"] = winning_times
+
+        # Update the weekly calendar images with the new snapshot
+        try:
+            polls_data = await self.config.guild(guild).polls()
+            poll_data = polls_data.get(poll_id)
+            if poll_data:
+                await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
+        except Exception:
+            # Silently fail if we can't update calendars
+            pass
+
     async def _update_weekly_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
         """Update all weekly calendar messages associated with this poll"""
         weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
 
-        for cal_msg_data in weekly_calendar_messages:
+        if not weekly_calendar_messages:
+            return
+
+        # Generate the calendar with the snapshot
+        updated_embed, first_calendar_file, view, winning_times = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
+
+        # Store the snapshot
+        async with self.config.guild(guild).polls() as polls:
+            if poll_id in polls:
+                polls[poll_id]["weekly_snapshot_winning_times"] = winning_times
+
+        # Update all weekly calendar messages
+        for idx, cal_msg_data in enumerate(weekly_calendar_messages):
             try:
                 channel = guild.get_channel(cal_msg_data["channel_id"])
                 if channel:
                     message = await channel.fetch_message(cal_msg_data["message_id"])
-                    updated_embed, calendar_file, view = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
-                    await message.edit(embed=updated_embed, attachments=[calendar_file], view=view)
+                    # Need to create a new file for each message since files can only be sent once
+                    if idx == 0:
+                        # Use the first file for the first message
+                        await message.edit(embed=updated_embed, attachments=[first_calendar_file], view=view)
+                    else:
+                        # Generate new file for subsequent messages
+                        _, calendar_file_copy, _, _ = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
+                        await message.edit(embed=updated_embed, attachments=[calendar_file_copy], view=view)
             except Exception:
                 # Silently fail if we can't update a weekly calendar message
                 pass

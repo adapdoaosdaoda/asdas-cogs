@@ -484,8 +484,11 @@ class PartyModal(discord.ui.View):
                 updated_embed.set_footer(text="Click the buttons below to set your preferences")
                 await message.edit(embed=updated_embed)
 
-            # Update any calendar messages for this poll
+            # Update any live calendar messages for this poll
             await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+
+            # Check if we need to create initial weekly snapshot (for first vote)
+            await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
         except Exception:
             pass
 
@@ -779,8 +782,11 @@ class FixedDaysModal(discord.ui.View):
                 updated_embed.set_footer(text="Click the buttons below to set your preferences")
                 await message.edit(embed=updated_embed)
 
-            # Update any calendar messages for this poll
+            # Update any live calendar messages for this poll
             await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+
+            # Check if we need to create initial weekly snapshot (for first vote)
+            await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
         except Exception:
             pass
 
@@ -1162,8 +1168,11 @@ class WeeklyEventModal(discord.ui.View):
                 updated_embed.set_footer(text="Click the buttons below to set your preferences")
                 await message.edit(embed=updated_embed)
 
-            # Update any calendar messages for this poll
+            # Update any live calendar messages for this poll
             await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+
+            # Check if we need to create initial weekly snapshot (for first vote)
+            await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
         except Exception:
             pass
 
@@ -1371,12 +1380,13 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         max_length=50
     )
     
-    def __init__(self, cog, guild_id: int, poll_id: str):
+    def __init__(self, cog, guild_id: int, poll_id: str, is_weekly: bool = False):
         super().__init__()
         self.cog = cog
         self.guild_id = guild_id
         self.poll_id = poll_id
-    
+        self.is_weekly = is_weekly
+
     async def on_submit(self, interaction: discord.Interaction):
         """Handle timezone submission and generate calendar"""
         import pytz
@@ -1409,7 +1419,7 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
                 ephemeral=True
             )
             return
-        
+
         # Get poll data
         polls = await self.cog.config.guild_from_id(self.guild_id).polls()
         if self.poll_id not in polls:
@@ -1418,12 +1428,21 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
                 ephemeral=True
             )
             return
-        
-        poll_data = polls[self.poll_id]
-        selections = poll_data.get("selections", {})
 
-        # Calculate winning times
-        winning_times = self.cog._calculate_winning_times_weighted(selections)
+        poll_data = polls[self.poll_id]
+
+        # Calculate winning times - use cached snapshot for weekly calendars
+        if self.is_weekly:
+            # Use cached winning_times snapshot from Monday 10 AM
+            winning_times = poll_data.get("weekly_snapshot_winning_times", {})
+            if not winning_times:
+                # Fallback to live data if no snapshot exists yet
+                selections = poll_data.get("selections", {})
+                winning_times = self.cog._calculate_winning_times_weighted(selections)
+        else:
+            # Use live selections for real-time calendars
+            selections = poll_data.get("selections", {})
+            winning_times = self.cog._calculate_winning_times_weighted(selections)
 
         # Convert to calendar data format first
         from datetime import datetime
@@ -1525,13 +1544,14 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
 
 class CalendarTimezoneView(discord.ui.View):
     """View with timezone button for calendar embeds"""
-    
-    def __init__(self, cog, guild_id: int, poll_id: str):
+
+    def __init__(self, cog, guild_id: int, poll_id: str, is_weekly: bool = False):
         super().__init__(timeout=None)
         self.cog = cog
         self.guild_id = guild_id
         self.poll_id = poll_id
-        
+        self.is_weekly = is_weekly
+
         # Add timezone button
         timezone_button = discord.ui.Button(
             label="View in My Timezone",
@@ -1541,8 +1561,8 @@ class CalendarTimezoneView(discord.ui.View):
         )
         timezone_button.callback = self._show_timezone_modal
         self.add_item(timezone_button)
-    
+
     async def _show_timezone_modal(self, interaction: discord.Interaction):
         """Show the timezone input modal"""
-        modal = TimezoneModal(self.cog, self.guild_id, self.poll_id)
+        modal = TimezoneModal(self.cog, self.guild_id, self.poll_id, is_weekly=self.is_weekly)
         await interaction.response.send_modal(modal)

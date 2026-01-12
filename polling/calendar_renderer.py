@@ -721,8 +721,13 @@ class CalendarRenderer:
 
                             # Position events vertically based on index
                             if num_events_to_show == 1:
-                                # Single event: center vertically
-                                text_y = y + (self.CELL_HEIGHT - text_height) // 2
+                                # Single event: center vertically, except Party which goes to top
+                                if event_name == "Party":
+                                    # Party takes top half even when alone (short duration event)
+                                    text_y = y + 10
+                                else:
+                                    # Other events center vertically
+                                    text_y = y + (self.CELL_HEIGHT - text_height) // 2
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
