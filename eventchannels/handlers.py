@@ -531,7 +531,7 @@ class HandlersMixin:
                     if has_user_messages:
                         # Archive the channel instead of deleting
                         role = guild.get_role(data.get("role"))
-                        archived = await self._archive_text_channel(guild, text_channel, role, event.name)
+                        archived = await self._archive_text_channel(guild, text_channel, role, event.name, str(event.id))
                         if archived:
                             text_channel_archived = True
                             log.info(f"Text channel archived for event '{event.name}'")
@@ -598,13 +598,32 @@ class HandlersMixin:
                 stored = await self.config.guild(guild).event_channels()
                 data = stored.get(str(event.id))
                 if data:
-                    # Delete text channel
+                    # Handle text channel - archive if it has user messages, otherwise delete
                     text_channel = guild.get_channel(data.get("text"))
+                    text_channel_archived = False
                     if text_channel:
-                        try:
-                            await text_channel.delete(reason="Scheduled event cancelled")
-                        except (discord.NotFound, discord.Forbidden):
-                            pass
+                        # Check if channel has user messages
+                        has_user_messages = await self._has_user_messages(text_channel)
+
+                        if has_user_messages:
+                            # Archive the channel instead of deleting
+                            role = guild.get_role(data.get("role"))
+                            archived = await self._archive_text_channel(guild, text_channel, role, event.name, str(event.id))
+                            if archived:
+                                text_channel_archived = True
+                                log.info(f"Text channel archived for cancelled event '{event.name}'")
+                            else:
+                                # If archiving failed, delete the channel
+                                try:
+                                    await text_channel.delete(reason="Scheduled event cancelled (archive failed)")
+                                except (discord.NotFound, discord.Forbidden):
+                                    pass
+                        else:
+                            # No user messages, delete the channel
+                            try:
+                                await text_channel.delete(reason="Scheduled event cancelled")
+                            except (discord.NotFound, discord.Forbidden):
+                                pass
 
                     # Delete all voice channels
                     voice_channel_ids = data.get("voice", [])
@@ -633,6 +652,12 @@ class HandlersMixin:
                         thread_links.pop(str(thread_id), None)
                         await self.config.guild(guild).thread_event_links.set(thread_links)
                         log.info(f"Removed thread link for thread {thread_id} (event cancelled)")
+
+                    # Clean up deletion extensions tracking
+                    deletion_extensions = await self.config.guild(guild).deletion_extensions()
+                    if str(event.id) in deletion_extensions:
+                        deletion_extensions.pop(str(event.id), None)
+                        await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
 
             # Remove role from divider and clean up (outside lock, uses own locks)
             if data:
@@ -1021,7 +1046,7 @@ class HandlersMixin:
                     if has_user_messages:
                         # Archive the channel instead of deleting
                         role = guild.get_role(data.get("role"))
-                        archived = await self._archive_text_channel(guild, text_channel, role, event.name)
+                        archived = await self._archive_text_channel(guild, text_channel, role, event.name, str(event.id))
                         if archived:
                             text_channel_archived = True
                             log.info(f"Force create: Text channel archived for event '{event.name}'")
@@ -1112,7 +1137,7 @@ class HandlersMixin:
             log.error(f"Error checking for user messages in {text_channel.name}: {e}")
             return False
 
-    async def _archive_text_channel(self, guild: discord.Guild, text_channel: discord.TextChannel, role: discord.Role, event_name: str) -> bool:
+    async def _archive_text_channel(self, guild: discord.Guild, text_channel: discord.TextChannel, role: discord.Role, event_name: str, event_id: str = None) -> bool:
         """Move a text channel to the archive category and make it read-only.
 
         Parameters
@@ -1220,6 +1245,17 @@ class HandlersMixin:
                 )
             except discord.Forbidden:
                 pass
+
+            # Store archived channel info for tracking
+            from datetime import datetime, timezone
+            archived_channels = await self.config.guild(guild).archived_channels()
+            archived_channels[str(text_channel.id)] = {
+                "event_name": event_name,
+                "original_name": base_name,  # Original name before "archived-" prefix
+                "archived_at": datetime.now(timezone.utc).timestamp(),
+                "event_id": event_id if event_id else "unknown",
+            }
+            await self.config.guild(guild).archived_channels.set(archived_channels)
 
             log.info(f"Archived text channel {text_channel.name} for event '{event_name}' - had user messages")
             return True
