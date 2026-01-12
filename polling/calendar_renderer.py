@@ -106,8 +106,8 @@ class CalendarRenderer:
         loaded = False
         for font_path in font_paths:
             try:
-                self.font = ImageFont.truetype(font_path, 20)
-                self.font_small = ImageFont.truetype(font_path, 18)
+                self.font = ImageFont.truetype(font_path, 15)
+                self.font_small = ImageFont.truetype(font_path, 13)
                 print(f"Successfully loaded regular font from: {font_path}")
                 loaded = True
                 break
@@ -123,8 +123,8 @@ class CalendarRenderer:
         loaded_bold = False
         for font_bold_path in font_bold_paths:
             try:
-                self.font_bold = ImageFont.truetype(font_bold_path, 24)
-                self.font_large = ImageFont.truetype(font_bold_path, 26)
+                self.font_bold = ImageFont.truetype(font_bold_path, 19)
+                self.font_large = ImageFont.truetype(font_bold_path, 21)
                 print(f"Successfully loaded bold font from: {font_bold_path}")
                 loaded_bold = True
                 break
@@ -255,7 +255,7 @@ class CalendarRenderer:
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             # Use emoji_scale_factor to make emojis match the smaller font sizes
-            with Pilmoji(img, emoji_scale_factor=0.2) as pilmoji:
+            with Pilmoji(img, emoji_scale_factor=0.35) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
