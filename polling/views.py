@@ -1432,16 +1432,17 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         poll_data = polls[self.poll_id]
 
         # Calculate winning times - use cached snapshot for weekly calendars
+        # Always get selections for total voter count
+        selections = poll_data.get("selections", {})
+
         if self.is_weekly:
             # Use cached winning_times snapshot from Monday 10 AM
             winning_times = poll_data.get("weekly_snapshot_winning_times", {})
             if not winning_times:
                 # Fallback to live data if no snapshot exists yet
-                selections = poll_data.get("selections", {})
                 winning_times = self.cog._calculate_winning_times_weighted(selections)
         else:
             # Use live selections for real-time calendars
-            selections = poll_data.get("selections", {})
             winning_times = self.cog._calculate_winning_times_weighted(selections)
 
         # Convert to calendar data format first
