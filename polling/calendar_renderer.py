@@ -611,15 +611,11 @@ class CalendarRenderer:
                 next_row_content = cell_contents.get((row + 1, col), None)
                 prev_row_content = cell_contents.get((row - 1, col), None)
 
-                # Horizontal borders: Only first column draws left, all columns draw right (avoids double borders)
-                skip_left = (col > 0)  # Skip left for all except first column
-                skip_right = False  # Always draw right border
-
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
 
-                # Vertical borders: Only first row draws top, all rows draw bottom (avoids double borders)
-                # Exception: skip borders when same multi-slot event continues above/below
+                # Skip borders ONLY for multi-slot event continuations
+                # This allows internal borders to overlap (2px + 2px = 4px)
 
                 # Skip bottom border if next row shares any multi-slot event
                 has_common_multislot_below = False
@@ -631,7 +627,7 @@ class CalendarRenderer:
                     )
                 skip_bottom = has_common_multislot_below
 
-                # Skip top border if previous row shares any multi-slot event OR if not first row
+                # Skip top border only if previous row shares any multi-slot event
                 has_common_multislot_above = False
                 if prev_row_content and current_content:
                     has_common_multislot_above = any(
@@ -639,7 +635,7 @@ class CalendarRenderer:
                         for event in current_content
                         if event in multi_slot_events
                     )
-                skip_top = (row > 0) or has_common_multislot_above  # Skip top for all except first row
+                skip_top = has_common_multislot_above
 
                 # Party combo cells always have a top border
                 has_party = "Party" in current_content
@@ -654,21 +650,22 @@ class CalendarRenderer:
                 is_last_col = (col == len(days) - 1)
 
                 # Calculate width for each border individually
-                # Top: 4px always (external and internal), 0 if skipped
+                # Internal borders are 2px and overlap with adjacent cells to appear as 4px
+                # Top: 4px if first row (external), 2px if internal, 0 if skipped
                 top_width = 0
                 if not skip_top:
-                    top_width = 4
+                    top_width = 4 if is_first_row else 2
 
-                # Left: 4px if first column (external), 0 if skipped (non-first columns)
-                left_width = 4 if is_first_col and not skip_left else 0
+                # Left: 4px if first column (external), 2px if internal (always drawn)
+                left_width = 4 if is_first_col else 2
 
-                # Right: always drawn, 4px always (external and internal)
-                right_width = 4
+                # Right: 4px if last column (external), 2px if internal (always drawn)
+                right_width = 4 if is_last_col else 2
 
-                # Bottom: 4px always (external and internal), 0 if skipped
+                # Bottom: 4px if last row (external), 2px if internal, 0 if skipped
                 bottom_width = 0
                 if not skip_bottom:
-                    bottom_width = 4
+                    bottom_width = 4 if is_last_row else 2
 
                 # Draw borders with individual widths
                 self._draw_borders(
