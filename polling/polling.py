@@ -101,6 +101,14 @@ class EventPolling(commands.Cog):
             {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
+        # Event-specific blocked time periods (applies to all days for these events)
+        # Events cannot be scheduled if they would overlap with these time periods
+        self.event_blocked_times = {
+            "Showdown": {"start": "21:30", "end": "01:00"},  # Cannot run during 21:30-01:00, latest start: 20:30 (ends 21:30), earliest start: 01:00
+            "Breaking Army": {"start": "20:30", "end": "22:30"},  # Cannot run during 20:30-22:30, latest start: 19:30 (ends 20:30), earliest start: 22:30
+            "Party": {"start": "20:40", "end": "22:30"}  # Cannot run during 20:40-22:30, latest start: 20:30 (ends 20:40), earliest start: 22:30
+        }
+
         # Timezone display - customize this to match your server's timezone
         # Examples: "UTC", "UTC+1", "UTC-5", "EST", "PST", "Server Time"
         self.timezone_display = "Server Time (UTC+1)"
@@ -2697,7 +2705,49 @@ class EventPolling(commands.Cog):
         else:
             return 0  # Too far off
 
-    def generate_time_options(self, start_hour: int = 17, end_hour: int = 26, interval: int = 30, duration: int = 0) -> List[str]:
+    def _is_time_blocked_for_event(self, time_str: str, duration: int, event_name: str) -> bool:
+        """Check if a time slot would overlap with an event-specific blocked period
+
+        Args:
+            time_str: Start time in HH:MM format
+            duration: Event duration in minutes
+            event_name: Name of the event
+
+        Returns:
+            True if the time is blocked, False otherwise
+        """
+        # Check if this event has blocked times
+        if event_name not in self.event_blocked_times:
+            return False
+
+        blocked = self.event_blocked_times[event_name]
+        blocked_start_str = blocked["start"]
+        blocked_end_str = blocked["end"]
+
+        # Parse times - handle times past midnight
+        def parse_time_to_minutes(time_str: str) -> int:
+            """Convert HH:MM to minutes since start of day"""
+            parts = time_str.split(":")
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            # Handle next-day times (00:00-02:00 should be treated as 24:00-26:00)
+            if hours < 3:  # Assume times 00:00-02:59 are next day
+                hours += 24
+            return hours * 60 + minutes
+
+        # Convert event start time to minutes
+        event_start_mins = parse_time_to_minutes(time_str)
+        event_end_mins = event_start_mins + duration
+
+        # Convert blocked period to minutes
+        blocked_start_mins = parse_time_to_minutes(blocked_start_str)
+        blocked_end_mins = parse_time_to_minutes(blocked_end_str)
+
+        # Check for overlap
+        # Two ranges overlap if: start1 < end2 AND start2 < end1
+        return event_start_mins < blocked_end_mins and blocked_start_mins < event_end_mins
+
+    def generate_time_options(self, start_hour: int = 17, end_hour: int = 26, interval: int = 30, duration: int = 0, event_name: Optional[str] = None) -> List[str]:
         """Generate time options in HH:MM format
 
         Args:
@@ -2705,6 +2755,7 @@ class EventPolling(commands.Cog):
             end_hour: Ending hour (default 26, which represents 02:00 next day)
             interval: Interval in minutes (default 30)
             duration: Event duration in minutes (default 0). If > 0, filters out times that would extend past end_hour.
+            event_name: Event name (optional). If specified, filters out times blocked for this event.
 
         Returns:
             List of time strings in HH:MM format (handles times past midnight as 00:00, 00:30, etc.)
@@ -2729,7 +2780,11 @@ class EventPolling(commands.Cog):
 
                 # Only include time if event ends at or before end_hour
                 if end_hour_calc < end_hour or (end_hour_calc == end_hour and end_minute == 0):
-                    times.append(time_str)
+                    # Check if this time is blocked for the specific event
+                    if event_name and not self._is_time_blocked_for_event(time_str, duration, event_name):
+                        times.append(time_str)
+                    elif not event_name:
+                        times.append(time_str)
             else:
                 times.append(time_str)
 
@@ -2756,7 +2811,14 @@ class EventPolling(commands.Cog):
         return start_time, end_dt.time()
 
     def is_time_blocked(self, day: Optional[str], time_str: str, event_name: str) -> Tuple[bool, Optional[str]]:
-        """Check if a time is in the blocked times list"""
+        """Check if a time is in the blocked times list or event-specific blocked periods"""
+        # First, check event-specific blocked times
+        if event_name in self.event_blocked_times:
+            blocked = self.event_blocked_times[event_name]
+            if self._is_time_blocked_for_event(time_str, self.events[event_name]["duration"], event_name):
+                return True, f"This time conflicts with {event_name}'s blocked period ({blocked['start']}-{blocked['end']})"
+
+        # Then check day-specific blocked times (Guild Wars)
         if not day:
             # For daily events, check all days
             for blocked in self.blocked_times:

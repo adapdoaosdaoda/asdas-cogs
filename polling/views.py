@@ -293,7 +293,7 @@ class PartyModal(discord.ui.View):
         start_hour, end_hour = event_info["time_range"]
         interval = event_info["interval"]
         duration = event_info["duration"]
-        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration)
+        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration, event_name)
 
         # Get timezone display
         timezone_display = self.cog.timezone_display
@@ -561,7 +561,7 @@ class FixedDaysModal(discord.ui.View):
         start_hour, end_hour = event_info["time_range"]
         interval = event_info["interval"]
         duration = event_info["duration"]
-        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration)
+        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration, event_name)
 
         # Get timezone display
         timezone_display = self.cog.timezone_display
@@ -869,7 +869,7 @@ class WeeklyEventModal(discord.ui.View):
         start_hour, end_hour = event_info["time_range"]
         interval = event_info["interval"]
         duration = event_info["duration"]
-        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration)
+        times = self.cog.generate_time_options(start_hour, end_hour, interval, duration, event_name)
 
         # Get timezone display
         timezone_display = self.cog.timezone_display
