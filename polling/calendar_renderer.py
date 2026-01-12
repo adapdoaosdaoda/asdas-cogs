@@ -54,13 +54,14 @@ class CalendarRenderer:
         "Guild War": (156, 163, 175)      # Gray
     }
 
-    # Layout constants (increased for higher resolution)
-    CELL_WIDTH = 200
-    CELL_HEIGHT = 80
-    TIME_COL_WIDTH = 140
-    HEADER_HEIGHT = 80
-    FOOTER_HEIGHT = 60
-    PADDING = 20
+    # Layout constants (significantly increased to accommodate large fonts)
+    CELL_WIDTH = 400
+    CELL_HEIGHT = 160
+    TIME_COL_WIDTH = 280
+    HEADER_HEIGHT = 160
+    FOOTER_HEIGHT = 120
+    LEGEND_HEIGHT = 200
+    PADDING = 30
 
     # Event name abbreviations for display
     EVENT_ABBREV = {
@@ -83,11 +84,13 @@ class CalendarRenderer:
         # Try to load a nice font with larger sizes for better clarity
         # Use layout_engine for better rendering if available
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 72, layout_engine=ImageFont.Layout.BASIC)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 68, layout_engine=ImageFont.Layout.BASIC)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 76, layout_engine=ImageFont.Layout.BASIC)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80, layout_engine=ImageFont.Layout.BASIC)
-        except:
+            # Drastically increased font sizes - if these don't show up, there's a caching/reload issue
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 120, layout_engine=ImageFont.Layout.BASIC)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 110, layout_engine=ImageFont.Layout.BASIC)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 140, layout_engine=ImageFont.Layout.BASIC)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 150, layout_engine=ImageFont.Layout.BASIC)
+        except Exception as e:
+            print(f"Font loading error: {e}")
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
             self.font_bold = ImageFont.load_default()
@@ -210,10 +213,11 @@ class CalendarRenderer:
 
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
-            with Pilmoji(img) as pilmoji:
+            # Use emoji_scale_factor to make emojis match the large font sizes
+            with Pilmoji(img, emoji_scale_factor=1.2) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
-                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
+                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
         else:
             # Fallback to text labels if pilmoji not available
             for text_x, text_y, display_text, font in self._emoji_positions:
@@ -653,9 +657,9 @@ class CalendarRenderer:
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
-                                    text_y = y + 10
+                                    text_y = y + 20  # Scaled from 10 to 20 for larger cells
                                 else:
-                                    text_y = y + 45  # Second line (with line break)
+                                    text_y = y + 90  # Scaled from 45 to 90 for larger cells (second line)
 
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
