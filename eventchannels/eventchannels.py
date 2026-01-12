@@ -47,6 +47,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             whitelisted_roles=[],  # List of role IDs that always have view, read, connect & speak permissions
             archive_category_id=None,  # Category where channels with messages are moved instead of being deleted
             deletion_extensions={},  # Maps event_id (str) -> {"delete_time": timestamp, "warning_message_id": int, "text_channel_id": int}
+            archived_channels={},  # Maps channel_id (str) -> {"event_name": str, "original_name": str, "archived_at": timestamp, "event_id": str}
         )
         self.active_tasks = {}  # Store tasks by event_id for cancellation
         self._config_lock = asyncio.Lock()  # Protect event_channels config updates
