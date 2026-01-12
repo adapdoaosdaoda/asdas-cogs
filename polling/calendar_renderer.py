@@ -497,7 +497,7 @@ class CalendarRenderer:
             skip_left = False  # Always draw left border
             self._draw_dotted_border(
                 draw, x, y, x + self.CELL_WIDTH - 1, y + self.HEADER_HEIGHT - 1,
-                self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False, skip_left=skip_left, width=4
+                self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False, skip_left=skip_left, width=3
             )
 
             # Draw day text (centered)
@@ -616,25 +616,40 @@ class CalendarRenderer:
 
                 # Skip borders ONLY for multi-slot event continuations
                 # This allows internal borders to overlap (2px + 2px = 4px)
+                # BUT: Don't skip when transitioning FROM single multi-slot TO combo with that multi-slot
 
                 # Skip bottom border if next row shares any multi-slot event
+                # BUT NOT if current cell is single event and next cell is combo (single->combo transition)
                 has_common_multislot_below = False
                 if next_row_content and current_content:
-                    has_common_multislot_below = any(
-                        event in next_row_content
-                        for event in current_content
-                        if event in multi_slot_events
-                    )
+                    common_events = [
+                        event for event in current_content
+                        if event in next_row_content and event in multi_slot_events
+                    ]
+                    if common_events:
+                        # Check if this is a single->combo transition
+                        is_current_single = len(current_content) == 1
+                        is_next_combo = len(next_row_content) >= 2
+                        # Skip border unless going from single to combo
+                        if not (is_current_single and is_next_combo):
+                            has_common_multislot_below = True
                 skip_bottom = has_common_multislot_below
 
                 # Skip top border only if previous row shares any multi-slot event
+                # BUT NOT if current cell is combo and previous cell is single (single->combo transition)
                 has_common_multislot_above = False
                 if prev_row_content and current_content:
-                    has_common_multislot_above = any(
-                        event in prev_row_content
-                        for event in current_content
-                        if event in multi_slot_events
-                    )
+                    common_events = [
+                        event for event in current_content
+                        if event in prev_row_content and event in multi_slot_events
+                    ]
+                    if common_events:
+                        # Check if this is a single->combo transition
+                        is_prev_single = len(prev_row_content) == 1
+                        is_current_combo = len(current_content) >= 2
+                        # Skip border unless going from single to combo
+                        if not (is_prev_single and is_current_combo):
+                            has_common_multislot_above = True
                 skip_top = has_common_multislot_above
 
                 # Party combo cells always have a top border
@@ -651,21 +666,22 @@ class CalendarRenderer:
 
                 # Calculate width for each border individually
                 # Internal borders are 2px and overlap with adjacent cells to appear as 4px
-                # Top: 4px if first row (external), 2px if internal, 0 if skipped
+                # External borders are 3px
+                # Top: 3px if first row (external), 2px if internal, 0 if skipped
                 top_width = 0
                 if not skip_top:
-                    top_width = 4 if is_first_row else 2
+                    top_width = 3 if is_first_row else 2
 
-                # Left: 4px if first column (external), 2px if internal (always drawn)
-                left_width = 4 if is_first_col else 2
+                # Left: 3px if first column (external), 2px if internal (always drawn)
+                left_width = 3 if is_first_col else 2
 
-                # Right: 4px if last column (external), 2px if internal (always drawn)
-                right_width = 4 if is_last_col else 2
+                # Right: 3px if last column (external), 2px if internal (always drawn)
+                right_width = 3 if is_last_col else 2
 
-                # Bottom: 4px if last row (external), 2px if internal, 0 if skipped
+                # Bottom: 3px if last row (external), 2px if internal, 0 if skipped
                 bottom_width = 0
                 if not skip_bottom:
-                    bottom_width = 4 if is_last_row else 2
+                    bottom_width = 3 if is_last_row else 2
 
                 # Draw borders with individual widths
                 self._draw_borders(
@@ -731,11 +747,11 @@ class CalendarRenderer:
             fill=self.LEGEND_BG,
             outline=None
         )
-        # Draw 4px border around legend
-        draw.line([(legend_x1, legend_y), (legend_x2, legend_y)], fill=self.GRID_COLOR, width=4)  # Top
-        draw.line([(legend_x1, legend_y), (legend_x1, legend_y2)], fill=self.GRID_COLOR, width=4)  # Left
-        draw.line([(legend_x2, legend_y), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=4)  # Right
-        draw.line([(legend_x1, legend_y2), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=4)  # Bottom
+        # Draw 3px border around legend
+        draw.line([(legend_x1, legend_y), (legend_x2, legend_y)], fill=self.GRID_COLOR, width=3)  # Top
+        draw.line([(legend_x1, legend_y), (legend_x1, legend_y2)], fill=self.GRID_COLOR, width=3)  # Left
+        draw.line([(legend_x2, legend_y), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=3)  # Right
+        draw.line([(legend_x1, legend_y2), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=3)  # Bottom
 
         # Draw "Legend:" title
         title_x = self.PADDING + 5
