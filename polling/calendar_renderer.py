@@ -159,8 +159,8 @@ class CalendarRenderer:
     def _draw_dotted_border(self, draw: ImageDraw, x1: int, y1: int, x2: int, y2: int,
                            color: Tuple[int, int, int], dash_length: int = 5,
                            skip_right: bool = False, skip_bottom: bool = False,
-                           skip_top: bool = False, skip_left: bool = False):
-        """Draw a solid, thick border around a rectangle
+                           skip_top: bool = False, skip_left: bool = False, width: int = 2):
+        """Draw a solid border around a rectangle
 
         Args:
             draw: ImageDraw object
@@ -172,22 +172,23 @@ class CalendarRenderer:
             skip_bottom: Skip drawing the bottom border
             skip_top: Skip drawing the top border
             skip_left: Skip drawing the left border
+            width: Border width in pixels (default 2)
         """
         # Top border (if not skipped)
         if not skip_top:
-            draw.line([(x1, y1), (x2 + 1, y1)], fill=color, width=4)
+            draw.line([(x1, y1), (x2 + 1, y1)], fill=color, width=width)
 
         # Left border (if not skipped)
         if not skip_left:
-            draw.line([(x1, y1), (x1, y2 + 1)], fill=color, width=4)
+            draw.line([(x1, y1), (x1, y2 + 1)], fill=color, width=width)
 
         # Right border (if not skipped)
         if not skip_right:
-            draw.line([(x2, y1), (x2, y2 + 1)], fill=color, width=4)
+            draw.line([(x2, y1), (x2, y2 + 1)], fill=color, width=width)
 
         # Bottom border (if not skipped)
         if not skip_bottom:
-            draw.line([(x1, y2), (x2 + 1, y2)], fill=color, width=4)
+            draw.line([(x1, y2), (x2 + 1, y2)], fill=color, width=width)
 
     def render_calendar(
         self,
@@ -255,7 +256,7 @@ class CalendarRenderer:
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             # Use emoji_scale_factor to make emojis larger and more prominent
-            with Pilmoji(img, emoji_scale_factor=0.7) as pilmoji:
+            with Pilmoji(img, emoji_scale_factor=0.9) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
@@ -464,7 +465,7 @@ class CalendarRenderer:
             skip_left = False  # Always draw left border
             self._draw_dotted_border(
                 draw, x, y, x + self.CELL_WIDTH - 1, y + self.HEADER_HEIGHT - 1,
-                self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False, skip_left=skip_left
+                self.GRID_COLOR, skip_right=skip_right, skip_bottom=False, skip_top=False, skip_left=skip_left, width=4
             )
 
             # Draw day text (centered)
@@ -608,10 +609,27 @@ class CalendarRenderer:
                     )
                 skip_top = (row > 0) or has_common_multislot_above  # Skip top for all except first row
 
+                # Party combo cells always have a top border
+                has_party = "Party" in current_content
+                is_combo_cell = len(current_content) >= 2
+                if has_party and is_combo_cell:
+                    skip_top = False
+
+                # Determine border width: external borders are 4px, internal are 2px
+                is_first_row = (row == 0)
+                is_last_row = (row == len(time_slots) - 1)
+                is_first_col = (col == 0)
+                is_last_col = (col == len(days) - 1)
+
+                # Use 4px for external borders, 2px for internal
+                border_width = 2
+                if is_first_row or is_last_row or is_first_col or is_last_col:
+                    border_width = 4
+
                 # Draw border
                 self._draw_dotted_border(
                     draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
-                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom, skip_top=skip_top, skip_left=skip_left
+                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom, skip_top=skip_top, skip_left=skip_left, width=border_width
                 )
 
                 # Draw events in this cell (support up to 2 events)
@@ -649,7 +667,8 @@ class CalendarRenderer:
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
-                                    text_y = y + 15  # Adjusted for smaller fonts
+                                    # First event (Party in combo cells) moved up slightly
+                                    text_y = y + 10  # Moved up from 15
                                 else:
                                     text_y = y + 50  # Adjusted for smaller fonts (second line)
 
