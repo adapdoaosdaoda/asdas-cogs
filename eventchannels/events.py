@@ -37,22 +37,115 @@ class EventsMixin:
 
     @commands.Cog.listener()
     async def on_guild_role_delete(self, role: discord.Role):
-        """Clean up event channels when an event role is deleted externally."""
+        """Handle event role deletion - recreate if channels exist, or clean up properly."""
         guild = role.guild
         stored = await self.config.guild(guild).event_channels()
 
         # Find events associated with this role
-        events_to_remove = []
+        events_to_handle = []
         for event_id, data in stored.items():
             if data.get("role") == role.id:
-                events_to_remove.append(event_id)
-                log.info(f"Event role '{role.name}' was deleted externally - cleaning up channels for event {event_id}")
+                events_to_handle.append((event_id, data))
+                log.info(f"Event role '{role.name}' was deleted externally for event {event_id}")
 
-                # Delete text channel
-                text_channel_id = data.get("text")
-                if text_channel_id:
-                    text_channel = guild.get_channel(text_channel_id)
+        for event_id, data in events_to_handle:
+            # Check if channels still exist
+            text_channel_id = data.get("text")
+            text_channel = guild.get_channel(text_channel_id) if text_channel_id else None
+
+            voice_channel_ids = data.get("voice", [])
+            if isinstance(voice_channel_ids, int):
+                voice_channel_ids = [voice_channel_ids]
+            voice_channels_exist = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
+
+            # Check if there's an active task (meaning cleanup is scheduled)
+            has_active_task = int(event_id) in self.active_tasks
+
+            # Decide whether to recreate or cleanup
+            should_cleanup = False
+
+            if (text_channel or voice_channels_exist) and has_active_task:
+                # Channels still exist and task is running - RECREATE the role
+                log.info(f"Recreating role '{role.name}' for event {event_id} - channels still exist and cleanup is scheduled")
+                try:
+                    # Recreate the role with the same name
+                    new_role = await guild.create_role(
+                        name=role.name,
+                        reason=f"Role was deleted early but event channels still exist - recreating for proper archival"
+                    )
+                    log.info(f"Recreated role '{new_role.name}' (new ID: {new_role.id}) for event {event_id}")
+
+                    # Update stored config with new role ID
+                    stored[event_id]["role"] = new_role.id
+                    await self.config.guild(guild).event_channels.set(stored)
+
+                    # Add permissions to existing channels
                     if text_channel:
+                        try:
+                            await text_channel.set_permissions(
+                                new_role,
+                                view_channel=True,
+                                send_messages=True,
+                                reason="Reapplying permissions after role recreation"
+                            )
+                            log.info(f"Applied permissions for recreated role to {text_channel.name}")
+                        except discord.Forbidden:
+                            log.warning(f"Could not apply permissions to {text_channel.name}")
+
+                    for vc_id in voice_channel_ids:
+                        voice_channel = guild.get_channel(vc_id)
+                        if voice_channel:
+                            try:
+                                await voice_channel.set_permissions(
+                                    new_role,
+                                    view_channel=True,
+                                    connect=True,
+                                    speak=True,
+                                    reason="Reapplying permissions after role recreation"
+                                )
+                                log.info(f"Applied permissions for recreated role to {voice_channel.name}")
+                            except discord.Forbidden:
+                                log.warning(f"Could not apply permissions to {voice_channel.name}")
+
+                    # Update divider permissions
+                    await self._update_divider_permissions(guild, new_role, add=True)
+
+                    # Role recreated successfully, continue to next event
+                    continue
+
+                except discord.Forbidden:
+                    log.error(f"Could not recreate role '{role.name}' - missing permissions. Channels will be cleaned up without role.")
+                    # Fall through to cleanup
+                    should_cleanup = True
+            else:
+                # No active task or no channels - need to clean up
+                should_cleanup = True
+
+            # Clean up if needed
+            if should_cleanup:
+                log.info(f"Cleaning up channels for event {event_id} (active_task={has_active_task}, channels_exist={text_channel or voice_channels_exist})")
+
+                # Handle text channel - archive if it has user messages
+                if text_channel:
+                    has_user_messages = await self._has_user_messages(text_channel)
+
+                    if has_user_messages:
+                        # Try to get event name from stored data or use a placeholder
+                        # Since we don't have the full event object, extract from role name if possible
+                        event_name = f"event-{event_id}"
+
+                        # Archive the channel (role is None since it was deleted)
+                        archived = await self._archive_text_channel(guild, text_channel, None, event_name, event_id)
+                        if archived:
+                            log.info(f"Archived text channel for event {event_id} after role deletion")
+                        else:
+                            # If archiving failed, delete the channel
+                            try:
+                                await text_channel.delete(reason=f"Event role '{role.name}' was deleted (archive failed)")
+                            except (discord.NotFound, discord.Forbidden) as e:
+                                log.warning(f"Could not delete channel {text_channel_id}: {e}")
+                    else:
+                        # No user messages, delete the channel
                         try:
                             await text_channel.delete(reason=f"Event role '{role.name}' was deleted")
                             log.info(f"Deleted channel {text_channel.name} - associated role was deleted")
@@ -60,51 +153,46 @@ class EventsMixin:
                             log.warning(f"Could not delete channel {text_channel_id}: {e}")
 
                 # Delete all voice channels
-                voice_channel_ids = data.get("voice", [])
-                # Handle both old format (single ID) and new format (list of IDs)
-                if isinstance(voice_channel_ids, int):
-                    voice_channel_ids = [voice_channel_ids]
-
                 for vc_id in voice_channel_ids:
                     voice_channel = guild.get_channel(vc_id)
                     if voice_channel:
                         try:
                             await voice_channel.delete(reason=f"Event role '{role.name}' was deleted")
-                            log.info(f"Deleted channel {voice_channel.name} - associated role was deleted")
+                            log.info(f"Deleted voice channel {voice_channel.name} - associated role was deleted")
                         except (discord.NotFound, discord.Forbidden) as e:
                             log.warning(f"Could not delete channel {vc_id}: {e}")
 
                 # Cancel any active task and retry tasks for this event
                 self._cancel_event_tasks(int(event_id))
 
-        # Remove events from storage
-        thread_ids_to_remove = []
-        for event_id in events_to_remove:
-            event_data = stored.get(event_id)
-            if event_data and event_data.get("forum_thread"):
-                thread_ids_to_remove.append(str(event_data["forum_thread"]))
-            stored.pop(event_id, None)
+                # Mark for removal from config
+                stored.pop(event_id, None)
 
-        if events_to_remove:
-            await self.config.guild(guild).event_channels.set(stored)
+                # Remove from thread_event_links
+                if data.get("forum_thread"):
+                    thread_links = await self.config.guild(guild).thread_event_links()
+                    thread_links.pop(str(data["forum_thread"]), None)
+                    await self.config.guild(guild).thread_event_links.set(thread_links)
+                    log.info(f"Removed thread link for event {event_id} (role deleted)")
 
-            # Also remove from thread_event_links
-            if thread_ids_to_remove:
-                thread_links = await self.config.guild(guild).thread_event_links()
-                for thread_id in thread_ids_to_remove:
-                    thread_links.pop(thread_id, None)
-                await self.config.guild(guild).thread_event_links.set(thread_links)
-                log.info(f"Removed {len(thread_ids_to_remove)} thread link(s) (role deleted)")
+                # Clean up deletion extensions tracking
+                deletion_extensions = await self.config.guild(guild).deletion_extensions()
+                if event_id in deletion_extensions:
+                    deletion_extensions.pop(event_id, None)
+                    await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
 
-            # Remove role from divider permissions tracking
-            divider_roles = await self.config.guild(guild).divider_roles()
-            if role.id in divider_roles:
-                divider_roles.remove(role.id)
-                await self.config.guild(guild).divider_roles.set(divider_roles)
-                log.info(f"Removed deleted role '{role.name}' from divider permissions tracking")
+        # Save updated storage (in case roles were recreated with new IDs)
+        await self.config.guild(guild).event_channels.set(stored)
 
-            # Check if divider should be deleted (no more event roles)
-            await self._cleanup_divider_if_empty(guild)
+        # Remove original role from divider permissions tracking (only for the deleted role)
+        divider_roles = await self.config.guild(guild).divider_roles()
+        if role.id in divider_roles:
+            divider_roles.remove(role.id)
+            await self.config.guild(guild).divider_roles.set(divider_roles)
+            log.info(f"Removed deleted role '{role.name}' from divider permissions tracking")
+
+        # Check if divider should be deleted (no more event roles)
+        await self._cleanup_divider_if_empty(guild)
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
