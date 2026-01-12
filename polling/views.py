@@ -386,11 +386,14 @@ class PartyModal(discord.ui.View):
             )
             return
 
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         # Save the selection
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This poll is no longer active!",
                     ephemeral=True
                 )
@@ -409,7 +412,7 @@ class PartyModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=f"✅ Selection saved for **{self.event_name}**!",
             view=None
         )
@@ -417,10 +420,13 @@ class PartyModal(discord.ui.View):
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
+        # Defer the response
+        await interaction.response.defer()
+
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This poll is no longer active!",
                     ephemeral=True
                 )
@@ -438,7 +444,7 @@ class PartyModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=f"🗑️ Cleared selection for **{self.event_name}**",
             view=None
         )
@@ -646,11 +652,14 @@ class FixedDaysModal(discord.ui.View):
                 )
                 return
 
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         # Save the selections
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This poll is no longer active!",
                     ephemeral=True
                 )
@@ -686,7 +695,7 @@ class FixedDaysModal(discord.ui.View):
 
         # Auto-dismiss the ephemeral message
         selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
             view=None
         )
@@ -694,10 +703,13 @@ class FixedDaysModal(discord.ui.View):
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
+        # Defer the response
+        await interaction.response.defer()
+
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This poll is no longer active!",
                     ephemeral=True
                 )
@@ -715,7 +727,7 @@ class FixedDaysModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=f"🗑️ Cleared selection for **{self.event_name}**",
             view=None
         )
@@ -1012,11 +1024,14 @@ class WeeklyEventModal(discord.ui.View):
                 )
                 return
 
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         # Save the selections
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This poll is no longer active!",
                     ephemeral=True
                 )
@@ -1051,7 +1066,7 @@ class WeeklyEventModal(discord.ui.View):
         if has_slot2:
             selection_parts.append(f"Slot 2: {self.selected_slot2_day} at {self.selected_slot2_time}")
 
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
             view=None
         )
@@ -1059,10 +1074,13 @@ class WeeklyEventModal(discord.ui.View):
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
+        # Defer the response
+        await interaction.response.defer()
+
         poll_data = None
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This poll is no longer active!",
                     ephemeral=True
                 )
@@ -1080,7 +1098,7 @@ class WeeklyEventModal(discord.ui.View):
             await self._update_poll_display(interaction, poll_data)
 
         # Auto-dismiss the ephemeral message
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=f"🗑️ Cleared selection for **{self.event_name}**",
             view=None
         )

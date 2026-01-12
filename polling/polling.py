@@ -13,7 +13,6 @@ import importlib
 
 from .views import EventPollView
 from . import calendar_renderer
-from .calendar_renderer import CalendarRenderer
 
 
 class EventPolling(commands.Cog):
@@ -107,7 +106,7 @@ class EventPolling(commands.Cog):
         self.timezone_display = "Server Time (UTC+1)"
 
         # Initialize calendar renderer
-        self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+        self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
 
         # Backup directory path
         self.backups_dir = Path.cwd() / "data" / "eventpolling" / "backups"
@@ -117,9 +116,8 @@ class EventPolling(commands.Cog):
         """Called when the cog is loaded"""
         # Reload the calendar_renderer module to ensure we have the latest code
         importlib.reload(calendar_renderer)
-        from .calendar_renderer import CalendarRenderer
         # Reinitialize the calendar renderer with the reloaded class
-        self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+        self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
 
         self.backup_task.start()
         self.weekly_results_update.start()
@@ -191,14 +189,16 @@ class EventPolling(commands.Cog):
         """Wait for bot to be ready before starting backup task"""
         await self.bot.wait_until_ready()
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def weekly_results_update(self):
-        """Update weekly results embeds every Monday at 10 AM server time"""
+        """Update weekly results embeds every Monday at 10 AM server time (UTC+1)"""
         try:
-            # Get current datetime
-            now = datetime.utcnow()
+            # Get current datetime in server timezone (UTC+1 / Europe/Berlin)
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
+            now = datetime.now(server_tz)
 
-            # Check if it's Monday (0 = Monday) and 10 AM
+            # Check if it's Monday (0 = Monday) and between 10:00-10:59 AM
             if now.weekday() != 0 or now.hour != 10:
                 return
 
@@ -223,14 +223,16 @@ class EventPolling(commands.Cog):
         """Wait for bot to be ready before starting weekly results update task"""
         await self.bot.wait_until_ready()
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def weekly_calendar_update(self):
-        """Update weekly calendar embeds every Monday at 10 AM server time"""
+        """Update weekly calendar embeds every Monday at 10 AM server time (UTC+1)"""
         try:
-            # Get current datetime
-            now = datetime.utcnow()
+            # Get current datetime in server timezone (UTC+1 / Europe/Berlin)
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
+            now = datetime.now(server_tz)
 
-            # Check if it's Monday (0 = Monday) and 10 AM
+            # Check if it's Monday (0 = Monday) and between 10:00-10:59 AM
             if now.weekday() != 0 or now.hour != 10:
                 return
 

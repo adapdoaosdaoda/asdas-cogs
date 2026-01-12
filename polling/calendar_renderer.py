@@ -54,13 +54,14 @@ class CalendarRenderer:
         "Guild War": (156, 163, 175)      # Gray
     }
 
-    # Layout constants (increased for higher resolution)
-    CELL_WIDTH = 200
-    CELL_HEIGHT = 80
-    TIME_COL_WIDTH = 140
-    HEADER_HEIGHT = 80
-    FOOTER_HEIGHT = 60
-    PADDING = 20
+    # Layout constants (significantly increased to accommodate large fonts)
+    CELL_WIDTH = 400
+    CELL_HEIGHT = 160
+    TIME_COL_WIDTH = 280
+    HEADER_HEIGHT = 160
+    FOOTER_HEIGHT = 120
+    LEGEND_HEIGHT = 200
+    PADDING = 30
 
     # Event name abbreviations for display
     EVENT_ABBREV = {
@@ -83,11 +84,13 @@ class CalendarRenderer:
         # Try to load a nice font with larger sizes for better clarity
         # Use layout_engine for better rendering if available
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 72, layout_engine=ImageFont.Layout.BASIC)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 68, layout_engine=ImageFont.Layout.BASIC)
-            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 76, layout_engine=ImageFont.Layout.BASIC)
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80, layout_engine=ImageFont.Layout.BASIC)
-        except:
+            # Drastically increased font sizes - if these don't show up, there's a caching/reload issue
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 120, layout_engine=ImageFont.Layout.BASIC)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 110, layout_engine=ImageFont.Layout.BASIC)
+            self.font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 140, layout_engine=ImageFont.Layout.BASIC)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 150, layout_engine=ImageFont.Layout.BASIC)
+        except Exception as e:
+            print(f"Font loading error: {e}")
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
             self.font_bold = ImageFont.load_default()
@@ -131,19 +134,19 @@ class CalendarRenderer:
         """
         # Top border (if not skipped)
         if not skip_top:
-            draw.line([(x1, y1), (x2, y1)], fill=color, width=2)
+            draw.line([(x1, y1), (x2 + 1, y1)], fill=color, width=2)
 
         # Left border (if not skipped)
         if not skip_left:
-            draw.line([(x1, y1), (x1, y2)], fill=color, width=2)
+            draw.line([(x1, y1), (x1, y2 + 1)], fill=color, width=2)
 
         # Right border (if not skipped)
         if not skip_right:
-            draw.line([(x2, y1), (x2, y2)], fill=color, width=2)
+            draw.line([(x2, y1), (x2, y2 + 1)], fill=color, width=2)
 
         # Bottom border (if not skipped)
         if not skip_bottom:
-            draw.line([(x1, y2), (x2, y2)], fill=color, width=2)
+            draw.line([(x1, y2), (x2 + 1, y2)], fill=color, width=2)
 
     def render_calendar(
         self,
@@ -210,10 +213,11 @@ class CalendarRenderer:
 
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
-            with Pilmoji(img) as pilmoji:
+            # Use emoji_scale_factor to make emojis match the large font sizes
+            with Pilmoji(img, emoji_scale_factor=1.2) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
-                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT)
+                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
         else:
             # Fallback to text labels if pilmoji not available
             for text_x, text_y, display_text, font in self._emoji_positions:
@@ -582,14 +586,16 @@ class CalendarRenderer:
                 next_row_content = cell_contents.get((row + 1, col), None)
                 prev_row_content = cell_contents.get((row - 1, col), None)
 
-                # Horizontal borders: Always draw left, only last column draws right (avoids double borders)
-                skip_left = False  # Always draw left border
-                skip_right = (col < len(days) - 1)  # Skip right for all except last column
+                # Horizontal borders: Only first column draws left, all columns draw right (avoids double borders)
+                skip_left = (col > 0)  # Skip left for all except first column
+                skip_right = False  # Always draw right border
 
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
 
-                # Vertical borders: skip ONLY if same multi-slot event is above/below
+                # Vertical borders: Only first row draws top, all rows draw bottom (avoids double borders)
+                # Exception: skip borders when same multi-slot event continues above/below
+
                 # Skip bottom border if next row shares any multi-slot event
                 has_common_multislot_below = False
                 if next_row_content and current_content:
@@ -598,9 +604,9 @@ class CalendarRenderer:
                         for event in current_content
                         if event in multi_slot_events
                     )
-                skip_bottom = has_common_multislot_below  # Don't skip for last row
+                skip_bottom = has_common_multislot_below
 
-                # Skip top border if previous row shares any multi-slot event
+                # Skip top border if previous row shares any multi-slot event OR if not first row
                 has_common_multislot_above = False
                 if prev_row_content and current_content:
                     has_common_multislot_above = any(
@@ -608,7 +614,7 @@ class CalendarRenderer:
                         for event in current_content
                         if event in multi_slot_events
                     )
-                skip_top = has_common_multislot_above
+                skip_top = (row > 0) or has_common_multislot_above  # Skip top for all except first row
 
                 # Draw border
                 self._draw_dotted_border(
@@ -651,9 +657,9 @@ class CalendarRenderer:
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
-                                    text_y = y + 10
+                                    text_y = y + 20  # Scaled from 10 to 20 for larger cells
                                 else:
-                                    text_y = y + 45  # Second line (with line break)
+                                    text_y = y + 90  # Scaled from 45 to 90 for larger cells (second line)
 
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
