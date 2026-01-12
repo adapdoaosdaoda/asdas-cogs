@@ -40,15 +40,8 @@ class BorkedSince(commands.Cog):
 
     async def cog_load(self):
         """Handle cog initialization."""
-        await self.bot.wait_until_red_ready()
-        self._ready = True
-
-        # Check if previous shutdown was clean
-        await self._check_for_crash()
-
-        # Start the daily update loop if enabled
-        if await self.config.enabled():
-            self._task = asyncio.create_task(self._daily_update_loop())
+        # Launch initialization in background to avoid blocking cog load
+        self._task = asyncio.create_task(self._initialize())
 
     async def cog_unload(self):
         """Handle cog shutdown - mark as clean shutdown."""
@@ -58,6 +51,21 @@ class BorkedSince(commands.Cog):
         # Cancel the update task
         if self._task:
             self._task.cancel()
+
+    async def _initialize(self):
+        """Initialize the cog after bot is ready."""
+        try:
+            await self.bot.wait_until_red_ready()
+            self._ready = True
+
+            # Check if previous shutdown was clean
+            await self._check_for_crash()
+
+            # Start the daily update loop if enabled
+            if await self.config.enabled():
+                self._task = asyncio.create_task(self._daily_update_loop())
+        except Exception as e:
+            print(f"Error initializing BorkedSince cog: {e}")
 
     async def _check_for_crash(self):
         """Check if the bot crashed on last run."""
