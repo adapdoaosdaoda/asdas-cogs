@@ -288,10 +288,10 @@ class CalendarRenderer:
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             # Use emoji_scale_factor to make emojis larger and more prominent
-            with Pilmoji(img, emoji_scale_factor=0.9) as pilmoji:
+            with Pilmoji(img, emoji_scale_factor=0.95) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
-                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
+                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, -2))
         else:
             # Fallback to text labels if pilmoji not available
             for text_x, text_y, display_text, font in self._emoji_positions:
