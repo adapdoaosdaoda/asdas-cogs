@@ -120,7 +120,9 @@ class EventPolling(commands.Cog):
         self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
 
         # Restore views for all existing polls after bot restart
-        await self.bot.wait_until_ready()
+        # Only wait if bot is not already ready (prevents timeout during reload)
+        if not self.bot.is_ready():
+            await self.bot.wait_until_ready()
         all_guilds = await self.config.all_guilds()
         for guild_id, guild_data in all_guilds.items():
             guild = self.bot.get_guild(guild_id)
