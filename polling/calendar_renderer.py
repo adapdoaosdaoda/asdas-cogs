@@ -589,7 +589,9 @@ class CalendarRenderer:
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
 
-                # Vertical borders: skip ONLY if same multi-slot event is above/below
+                # Vertical borders: Only first row draws top, all rows draw bottom (avoids double borders)
+                # Exception: skip borders when same multi-slot event continues above/below
+
                 # Skip bottom border if next row shares any multi-slot event
                 has_common_multislot_below = False
                 if next_row_content and current_content:
@@ -598,9 +600,9 @@ class CalendarRenderer:
                         for event in current_content
                         if event in multi_slot_events
                     )
-                skip_bottom = has_common_multislot_below  # Don't skip for last row
+                skip_bottom = has_common_multislot_below
 
-                # Skip top border if previous row shares any multi-slot event
+                # Skip top border if previous row shares any multi-slot event OR if not first row
                 has_common_multislot_above = False
                 if prev_row_content and current_content:
                     has_common_multislot_above = any(
@@ -608,7 +610,7 @@ class CalendarRenderer:
                         for event in current_content
                         if event in multi_slot_events
                     )
-                skip_top = has_common_multislot_above
+                skip_top = (row > 0) or has_common_multislot_above  # Skip top for all except first row
 
                 # Draw border
                 self._draw_dotted_border(
