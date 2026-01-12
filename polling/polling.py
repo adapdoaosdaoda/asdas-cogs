@@ -497,6 +497,8 @@ class EventPolling(commands.Cog):
 
         for event_name, event_info in self.events.items():
             event_slots = winning_times.get(event_name, {})
+            # Convert string keys to integers (happens when data is cached/serialized)
+            event_slots = {int(k) if isinstance(k, str) else k: v for k, v in event_slots.items()}
 
             for slot_index, slot_data in event_slots.items():
                 if not slot_data:
