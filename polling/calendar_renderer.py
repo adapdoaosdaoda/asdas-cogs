@@ -156,11 +156,43 @@ class CalendarRenderer:
 
         return (faded_r, faded_g, faded_b)
 
+    def _draw_borders(self, draw: ImageDraw, x1: int, y1: int, x2: int, y2: int,
+                     color: Tuple[int, int, int],
+                     top_width: int = 0, left_width: int = 0,
+                     right_width: int = 0, bottom_width: int = 0):
+        """Draw borders around a rectangle with individual widths per side
+
+        Args:
+            draw: ImageDraw object
+            x1, y1: Top-left corner
+            x2, y2: Bottom-right corner
+            color: RGB color tuple
+            top_width: Top border width (0 to skip)
+            left_width: Left border width (0 to skip)
+            right_width: Right border width (0 to skip)
+            bottom_width: Bottom border width (0 to skip)
+        """
+        # Top border
+        if top_width > 0:
+            draw.line([(x1, y1), (x2 + 1, y1)], fill=color, width=top_width)
+
+        # Left border
+        if left_width > 0:
+            draw.line([(x1, y1), (x1, y2 + 1)], fill=color, width=left_width)
+
+        # Right border
+        if right_width > 0:
+            draw.line([(x2, y1), (x2, y2 + 1)], fill=color, width=right_width)
+
+        # Bottom border
+        if bottom_width > 0:
+            draw.line([(x1, y2), (x2 + 1, y2)], fill=color, width=bottom_width)
+
     def _draw_dotted_border(self, draw: ImageDraw, x1: int, y1: int, x2: int, y2: int,
                            color: Tuple[int, int, int], dash_length: int = 5,
                            skip_right: bool = False, skip_bottom: bool = False,
                            skip_top: bool = False, skip_left: bool = False, width: int = 2):
-        """Draw a solid border around a rectangle
+        """Draw a solid border around a rectangle (legacy function for compatibility)
 
         Args:
             draw: ImageDraw object
@@ -615,21 +647,35 @@ class CalendarRenderer:
                 if has_party and is_combo_cell:
                     skip_top = False
 
-                # Determine border width: external borders are 4px, internal are 2px
+                # Determine border widths: external borders are 4px, internal are 2px
                 is_first_row = (row == 0)
                 is_last_row = (row == len(time_slots) - 1)
                 is_first_col = (col == 0)
                 is_last_col = (col == len(days) - 1)
 
-                # Use 4px for external borders, 2px for internal
-                border_width = 2
-                if is_first_row or is_last_row or is_first_col or is_last_col:
-                    border_width = 4
+                # Calculate width for each border individually
+                # Top: 4px if first row (external), 2px if internal, 0 if skipped
+                top_width = 0
+                if not skip_top:
+                    top_width = 4 if is_first_row else 2
 
-                # Draw border
-                self._draw_dotted_border(
+                # Left: 4px if first column (external), 0 if skipped (non-first columns)
+                left_width = 4 if is_first_col and not skip_left else 0
+
+                # Right: always drawn, 4px if last column (external), 2px if internal
+                right_width = 4 if is_last_col else 2
+
+                # Bottom: 4px if last row (external), 2px if internal, 0 if skipped
+                bottom_width = 0
+                if not skip_bottom:
+                    bottom_width = 4 if is_last_row else 2
+
+                # Draw borders with individual widths
+                self._draw_borders(
                     draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
-                    self.GRID_COLOR, skip_right=skip_right, skip_bottom=skip_bottom, skip_top=skip_top, skip_left=skip_left, width=border_width
+                    self.GRID_COLOR,
+                    top_width=top_width, left_width=left_width,
+                    right_width=right_width, bottom_width=bottom_width
                 )
 
                 # Draw events in this cell (support up to 2 events)
