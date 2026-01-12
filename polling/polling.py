@@ -10,9 +10,12 @@ import re
 import json
 from pathlib import Path
 import importlib
+import logging
 
 from .views import EventPollView
 from . import calendar_renderer
+
+log = logging.getLogger("red.asdas-cogs.polling")
 
 
 class EventPolling(commands.Cog):
@@ -1946,13 +1949,12 @@ class EventPolling(commands.Cog):
             "",
             "**How voting works:**",
             "• 5 points: Your exact voted time",
-            "• 3 points: 30 minutes before/after your voted time",
+            "• 2 points: 30 minutes before/after your voted time",
             "• 1 point: 1 hour before/after your voted time",
-            "• For Breaking Army & Showdown: +1 point to same time on all other days",
             "",
             "**Event priority and tiebreak rules:**",
             "• Priority order: Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
-            "• When events conflict: Higher priority gets +5 bonus points",
+            "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
             "",
@@ -2039,13 +2041,12 @@ class EventPolling(commands.Cog):
             "",
             "**How voting works:**",
             "• 5 points: Your exact voted time",
-            "• 3 points: 30 minutes before/after your voted time",
+            "• 2 points: 30 minutes before/after your voted time",
             "• 1 point: 1 hour before/after your voted time",
-            "• For Breaking Army & Showdown: +1 point to same time on all other days",
             "",
             "**Event priority and tiebreak rules:**",
             "• Priority order: Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
-            "• When events conflict: Higher priority gets +5 bonus points",
+            "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
             "",
@@ -2267,6 +2268,9 @@ class EventPolling(commands.Cog):
             Dict of winning times with points: {event_name: {slot_index: (winner_key, points, all_entries)}}
             where all_entries is a list of (key, points) tuples sorted by points descending
         """
+        log.info("=== Starting weighted voting calculation ===")
+        log.info(f"Total users with selections: {len(selections)}")
+
         winning_times = {}
 
         # Generate all possible times
@@ -2275,6 +2279,7 @@ class EventPolling(commands.Cog):
         for event_name, event_info in self.events.items():
             num_slots = event_info["slots"]
             winning_times[event_name] = {}
+            log.info(f"Processing event: {event_name} (type: {event_info['type']}, slots: {num_slots})")
 
             # Special handling for weekly events with multiple slots (Breaking Army, Showdown)
             # Pool all votes together and select top 2
@@ -2314,12 +2319,6 @@ class EventPolling(commands.Cog):
                                 key = (voted_day, target_time)
                                 point_totals[key] = point_totals.get(key, 0) + points
 
-                        # Special case: 1 point to same time on all other days
-                        for day in self.days_of_week:
-                            if day != voted_day:
-                                key = (day, voted_time)
-                                point_totals[key] = point_totals.get(key, 0) + 1
-
                 # Sort by points (desc), then by distance to Saturday (asc), then by time (desc)
                 def saturday_distance(day_name: str) -> int:
                     """Calculate distance from Saturday (0 = Saturday, 1 = Fri/Sun, etc.)"""
@@ -2337,6 +2336,7 @@ class EventPolling(commands.Cog):
                     for slot_index in range(min(num_slots, len(sorted_entries))):
                         winner_key, winner_points = sorted_entries[slot_index]
                         winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
+                        log.info(f"  Slot {slot_index}: {winner_key[0]} at {winner_key[1]} with {winner_points} points")
 
             else:
                 # Original slot-by-slot logic for other event types
@@ -2434,7 +2434,7 @@ class EventPolling(commands.Cog):
         """Resolve conflicts between events based on priority bonus system
 
         When events conflict at the same time:
-        - Higher priority events get +5 point bonus
+        - Higher priority events get +3 point bonus
         - After bonus, higher points wins
         - If still tied, use regular tiebreak rules
 
@@ -2444,6 +2444,8 @@ class EventPolling(commands.Cog):
         Returns:
             Adjusted winning times with conflicts resolved
         """
+        log.info("=== Starting conflict resolution ===")
+
         # Build a mapping of (day, time) -> [(event_name, slot_index, points, priority)]
         time_slot_candidates = {}
 
@@ -2497,6 +2499,7 @@ class EventPolling(commands.Cog):
                 occupied_by[slot_key] = candidate['event_name']
             else:
                 # Conflict! Check if Party can coexist with other events
+                log.info(f"Conflict at {slot_key}: {[f\"{c['event_name']} slot {c['slot_index']}\" for c in candidates]}")
                 party_candidate = None
                 other_candidates = []
 
@@ -2512,6 +2515,7 @@ class EventPolling(commands.Cog):
                 if party_candidate and len(other_candidates) > 0:
                     # Both Party and the other event(s) keep their times
                     # Mark all as occupying this slot (for table splitting)
+                    log.info(f"  Party coexistence allowed - all events keep their times")
                     for candidate in candidates:
                         occupied_by[slot_key] = candidate['event_name']
                     # Don't mark anyone for reassignment - they can coexist
@@ -2521,9 +2525,9 @@ class EventPolling(commands.Cog):
                     max_priority = max(c['priority'] for c in candidates)
 
                     for candidate in candidates:
-                        # Higher priority gets +5 bonus
+                        # Higher priority gets +3 bonus
                         if candidate['priority'] == max_priority:
-                            candidate['adjusted_points'] = candidate['points'] + 5
+                            candidate['adjusted_points'] = candidate['points'] + 3
                         else:
                             candidate['adjusted_points'] = candidate['points']
 
@@ -2532,10 +2536,12 @@ class EventPolling(commands.Cog):
 
                     winner = candidates[0]
                     occupied_by[slot_key] = winner['event_name']
+                    log.info(f"  Winner: {winner['event_name']} slot {winner['slot_index']} ({winner['adjusted_points']} pts)")
 
                     # Mark losers for reassignment
                     for loser in candidates[1:]:
                         events_needing_reassignment.add((loser['event_name'], loser['slot_index']))
+                        log.info(f"  Loser needs reassignment: {loser['event_name']} slot {loser['slot_index']}")
 
         # Assign winning times to events
         for event_name, event_info in self.events.items():
@@ -2551,18 +2557,21 @@ class EventPolling(commands.Cog):
                 # Check if this event needs reassignment
                 if (event_name, slot_index) in events_needing_reassignment:
                     # Event needs to find alternative time
+                    log.info(f"Reassigning {event_name} slot {slot_index} from {winner_key}")
                     selected_entry = None
                     for candidate_key, candidate_points in all_entries:
-                        if self._is_time_available(event_name, candidate_key, occupied_by):
+                        if self._is_time_available(event_name, candidate_key, occupied_by, slot_index, adjusted_winning_times):
                             selected_entry = (candidate_key, candidate_points)
+                            log.info(f"  Found alternative: {candidate_key[0]} at {candidate_key[1]} ({candidate_points} pts)")
                             # Mark this time as occupied
                             self._mark_time_occupied(event_name, candidate_key, occupied_by)
+                            # Update adjusted_winning_times immediately so next slot can check against it
+                            adjusted_winning_times[event_name][slot_index] = (selected_entry[0], selected_entry[1], all_entries)
                             break
 
-                    if selected_entry:
-                        adjusted_winning_times[event_name][slot_index] = (selected_entry[0], selected_entry[1], all_entries)
-                    else:
+                    if not selected_entry:
                         # Fallback to original
+                        log.warning(f"  No alternative found! Keeping original time {winner_key}")
                         adjusted_winning_times[event_name][slot_index] = slot_data
                 else:
                     # Event won its preferred time
@@ -2592,13 +2601,15 @@ class EventPolling(commands.Cog):
         else:
             return [day] if day in self.days_of_week else []
 
-    def _is_time_available(self, event_name: str, time_key: tuple, occupied_by: Dict) -> bool:
+    def _is_time_available(self, event_name: str, time_key: tuple, occupied_by: Dict, current_slot_index: Optional[int] = None, adjusted_winning_times: Optional[Dict] = None) -> bool:
         """Check if a time slot is available for an event
 
         Args:
             event_name: Name of the event
             time_key: (day, time) tuple
             occupied_by: Dictionary mapping slot keys to event names
+            current_slot_index: Index of the slot being placed (for multi-slot events)
+            adjusted_winning_times: Current winning times to check for same-event conflicts
 
         Returns:
             True if available, False otherwise
@@ -2606,6 +2617,20 @@ class EventPolling(commands.Cog):
         day, time = time_key
         event_info = self.events[event_name]
         affected_days = self._get_affected_days(event_name, day)
+
+        # For multi-slot weekly events, check if another slot from the same event is already on this day
+        if event_info.get("type") == "once" and event_info.get("slots", 1) > 1:
+            if adjusted_winning_times and event_name in adjusted_winning_times:
+                for slot_idx, slot_data in adjusted_winning_times[event_name].items():
+                    # Don't check against the current slot being placed
+                    if current_slot_index is not None and slot_idx == current_slot_index:
+                        continue
+                    winner_key, _, _ = slot_data
+                    existing_day, existing_time = winner_key
+                    # If same event already has a slot on this day, reject
+                    if existing_day == day:
+                        log.debug(f"    Rejected {time_key}: {event_name} slot {slot_idx} already on {existing_day} at {existing_time}")
+                        return False
 
         from datetime import datetime, timedelta
         current_time = datetime.strptime(time, "%H:%M")
@@ -2699,7 +2724,7 @@ class EventPolling(commands.Cog):
         if diff_minutes == 0:
             return 5  # Exact match
         elif diff_minutes == 30:
-            return 3  # 30 minutes off
+            return 2  # 30 minutes off
         elif diff_minutes == 60:
             return 1  # 1 hour off
         else:
