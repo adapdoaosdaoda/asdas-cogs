@@ -106,8 +106,8 @@ class CalendarRenderer:
         loaded = False
         for font_path in font_paths:
             try:
-                self.font = ImageFont.truetype(font_path, 50)
-                self.font_small = ImageFont.truetype(font_path, 45)
+                self.font = ImageFont.truetype(font_path, 20)
+                self.font_small = ImageFont.truetype(font_path, 18)
                 print(f"Successfully loaded regular font from: {font_path}")
                 loaded = True
                 break
@@ -123,8 +123,8 @@ class CalendarRenderer:
         loaded_bold = False
         for font_bold_path in font_bold_paths:
             try:
-                self.font_bold = ImageFont.truetype(font_bold_path, 60)
-                self.font_large = ImageFont.truetype(font_bold_path, 65)
+                self.font_bold = ImageFont.truetype(font_bold_path, 24)
+                self.font_large = ImageFont.truetype(font_bold_path, 26)
                 print(f"Successfully loaded bold font from: {font_bold_path}")
                 loaded_bold = True
                 break
@@ -255,7 +255,7 @@ class CalendarRenderer:
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             # Use emoji_scale_factor to make emojis match the smaller font sizes
-            with Pilmoji(img, emoji_scale_factor=0.5) as pilmoji:
+            with Pilmoji(img, emoji_scale_factor=0.2) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
@@ -698,9 +698,9 @@ class CalendarRenderer:
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
-                                    text_y = y + 8  # Adjusted for smaller cells
+                                    text_y = y + 15  # Adjusted for smaller fonts
                                 else:
-                                    text_y = y + 45  # Adjusted for smaller cells (second line)
+                                    text_y = y + 50  # Adjusted for smaller fonts (second line)
 
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
@@ -761,7 +761,7 @@ class CalendarRenderer:
             self._legend_emoji_positions.append((current_x, current_y, emoji_part, self.font_small))
 
             # Draw the text part (after emoji space)
-            text_x = current_x + 12  # Space for emoji
+            text_x = current_x + 5  # Space for emoji (reduced for smaller fonts)
             draw.text((text_x, current_y), text_part, fill=self.HEADER_TEXT, font=self.font_small)
 
             # Move to next position (3 items per column)
