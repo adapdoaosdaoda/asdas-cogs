@@ -710,11 +710,19 @@ class CalendarRenderer:
         """Draw legend showing event labels and names"""
         # Draw legend background
         legend_y = start_y + 5
+        legend_x1 = self.PADDING
+        legend_x2 = width - self.PADDING
+        legend_y2 = legend_y + self.LEGEND_HEIGHT - 10
         draw.rectangle(
-            [self.PADDING, legend_y, width - self.PADDING, legend_y + self.LEGEND_HEIGHT - 10],
+            [legend_x1, legend_y, legend_x2, legend_y2],
             fill=self.LEGEND_BG,
-            outline=self.GRID_COLOR
+            outline=None
         )
+        # Draw 4px border around legend
+        draw.line([(legend_x1, legend_y), (legend_x2, legend_y)], fill=self.GRID_COLOR, width=4)  # Top
+        draw.line([(legend_x1, legend_y), (legend_x1, legend_y2)], fill=self.GRID_COLOR, width=4)  # Left
+        draw.line([(legend_x2, legend_y), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=4)  # Right
+        draw.line([(legend_x1, legend_y2), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=4)  # Bottom
 
         # Draw "Legend:" title
         title_x = self.PADDING + 5
