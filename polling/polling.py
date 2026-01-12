@@ -13,7 +13,6 @@ import importlib
 
 from .views import EventPollView
 from . import calendar_renderer
-from .calendar_renderer import CalendarRenderer
 
 
 class EventPolling(commands.Cog):
@@ -107,7 +106,7 @@ class EventPolling(commands.Cog):
         self.timezone_display = "Server Time (UTC+1)"
 
         # Initialize calendar renderer
-        self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+        self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
 
         # Backup directory path
         self.backups_dir = Path.cwd() / "data" / "eventpolling" / "backups"
@@ -117,9 +116,8 @@ class EventPolling(commands.Cog):
         """Called when the cog is loaded"""
         # Reload the calendar_renderer module to ensure we have the latest code
         importlib.reload(calendar_renderer)
-        from .calendar_renderer import CalendarRenderer
         # Reinitialize the calendar renderer with the reloaded class
-        self.calendar_renderer = CalendarRenderer(timezone=self.timezone_display)
+        self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
 
         self.backup_task.start()
         self.weekly_results_update.start()

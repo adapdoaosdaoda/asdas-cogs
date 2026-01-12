@@ -131,19 +131,19 @@ class CalendarRenderer:
         """
         # Top border (if not skipped)
         if not skip_top:
-            draw.line([(x1, y1), (x2, y1)], fill=color, width=2)
+            draw.line([(x1, y1), (x2 + 1, y1)], fill=color, width=2)
 
         # Left border (if not skipped)
         if not skip_left:
-            draw.line([(x1, y1), (x1, y2)], fill=color, width=2)
+            draw.line([(x1, y1), (x1, y2 + 1)], fill=color, width=2)
 
         # Right border (if not skipped)
         if not skip_right:
-            draw.line([(x2, y1), (x2, y2)], fill=color, width=2)
+            draw.line([(x2, y1), (x2, y2 + 1)], fill=color, width=2)
 
         # Bottom border (if not skipped)
         if not skip_bottom:
-            draw.line([(x1, y2), (x2, y2)], fill=color, width=2)
+            draw.line([(x1, y2), (x2 + 1, y2)], fill=color, width=2)
 
     def render_calendar(
         self,
@@ -582,9 +582,9 @@ class CalendarRenderer:
                 next_row_content = cell_contents.get((row + 1, col), None)
                 prev_row_content = cell_contents.get((row - 1, col), None)
 
-                # Horizontal borders: Always draw left, only last column draws right (avoids double borders)
-                skip_left = False  # Always draw left border
-                skip_right = (col < len(days) - 1)  # Skip right for all except last column
+                # Horizontal borders: Only first column draws left, all columns draw right (avoids double borders)
+                skip_left = (col > 0)  # Skip left for all except first column
+                skip_right = False  # Always draw right border
 
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
