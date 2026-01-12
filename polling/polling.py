@@ -501,6 +501,9 @@ class EventPolling(commands.Cog):
             event_slots = {int(k) if isinstance(k, str) else k: v for k, v in event_slots.items()}
 
             for slot_index, slot_data in event_slots.items():
+                # Ensure slot_index is always an integer (handles any edge cases in serialization)
+                slot_index = int(slot_index) if isinstance(slot_index, str) else slot_index
+
                 if not slot_data:
                     continue
 
