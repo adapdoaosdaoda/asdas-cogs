@@ -590,14 +590,36 @@ class CalendarRenderer:
                         mid_y = y + self.CELL_HEIGHT // 2
                         draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=3)
                     else:
-                        # Single event: use single color (faded)
-                        cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
-                        cell_bg_faded = self._fade_color(cell_bg)
-                        draw.rectangle(
-                            [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                            fill=cell_bg_faded,
-                            outline=None
-                        )
+                        # Single event: Party always renders as split cell (top half only)
+                        if event_names[0] == "Party":
+                            # Top half: Party color (faded)
+                            top_color = self.EVENT_BG_COLORS.get("Party", self.CELL_BG)
+                            top_color_faded = self._fade_color(top_color)
+                            draw.rectangle(
+                                [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT // 2],
+                                fill=top_color_faded,
+                                outline=None
+                            )
+
+                            # Bottom half: empty (default cell background)
+                            draw.rectangle(
+                                [x, y + self.CELL_HEIGHT // 2, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
+                                fill=self.CELL_BG,
+                                outline=None
+                            )
+
+                            # Draw solid horizontal line between the two halves
+                            mid_y = y + self.CELL_HEIGHT // 2
+                            draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=3)
+                        else:
+                            # Other single events: use single color (faded)
+                            cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
+                            cell_bg_faded = self._fade_color(cell_bg)
+                            draw.rectangle(
+                                [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
+                                fill=cell_bg_faded,
+                                outline=None
+                            )
                 else:
                     # Empty cell
                     draw.rectangle(
