@@ -106,8 +106,8 @@ class CalendarRenderer:
         loaded = False
         for font_path in font_paths:
             try:
-                self.font = ImageFont.truetype(font_path, 15)
-                self.font_small = ImageFont.truetype(font_path, 13)
+                self.font = ImageFont.truetype(font_path, 13)
+                self.font_small = ImageFont.truetype(font_path, 11)
                 print(f"Successfully loaded regular font from: {font_path}")
                 loaded = True
                 break
@@ -123,8 +123,8 @@ class CalendarRenderer:
         loaded_bold = False
         for font_bold_path in font_bold_paths:
             try:
-                self.font_bold = ImageFont.truetype(font_bold_path, 19)
-                self.font_large = ImageFont.truetype(font_bold_path, 21)
+                self.font_bold = ImageFont.truetype(font_bold_path, 17)
+                self.font_large = ImageFont.truetype(font_bold_path, 19)
                 print(f"Successfully loaded bold font from: {font_bold_path}")
                 loaded_bold = True
                 break
@@ -254,8 +254,8 @@ class CalendarRenderer:
 
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
-            # Use emoji_scale_factor to make emojis match the smaller font sizes
-            with Pilmoji(img, emoji_scale_factor=0.35) as pilmoji:
+            # Use emoji_scale_factor to make emojis larger and more prominent
+            with Pilmoji(img, emoji_scale_factor=0.7) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
@@ -408,59 +408,19 @@ class CalendarRenderer:
         return schedule
 
     def _sort_events_for_display(self, events_in_cell: List, current_time: str) -> List:
-        """Sort events for display based on dynamic ordering rules
+        """Sort events for display based on priority
 
         Rules:
-        - Multi-slot events (Breaking Army, Showdown, Guild War) that START at current time: go second (Party first)
-        - Multi-slot events that END at current time: go first (Party second)
-        - Single slot events (Hero's Realm, Sword Trial): go second (Party first)
+        - Party always appears on top in combo cells
+        - Other events sorted by priority
 
         Args:
             events_in_cell: List of (priority, event_name, slot_num, start_time, duration)
             current_time: Current time slot being displayed
 
         Returns:
-            Sorted list of events
+            Sorted list of events with Party always first
         """
-        from datetime import datetime, timedelta
-
-        def get_sort_key(event_tuple):
-            priority, event_name, slot_num, start_time, duration = event_tuple
-
-            # Party always uses its base priority with position adjustment
-            if event_name == "Party":
-                return (priority, 0)  # Party's position is determined relative to others
-
-            # Parse times
-            start_dt = datetime.strptime(start_time, "%H:%M")
-            current_dt = datetime.strptime(current_time, "%H:%M")
-
-            # Calculate event span
-            time_slots_spanned = max(1, duration // 30)
-
-            # Determine if this is the start or end of the event
-            is_start = (current_time == start_time)
-
-            # Calculate end time (last slot)
-            end_dt = start_dt + timedelta(minutes=(time_slots_spanned - 1) * 30)
-            end_time = end_dt.strftime("%H:%M")
-            is_end = (current_time == end_time)
-
-            # Multi-slot events
-            if time_slots_spanned > 1:
-                if is_start:
-                    # Event starts here: should go second (lower effective priority)
-                    return (priority - 10, 1)
-                elif is_end:
-                    # Event ends here: should go first (higher effective priority)
-                    return (priority + 10, 0)
-                else:
-                    # Middle of event: use base priority
-                    return (priority, 0)
-            else:
-                # Single slot events (Hero's Realm, Sword Trial): go second
-                return (priority - 10, 1)
-
         # Separate Party and other events
         party_events = [e for e in events_in_cell if e[1] == "Party"]
         other_events = [e for e in events_in_cell if e[1] != "Party"]
@@ -468,21 +428,12 @@ class CalendarRenderer:
         if not other_events:
             return party_events
         if not party_events:
-            return sorted(other_events, key=get_sort_key, reverse=True)
+            # Sort by priority (first element of tuple)
+            return sorted(other_events, key=lambda x: x[0], reverse=True)
 
-        # Sort other events to determine which should go first
-        other_sorted = sorted(other_events, key=get_sort_key, reverse=True)
-
-        # Check the top non-Party event
-        top_event = other_sorted[0]
-        top_key = get_sort_key(top_event)
-
-        # If the top event's position indicator is 1 (should go second), Party goes first
-        if top_key[1] == 1:
-            return party_events + other_sorted
-        else:
-            # Otherwise, other event goes first
-            return other_sorted + party_events
+        # Party always goes first, then other events sorted by priority
+        other_sorted = sorted(other_events, key=lambda x: x[0], reverse=True)
+        return party_events + other_sorted
 
     def _draw_timezone_header(self, draw: ImageDraw, width: int):
         """Draw timezone at top of calendar"""

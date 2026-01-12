@@ -286,6 +286,12 @@ class EventPolling(commands.Cog):
 
             channel = guild.get_channel(channel_id)
             if not channel:
+                # Channel not found - remove the poll from storage
+                print(f"Channel {channel_id} for poll {poll_id} not found, removing from storage")
+                async with self.config.guild(guild).polls() as polls:
+                    if poll_id in polls:
+                        del polls[poll_id]
+                        print(f"✓ Removed poll {poll_id} from guild {guild.id}")
                 return
 
             message = await channel.fetch_message(message_id)
@@ -306,6 +312,13 @@ class EventPolling(commands.Cog):
             # Update the message with the new view
             await message.edit(view=view)
 
+        except discord.NotFound:
+            # Message not found (404) - remove the poll from storage
+            print(f"Poll {poll_id} not found (404), removing from storage")
+            async with self.config.guild(guild).polls() as polls:
+                if poll_id in polls:
+                    del polls[poll_id]
+                    print(f"✓ Removed poll {poll_id} from guild {guild.id}")
         except Exception as e:
             # Silently fail if we can't restore the view
             print(f"Could not restore poll view for poll {poll_id}: {e}")
