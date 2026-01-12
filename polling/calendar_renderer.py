@@ -54,14 +54,14 @@ class CalendarRenderer:
         "Guild War": (156, 163, 175)      # Gray
     }
 
-    # Layout constants (significantly increased to accommodate large fonts)
-    CELL_WIDTH = 400
-    CELL_HEIGHT = 160
-    TIME_COL_WIDTH = 280
-    HEADER_HEIGHT = 160
-    FOOTER_HEIGHT = 120
-    LEGEND_HEIGHT = 200
-    PADDING = 30
+    # Layout constants (compact sizes for smaller fonts)
+    CELL_WIDTH = 200
+    CELL_HEIGHT = 80
+    TIME_COL_WIDTH = 140
+    HEADER_HEIGHT = 80
+    FOOTER_HEIGHT = 60
+    LEGEND_HEIGHT = 100
+    PADDING = 15
 
     # Event name abbreviations for display
     EVENT_ABBREV = {
@@ -106,8 +106,8 @@ class CalendarRenderer:
         loaded = False
         for font_path in font_paths:
             try:
-                self.font = ImageFont.truetype(font_path, 120)
-                self.font_small = ImageFont.truetype(font_path, 110)
+                self.font = ImageFont.truetype(font_path, 50)
+                self.font_small = ImageFont.truetype(font_path, 45)
                 print(f"Successfully loaded regular font from: {font_path}")
                 loaded = True
                 break
@@ -123,8 +123,8 @@ class CalendarRenderer:
         loaded_bold = False
         for font_bold_path in font_bold_paths:
             try:
-                self.font_bold = ImageFont.truetype(font_bold_path, 140)
-                self.font_large = ImageFont.truetype(font_bold_path, 150)
+                self.font_bold = ImageFont.truetype(font_bold_path, 60)
+                self.font_large = ImageFont.truetype(font_bold_path, 65)
                 print(f"Successfully loaded bold font from: {font_bold_path}")
                 loaded_bold = True
                 break
@@ -254,8 +254,8 @@ class CalendarRenderer:
 
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
-            # Use emoji_scale_factor to make emojis match the large font sizes
-            with Pilmoji(img, emoji_scale_factor=1.2) as pilmoji:
+            # Use emoji_scale_factor to make emojis match the smaller font sizes
+            with Pilmoji(img, emoji_scale_factor=0.5) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
@@ -563,7 +563,7 @@ class CalendarRenderer:
             bbox = draw.textbbox((0, 0), time_str, font=self.font)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
-            time_x = self.TIME_COL_WIDTH + self.PADDING - text_width - 10
+            time_x = self.TIME_COL_WIDTH + self.PADDING - text_width - 5
             time_y = y + (self.CELL_HEIGHT - text_height) // 2
             draw.text((time_x, time_y), time_str, fill=self.TIME_TEXT, font=self.font)
 
@@ -698,9 +698,9 @@ class CalendarRenderer:
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
-                                    text_y = y + 20  # Scaled from 10 to 20 for larger cells
+                                    text_y = y + 8  # Adjusted for smaller cells
                                 else:
-                                    text_y = y + 90  # Scaled from 45 to 90 for larger cells (second line)
+                                    text_y = y + 45  # Adjusted for smaller cells (second line)
 
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
@@ -709,16 +709,16 @@ class CalendarRenderer:
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
         # Draw legend background
-        legend_y = start_y + 10
+        legend_y = start_y + 5
         draw.rectangle(
-            [self.PADDING, legend_y, width - self.PADDING, legend_y + self.LEGEND_HEIGHT - 20],
+            [self.PADDING, legend_y, width - self.PADDING, legend_y + self.LEGEND_HEIGHT - 10],
             fill=self.LEGEND_BG,
             outline=self.GRID_COLOR
         )
 
         # Draw "Legend:" title
-        title_x = self.PADDING + 10
-        title_y = legend_y + 8
+        title_x = self.PADDING + 5
+        title_y = legend_y + 4
         draw.text((title_x, title_y), "Legend:", fill=self.HEADER_TEXT, font=self.font_bold)
 
         # Event list with emojis
@@ -732,10 +732,10 @@ class CalendarRenderer:
         ]
 
         # Draw event names in two columns
-        col1_x = self.PADDING + 20
-        col2_x = width // 2 + 10
+        col1_x = self.PADDING + 10
+        col2_x = width // 2 + 5
         current_x = col1_x
-        current_y = legend_y + 32
+        current_y = legend_y + 16
 
         for idx, (event_name, emoji) in enumerate(event_list):
             # Get label and color
@@ -761,15 +761,15 @@ class CalendarRenderer:
             self._legend_emoji_positions.append((current_x, current_y, emoji_part, self.font_small))
 
             # Draw the text part (after emoji space)
-            text_x = current_x + 25  # Space for emoji
+            text_x = current_x + 12  # Space for emoji
             draw.text((text_x, current_y), text_part, fill=self.HEADER_TEXT, font=self.font_small)
 
             # Move to next position (3 items per column)
             if idx == 2:
                 current_x = col2_x
-                current_y = legend_y + 32
+                current_y = legend_y + 16
             else:
-                current_y += 18
+                current_y += 9
 
     def _draw_footer(self, draw: ImageDraw, width: int, height: int, total_voters: int):
         """Draw footer with timestamp and voter count"""
