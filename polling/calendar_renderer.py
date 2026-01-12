@@ -106,8 +106,8 @@ class CalendarRenderer:
         loaded = False
         for font_path in font_paths:
             try:
-                self.font = ImageFont.truetype(font_path, 20)
-                self.font_small = ImageFont.truetype(font_path, 18)
+                self.font = ImageFont.truetype(font_path, 15)
+                self.font_small = ImageFont.truetype(font_path, 13)
                 print(f"Successfully loaded regular font from: {font_path}")
                 loaded = True
                 break
@@ -123,8 +123,8 @@ class CalendarRenderer:
         loaded_bold = False
         for font_bold_path in font_bold_paths:
             try:
-                self.font_bold = ImageFont.truetype(font_bold_path, 24)
-                self.font_large = ImageFont.truetype(font_bold_path, 26)
+                self.font_bold = ImageFont.truetype(font_bold_path, 19)
+                self.font_large = ImageFont.truetype(font_bold_path, 21)
                 print(f"Successfully loaded bold font from: {font_bold_path}")
                 loaded_bold = True
                 break
@@ -255,7 +255,7 @@ class CalendarRenderer:
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             # Use emoji_scale_factor to make emojis match the smaller font sizes
-            with Pilmoji(img, emoji_scale_factor=0.2) as pilmoji:
+            with Pilmoji(img, emoji_scale_factor=0.35) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
                     pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, 0))
@@ -710,11 +710,19 @@ class CalendarRenderer:
         """Draw legend showing event labels and names"""
         # Draw legend background
         legend_y = start_y + 5
+        legend_x1 = self.PADDING
+        legend_x2 = width - self.PADDING
+        legend_y2 = legend_y + self.LEGEND_HEIGHT - 10
         draw.rectangle(
-            [self.PADDING, legend_y, width - self.PADDING, legend_y + self.LEGEND_HEIGHT - 10],
+            [legend_x1, legend_y, legend_x2, legend_y2],
             fill=self.LEGEND_BG,
-            outline=self.GRID_COLOR
+            outline=None
         )
+        # Draw 4px border around legend
+        draw.line([(legend_x1, legend_y), (legend_x2, legend_y)], fill=self.GRID_COLOR, width=4)  # Top
+        draw.line([(legend_x1, legend_y), (legend_x1, legend_y2)], fill=self.GRID_COLOR, width=4)  # Left
+        draw.line([(legend_x2, legend_y), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=4)  # Right
+        draw.line([(legend_x1, legend_y2), (legend_x2, legend_y2)], fill=self.GRID_COLOR, width=4)  # Bottom
 
         # Draw "Legend:" title
         title_x = self.PADDING + 5
