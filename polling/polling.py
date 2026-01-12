@@ -950,10 +950,10 @@ class EventPolling(commands.Cog):
         poll_data = polls[poll_id]
 
         # Create weekly calendar embed and image
-        embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        embed, calendar_file, view = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
 
-        # Send the weekly calendar message with image
-        calendar_msg = await ctx.send(embed=embed, file=calendar_file)
+        # Send the weekly calendar message with image and timezone button
+        calendar_msg = await ctx.send(embed=embed, file=calendar_file, view=view)
 
         # Store weekly calendar message ID in poll data for auto-updating
         async with self.config.guild(ctx.guild).polls() as polls:
@@ -1103,10 +1103,10 @@ class EventPolling(commands.Cog):
             return
 
         # Create weekly calendar embed and image
-        embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        embed, calendar_file, view = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
 
-        # Update the message
-        await message.edit(embed=embed, attachments=[calendar_file])
+        # Update the message with timezone button
+        await message.edit(embed=embed, attachments=[calendar_file], view=view)
 
         # Store weekly calendar message ID in poll data for auto-updating
         async with self.config.guild(ctx.guild).polls() as polls:
@@ -1553,12 +1553,14 @@ class EventPolling(commands.Cog):
 
         return embed, calendar_file, view
 
-    async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File]:
+    async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File, discord.ui.View]:
         """Create a weekly calendar embed with image and poll link (updates only on Monday 10AM)
 
         Returns:
-            Tuple of (embed, file) where file is the calendar image
+            Tuple of (embed, file, view) where file is the calendar image and view contains timezone button
         """
+        from .views import CalendarTimezoneView
+
         title = poll_data["title"]
         channel_id = poll_data["channel_id"]
         message_id = poll_data["message_id"]
@@ -1595,7 +1597,10 @@ class EventPolling(commands.Cog):
         # Add footer
         embed.set_footer(text="times are adjusted every week based on Monday's results")
 
-        return embed, calendar_file
+        # Create view with timezone button
+        view = CalendarTimezoneView(self, guild_id, poll_id)
+
+        return embed, calendar_file, view
 
     async def _update_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
         """Update all live calendar messages associated with this poll"""
@@ -1621,8 +1626,8 @@ class EventPolling(commands.Cog):
                 channel = guild.get_channel(cal_msg_data["channel_id"])
                 if channel:
                     message = await channel.fetch_message(cal_msg_data["message_id"])
-                    updated_embed, calendar_file = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
-                    await message.edit(embed=updated_embed, attachments=[calendar_file])
+                    updated_embed, calendar_file, view = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
+                    await message.edit(embed=updated_embed, attachments=[calendar_file], view=view)
             except Exception:
                 # Silently fail if we can't update a weekly calendar message
                 pass

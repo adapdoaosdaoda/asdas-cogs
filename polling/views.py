@@ -1405,6 +1405,7 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
                 f"• US/Eastern, US/Pacific\n"
                 f"• Europe/London, Asia/Tokyo\n\n"
                 f"See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+                view=DismissibleView(),
                 ephemeral=True
             )
             return
