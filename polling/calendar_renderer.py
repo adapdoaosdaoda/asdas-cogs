@@ -291,7 +291,11 @@ class CalendarRenderer:
             with Pilmoji(img, emoji_scale_factor=0.95) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
-                    pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, -2))
+                    # Guild War emoji gets moved up by an additional 2px (total 4px)
+                    if "🏰" in display_text:
+                        pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, -4))
+                    else:
+                        pilmoji.text((text_x, text_y), display_text, font=font, fill=self.HEADER_TEXT, emoji_position_offset=(0, -2))
         else:
             # Fallback to text labels if pilmoji not available
             for text_x, text_y, display_text, font in self._emoji_positions:
