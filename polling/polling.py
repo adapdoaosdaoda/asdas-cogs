@@ -2545,11 +2545,23 @@ class EventPolling(commands.Cog):
                         log.info(f"  Loser needs reassignment: {loser['event_name']} slot {loser['slot_index']}")
 
         # Assign winning times to events
+        # First pass: Add all winners to adjusted_winning_times
         for event_name, event_info in self.events.items():
             if event_name not in winning_times:
                 continue
 
             adjusted_winning_times[event_name] = {}
+
+            for slot_index, slot_data in winning_times[event_name].items():
+                # Check if this event needs reassignment
+                if (event_name, slot_index) not in events_needing_reassignment:
+                    # Event won its preferred time
+                    adjusted_winning_times[event_name][slot_index] = slot_data
+
+        # Second pass: Process losers and find alternatives
+        for event_name, event_info in self.events.items():
+            if event_name not in winning_times:
+                continue
 
             for slot_index, slot_data in winning_times[event_name].items():
                 winner_key, winner_points, all_entries = slot_data
@@ -2574,9 +2586,6 @@ class EventPolling(commands.Cog):
                         # Fallback to original
                         log.warning(f"  No alternative found! Keeping original time {winner_key}")
                         adjusted_winning_times[event_name][slot_index] = slot_data
-                else:
-                    # Event won its preferred time
-                    adjusted_winning_times[event_name][slot_index] = slot_data
 
         return adjusted_winning_times
 
