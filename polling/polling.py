@@ -16,6 +16,7 @@ from .views import EventPollView
 from . import calendar_renderer
 
 log = logging.getLogger("red.asdas-cogs.polling")
+log.setLevel(logging.ERROR)  # Only show errors in terminal, not info messages
 
 
 class EventPolling(commands.Cog):
