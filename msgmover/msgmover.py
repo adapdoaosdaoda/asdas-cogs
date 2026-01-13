@@ -8,7 +8,7 @@ from discord import Webhook
 
 from .utils import msgFormatter, webhookSettings, webhookFinder, WEBHOOK_EMPTY_AVATAR, WEBHOOK_EMPTY_NAME
 from .utils_copy import timestampEmbed
-from .utils_relay import relayGetData, relayAddChannel, relayRemoveChannel, relayCheckInput, fixMsgrelayStoreV2alpha
+from .utils_relay import relayGetData, relayAddChannel, relayRemoveChannel, relayCheckInput, fixMsgrelayStoreV2alpha, isRelayWebhook
 
 import logging
 logger = logging.getLogger(__name__)
@@ -269,15 +269,20 @@ class Msgmover(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignore message if it's a webhook
-        # REQUIRED IF TWO-WAY CHAT REDIRECTS
-        # TO STOP A TWO-WAY REDIRECT, USE [p]msgrelay delete #channel
-        if message.webhook_id:
-            return
-
         # only do anything if message is sent in a guild
         if not message.guild:
             return
+
+        # Ignore message if it's from one of OUR relay webhooks
+        # This prevents infinite loops in two-way chat redirects
+        # However, we DO want to relay messages from OTHER webhooks (channel integrations, followed channels, etc.)
+        # TO STOP A TWO-WAY REDIRECT, USE [p]msgrelay delete #channel
+        if message.webhook_id:
+            if await isRelayWebhook(self, message.guild, message.webhook_id):
+                return
+            # If we get here, it's a webhook message but NOT from our relay system
+            # This means it's from a channel integration (followed channel, other webhooks, etc.)
+            # Allow it to be relayed
 
         # Retrieve webhook info from channel store
         relayStore = await self.config.guild(message.guild).msgrelayStoreV2()

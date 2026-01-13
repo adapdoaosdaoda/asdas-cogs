@@ -93,6 +93,38 @@ async def relayCheckInput(self, ctx, toChannel):
 
 # Legacy Commands
 
+async def isRelayWebhook(self, guild, webhook_id):
+    """Check if a webhook ID belongs to one of our relay webhooks
+
+    Args:
+        guild: The Discord guild object
+        webhook_id: The webhook ID from the message
+
+    Returns:
+        bool: True if the webhook is one of our relay webhooks, False otherwise
+    """
+    if not webhook_id:
+        return False
+
+    # Get all relay data for this guild
+    relayStore = await self.config.guild(guild).msgrelayStoreV2()
+
+    # Check all channels and their relay webhooks
+    for channel_id, relay_list in relayStore.items():
+        # Ensure relay_list is a list (handle legacy data)
+        if not isinstance(relay_list, list):
+            relay_list = [relay_list]
+
+        # Check each relay webhook
+        for relay in relay_list:
+            webhook_url = relay.get("toWebhook", "")
+            # Extract webhook ID from URL (format: https://discord.com/api/webhooks/{webhook_id}/{token})
+            if webhook_url and f"/{webhook_id}/" in webhook_url:
+                return True
+
+    return False
+
+
 async def fixMsgrelayStoreV2alpha(self, ctx):
     oldData = await self.config.guild(ctx.guild).msgrelayStoreV2()
     if isinstance(oldData[str(ctx.channel.id)], list) == False:

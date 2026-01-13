@@ -27,7 +27,8 @@ Make moving messages between channels/servers easy and integrated, using webhook
 - **msgrelay**: Relay messages from one channel to another channel/server. Forward messages between different servers to bridge communities and share content. Supports:
   - Usernames/profile pics, replies, attachments (files/images/video), and embeds (bot command replies)
   - Edited/deleted messages
-  - Forwarding to multiple webhooks/channels 
+  - Forwarding to multiple webhooks/channels
+  - Channel integrations: webhooks and followed channels (announcements from other servers) 
 
 
 ## How does it work?
@@ -40,6 +41,7 @@ Each user's profile picture, nickname/username, and message is copied and pasted
 - Replies
 - Message edits
 - Message deletes
+- Channel integrations (webhooks, followed channels)
 
 **Not supported yet:**
 - Reactions
