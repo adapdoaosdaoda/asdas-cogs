@@ -2499,7 +2499,8 @@ class EventPolling(commands.Cog):
                 occupied_by[slot_key] = candidate['event_name']
             else:
                 # Conflict! Check if Party can coexist with other events
-                log.info(f"Conflict at {slot_key}: {[f\"{c['event_name']} slot {c['slot_index']}\" for c in candidates]}")
+                conflict_msg = [f"{c['event_name']} slot {c['slot_index']}" for c in candidates]
+                log.info(f"Conflict at {slot_key}: {conflict_msg}")
                 party_candidate = None
                 other_candidates = []
 
