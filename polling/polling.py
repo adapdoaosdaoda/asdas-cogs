@@ -67,7 +67,7 @@ class EventPolling(commands.Cog):
                 "slots": 1,  # Single time slot
                 "color": discord.Color.green(),
                 "emoji": "🎉",
-                "priority": 2
+                "priority": 0  # Lowest priority
             },
             "Breaking Army": {
                 "type": "once",
