@@ -377,7 +377,10 @@ class PartyModal(discord.ui.View):
             self.selected_time = interaction.data["values"][0]
             await interaction.response.defer()
         except discord.HTTPException as e:
-            log.error(f"Failed to defer time selection for user {interaction.user.id}: {e}")
+            if e.status == 429:  # Rate limited
+                log.error(f"Rate limited when selecting time for user {interaction.user.id}: {e}")
+            else:
+                log.error(f"Failed to defer time selection for user {interaction.user.id}: {e}")
         except Exception as e:
             log.error(f"Unexpected error in time selection for user {interaction.user.id}: {e}", exc_info=True)
 
@@ -428,7 +431,26 @@ class PartyModal(discord.ui.View):
                 # Message was already deleted or interaction expired, which is fine
                 pass
         except discord.HTTPException as e:
-            log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
+            if e.status == 429:  # Rate limited
+                log.error(f"Rate limited when saving {self.event_name} vote for user {self.user_id}: {e}")
+                try:
+                    await interaction.response.send_message(
+                        "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                        view=DismissibleView(),
+                        ephemeral=True
+                    )
+                except:
+                    # If we can't respond, try followup
+                    try:
+                        await interaction.followup.send(
+                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                            view=DismissibleView(),
+                            ephemeral=True
+                        )
+                    except:
+                        pass
+            else:
+                log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
         except discord.Forbidden as e:
             log.error(f"Missing permissions to save {self.event_name} vote for user {self.user_id}: {e}")
         except Exception as e:
@@ -710,7 +732,26 @@ class FixedDaysModal(discord.ui.View):
                 # Message was already deleted or interaction expired, which is fine
                 pass
         except discord.HTTPException as e:
-            log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
+            if e.status == 429:  # Rate limited
+                log.error(f"Rate limited when saving {self.event_name} vote for user {self.user_id}: {e}")
+                try:
+                    await interaction.response.send_message(
+                        "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                        view=DismissibleView(),
+                        ephemeral=True
+                    )
+                except:
+                    # If we can't respond, try followup
+                    try:
+                        await interaction.followup.send(
+                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                            view=DismissibleView(),
+                            ephemeral=True
+                        )
+                    except:
+                        pass
+            else:
+                log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
         except discord.Forbidden as e:
             log.error(f"Missing permissions to save {self.event_name} vote for user {self.user_id}: {e}")
         except Exception as e:
@@ -1070,7 +1111,26 @@ class WeeklyEventModal(discord.ui.View):
                 # Message was already deleted or interaction expired, which is fine
                 pass
         except discord.HTTPException as e:
-            log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
+            if e.status == 429:  # Rate limited
+                log.error(f"Rate limited when saving {self.event_name} vote for user {self.user_id}: {e}")
+                try:
+                    await interaction.response.send_message(
+                        "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                        view=DismissibleView(),
+                        ephemeral=True
+                    )
+                except:
+                    # If we can't respond, try followup
+                    try:
+                        await interaction.followup.send(
+                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                            view=DismissibleView(),
+                            ephemeral=True
+                        )
+                    except:
+                        pass
+            else:
+                log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
         except discord.Forbidden as e:
             log.error(f"Missing permissions to save {self.event_name} vote for user {self.user_id}: {e}")
         except Exception as e:
