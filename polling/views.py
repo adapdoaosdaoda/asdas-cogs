@@ -1,6 +1,9 @@
 import discord
 from typing import Optional, Dict, List
 from datetime import datetime
+import logging
+
+log = logging.getLogger("red.asdas-cogs.polling")
 
 
 # City to timezone mapping for common city names
@@ -163,109 +166,123 @@ class EventPollView(discord.ui.View):
 
     async def _show_results(self, interaction: discord.Interaction):
         """Show current poll results with category buttons"""
-        # Get poll_id from the message
-        poll_id = str(interaction.message.id)
-
-        # Get poll data
-        polls = await self.cog.config.guild_from_id(self.guild_id).polls()
-        if poll_id not in polls:
-            await interaction.response.send_message(
-                "This poll is no longer active!",
-                view=DismissibleView(),
-                ephemeral=True
-            )
-            return
-
-        poll_data = polls[poll_id]
-        selections = poll_data.get("selections", {})
-
-        # Calculate winning times using weighted point system
-        winning_times = self.cog._calculate_winning_times_weighted(selections)
-
-        # Format intro text with rules
-        intro_text = self.cog.format_results_intro(selections)
-
-        # Create view with event category buttons
-        results_view = ResultsCategoryView(self.cog, self.guild_id, poll_id, winning_times, selections, self.events)
-
-        # Send intro with category buttons as ephemeral message
-        await interaction.response.send_message(
-            intro_text,
-            view=results_view,
-            ephemeral=True
-        )
-
-    def _create_event_callback(self, event_name: str):
-        async def callback(interaction: discord.Interaction):
-            # Get poll_id from the message (for persistent views)
+        try:
+            # Get poll_id from the message
             poll_id = str(interaction.message.id)
 
-            # Get user's current selections
+            # Get poll data
             polls = await self.cog.config.guild_from_id(self.guild_id).polls()
             if poll_id not in polls:
                 await interaction.response.send_message(
                     "This poll is no longer active!",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
 
             poll_data = polls[poll_id]
-            user_id_str = str(interaction.user.id)
-            user_selections = poll_data["selections"].get(user_id_str, {})
+            selections = poll_data.get("selections", {})
 
-            # Check event type and show appropriate modal
-            event_info = self.events[event_name]
-            timezone_display = self.cog.timezone_display
+            # Calculate winning times using weighted point system
+            winning_times = self.cog._calculate_winning_times_weighted(selections)
 
-            if event_info["type"] == "daily":
-                # Party event - single time selection
-                view = PartyModal(
-                    cog=self.cog,
-                    guild_id=self.guild_id,
-                    poll_id=poll_id,
-                    user_id=interaction.user.id,
-                    event_name=event_name,
-                    user_selections=user_selections,
-                    events=self.events
-                )
-                await interaction.response.send_message(
-                    f"**{event_name}** - Select your preferred time\nTimezone: {timezone_display}",
-                    view=view,
-                    ephemeral=True
-                )
-            elif event_info["type"] == "fixed_days":
-                # Hero's Realm / Sword Trial - multiple fixed days
-                view = FixedDaysModal(
-                    cog=self.cog,
-                    guild_id=self.guild_id,
-                    poll_id=poll_id,
-                    user_id=interaction.user.id,
-                    event_name=event_name,
-                    user_selections=user_selections,
-                    events=self.events
-                )
-                await interaction.response.send_message(
-                    f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
-                    view=view,
-                    ephemeral=True
-                )
-            else:
-                # Breaking Army / Showdown - 2 slots with day+time
-                view = WeeklyEventModal(
-                    cog=self.cog,
-                    guild_id=self.guild_id,
-                    poll_id=poll_id,
-                    user_id=interaction.user.id,
-                    event_name=event_name,
-                    user_selections=user_selections,
-                    events=self.events,
-                    days=self.days
-                )
-                await interaction.response.send_message(
-                    f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
-                    view=view,
-                    ephemeral=True
-                )
+            # Format intro text with rules
+            intro_text = self.cog.format_results_intro(selections)
+
+            # Create view with event category buttons
+            results_view = ResultsCategoryView(self.cog, self.guild_id, poll_id, winning_times, selections, self.events)
+
+            # Send intro with category buttons as ephemeral message
+            await interaction.response.send_message(
+                intro_text,
+                view=results_view,
+                ephemeral=True
+            )
+        except discord.HTTPException as e:
+            log.error(f"Failed to show results for user {interaction.user.id}: {e}")
+        except discord.Forbidden as e:
+            log.error(f"Missing permissions to show results for user {interaction.user.id}: {e}")
+        except Exception as e:
+            log.error(f"Unexpected error showing results for user {interaction.user.id}: {e}", exc_info=True)
+
+    def _create_event_callback(self, event_name: str):
+        async def callback(interaction: discord.Interaction):
+            try:
+                # Get poll_id from the message (for persistent views)
+                poll_id = str(interaction.message.id)
+
+                # Get user's current selections
+                polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+                if poll_id not in polls:
+                    await interaction.response.send_message(
+                        "This poll is no longer active!",
+                        ephemeral=True
+                    )
+                    return
+
+                poll_data = polls[poll_id]
+                user_id_str = str(interaction.user.id)
+                user_selections = poll_data["selections"].get(user_id_str, {})
+
+                # Check event type and show appropriate modal
+                event_info = self.events[event_name]
+                timezone_display = self.cog.timezone_display
+
+                if event_info["type"] == "daily":
+                    # Party event - single time selection
+                    view = PartyModal(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        user_selections=user_selections,
+                        events=self.events
+                    )
+                    await interaction.response.send_message(
+                        f"**{event_name}** - Select your preferred time\nTimezone: {timezone_display}",
+                        view=view,
+                        ephemeral=True
+                    )
+                elif event_info["type"] == "fixed_days":
+                    # Hero's Realm / Sword Trial - multiple fixed days
+                    view = FixedDaysModal(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        user_selections=user_selections,
+                        events=self.events
+                    )
+                    await interaction.response.send_message(
+                        f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
+                        view=view,
+                        ephemeral=True
+                    )
+                else:
+                    # Breaking Army / Showdown - 2 slots with day+time
+                    view = WeeklyEventModal(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        user_selections=user_selections,
+                        events=self.events,
+                        days=self.days
+                    )
+                    await interaction.response.send_message(
+                        f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
+                        view=view,
+                        ephemeral=True
+                    )
+            except discord.HTTPException as e:
+                log.error(f"Failed to respond to {event_name} vote interaction for user {interaction.user.id}: {e}")
+            except discord.Forbidden as e:
+                log.error(f"Missing permissions to respond to {event_name} vote interaction for user {interaction.user.id}: {e}")
+            except Exception as e:
+                log.error(f"Unexpected error in {event_name} vote interaction for user {interaction.user.id}: {e}", exc_info=True)
 
         return callback
 
@@ -356,54 +373,66 @@ class PartyModal(discord.ui.View):
 
     async def _time_selected(self, interaction: discord.Interaction):
         """Handle time selection"""
-        self.selected_time = interaction.data["values"][0]
-        await interaction.response.defer()
+        try:
+            self.selected_time = interaction.data["values"][0]
+            await interaction.response.defer()
+        except discord.HTTPException as e:
+            log.error(f"Failed to defer time selection for user {interaction.user.id}: {e}")
+        except Exception as e:
+            log.error(f"Unexpected error in time selection for user {interaction.user.id}: {e}", exc_info=True)
 
     async def _submit(self, interaction: discord.Interaction):
         """Handle submit"""
-        if not self.selected_time:
-            await interaction.response.send_message(
-                "⚠️ Please select a time before saving!",
-                view=DismissibleView(),
-                ephemeral=True
-            )
-            return
-
-        # Defer the response to avoid timeout
-        await interaction.response.defer()
-
-        # Save the selection
-        poll_data = None
-        async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
-            if self.poll_id not in polls:
-                await interaction.followup.send(
-                    "This poll is no longer active!",
+        try:
+            if not self.selected_time:
+                await interaction.response.send_message(
+                    "⚠️ Please select a time before saving!",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
 
-            user_id_str = str(self.user_id)
-            if user_id_str not in polls[self.poll_id]["selections"]:
-                polls[self.poll_id]["selections"][user_id_str] = {}
+            # Defer the response to avoid timeout
+            await interaction.response.defer()
 
-            # Store the selection
-            polls[self.poll_id]["selections"][user_id_str][self.event_name] = {"time": self.selected_time}
-            poll_data = polls[self.poll_id]
+            # Save the selection
+            poll_data = None
+            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+                if self.poll_id not in polls:
+                    await interaction.followup.send(
+                        "This poll is no longer active!",
+                        ephemeral=True
+                    )
+                    return
 
-        # Update the poll embed
-        if poll_data:
-            await self._update_poll_display(interaction, poll_data)
+                user_id_str = str(self.user_id)
+                if user_id_str not in polls[self.poll_id]["selections"]:
+                    polls[self.poll_id]["selections"][user_id_str] = {}
 
-        # Auto-dismiss the ephemeral message
-        try:
-            await interaction.edit_original_response(
-                content=f"✅ Selection saved for **{self.event_name}**!",
-                view=None
-            )
-            await interaction.delete_original_response()
-        except discord.errors.NotFound:
-            # Message was already deleted or interaction expired, which is fine
-            pass
+                # Store the selection
+                polls[self.poll_id]["selections"][user_id_str][self.event_name] = {"time": self.selected_time}
+                poll_data = polls[self.poll_id]
+
+            # Update the poll embed
+            if poll_data:
+                await self._update_poll_display(interaction, poll_data)
+
+            # Auto-dismiss the ephemeral message
+            try:
+                await interaction.edit_original_response(
+                    content=f"✅ Selection saved for **{self.event_name}**!",
+                    view=None
+                )
+                await interaction.delete_original_response()
+            except discord.errors.NotFound:
+                # Message was already deleted or interaction expired, which is fine
+                pass
+        except discord.HTTPException as e:
+            log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
+        except discord.Forbidden as e:
+            log.error(f"Missing permissions to save {self.event_name} vote for user {self.user_id}: {e}")
+        except Exception as e:
+            log.error(f"Unexpected error saving {self.event_name} vote for user {self.user_id}: {e}", exc_info=True)
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -619,66 +648,73 @@ class FixedDaysModal(discord.ui.View):
 
     async def _submit(self, interaction: discord.Interaction):
         """Handle submit"""
-        if not self.selected_times:
-            await interaction.response.send_message(
-                "⚠️ Please select at least one time before saving!",
-                view=DismissibleView(),
-                ephemeral=True
-            )
-            return
-
-        # Defer the response to avoid timeout
-        await interaction.response.defer()
-
-        # Save the selections
-        poll_data = None
-        async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
-            if self.poll_id not in polls:
-                await interaction.followup.send(
-                    "This poll is no longer active!",
+        try:
+            if not self.selected_times:
+                await interaction.response.send_message(
+                    "⚠️ Please select at least one time before saving!",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
 
-            user_id_str = str(self.user_id)
-            if user_id_str not in polls[self.poll_id]["selections"]:
-                polls[self.poll_id]["selections"][user_id_str] = {}
+            # Defer the response to avoid timeout
+            await interaction.response.defer()
 
-            # Store as list format
-            event_info = self.events[self.event_name]
-            days = event_info["days"]
-            selections_list = []
+            # Save the selections
+            poll_data = None
+            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+                if self.poll_id not in polls:
+                    await interaction.followup.send(
+                        "This poll is no longer active!",
+                        ephemeral=True
+                    )
+                    return
 
-            for day in days:
-                if day in self.selected_times:
-                    selections_list.append({"time": self.selected_times[day]})
-                else:
-                    # Keep existing selection if available, otherwise None
-                    existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [])
-                    idx = days.index(day)
-                    if isinstance(existing, list) and idx < len(existing):
-                        selections_list.append(existing[idx])
+                user_id_str = str(self.user_id)
+                if user_id_str not in polls[self.poll_id]["selections"]:
+                    polls[self.poll_id]["selections"][user_id_str] = {}
+
+                # Store as list format
+                event_info = self.events[self.event_name]
+                days = event_info["days"]
+                selections_list = []
+
+                for day in days:
+                    if day in self.selected_times:
+                        selections_list.append({"time": self.selected_times[day]})
                     else:
-                        selections_list.append(None)
+                        # Keep existing selection if available, otherwise None
+                        existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [])
+                        idx = days.index(day)
+                        if isinstance(existing, list) and idx < len(existing):
+                            selections_list.append(existing[idx])
+                        else:
+                            selections_list.append(None)
 
-            polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
-            poll_data = polls[self.poll_id]
+                polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
+                poll_data = polls[self.poll_id]
 
-        # Update the poll embed
-        if poll_data:
-            await self._update_poll_display(interaction, poll_data)
+            # Update the poll embed
+            if poll_data:
+                await self._update_poll_display(interaction, poll_data)
 
-        # Auto-dismiss the ephemeral message
-        selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
-        try:
-            await interaction.edit_original_response(
-                content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
-                view=None
-            )
-            await interaction.delete_original_response()
-        except discord.errors.NotFound:
-            # Message was already deleted or interaction expired, which is fine
-            pass
+            # Auto-dismiss the ephemeral message
+            selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
+            try:
+                await interaction.edit_original_response(
+                    content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
+                    view=None
+                )
+                await interaction.delete_original_response()
+            except discord.errors.NotFound:
+                # Message was already deleted or interaction expired, which is fine
+                pass
+        except discord.HTTPException as e:
+            log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
+        except discord.Forbidden as e:
+            log.error(f"Missing permissions to save {self.event_name} vote for user {self.user_id}: {e}")
+        except Exception as e:
+            log.error(f"Unexpected error saving {self.event_name} vote for user {self.user_id}: {e}", exc_info=True)
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
@@ -969,69 +1005,76 @@ class WeeklyEventModal(discord.ui.View):
 
     async def _submit(self, interaction: discord.Interaction):
         """Handle submit"""
-        # Check if at least one complete slot is selected
-        has_slot1 = self.selected_slot1_day and self.selected_slot1_time
-        has_slot2 = self.selected_slot2_day and self.selected_slot2_time
+        try:
+            # Check if at least one complete slot is selected
+            has_slot1 = self.selected_slot1_day and self.selected_slot1_time
+            has_slot2 = self.selected_slot2_day and self.selected_slot2_time
 
-        if not has_slot1 and not has_slot2:
-            await interaction.response.send_message(
-                "⚠️ Please select at least one complete slot (day + time) before saving!",
-                view=DismissibleView(),
-                ephemeral=True
-            )
-            return
-
-        # Defer the response to avoid timeout
-        await interaction.response.defer()
-
-        # Save the selections
-        poll_data = None
-        async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
-            if self.poll_id not in polls:
-                await interaction.followup.send(
-                    "This poll is no longer active!",
+            if not has_slot1 and not has_slot2:
+                await interaction.response.send_message(
+                    "⚠️ Please select at least one complete slot (day + time) before saving!",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
 
-            user_id_str = str(self.user_id)
-            if user_id_str not in polls[self.poll_id]["selections"]:
-                polls[self.poll_id]["selections"][user_id_str] = {}
+            # Defer the response to avoid timeout
+            await interaction.response.defer()
 
-            # Get existing selections to preserve slots we're not updating
-            existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [None, None])
-            if not isinstance(existing, list):
-                existing = [None, None]
+            # Save the selections
+            poll_data = None
+            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+                if self.poll_id not in polls:
+                    await interaction.followup.send(
+                        "This poll is no longer active!",
+                        ephemeral=True
+                    )
+                    return
 
-            # Update slots
-            selections_list = [
-                {"day": self.selected_slot1_day, "time": self.selected_slot1_time} if has_slot1 else existing[0],
-                {"day": self.selected_slot2_day, "time": self.selected_slot2_time} if has_slot2 else (existing[1] if len(existing) > 1 else None)
-            ]
+                user_id_str = str(self.user_id)
+                if user_id_str not in polls[self.poll_id]["selections"]:
+                    polls[self.poll_id]["selections"][user_id_str] = {}
 
-            polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
-            poll_data = polls[self.poll_id]
+                # Get existing selections to preserve slots we're not updating
+                existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [None, None])
+                if not isinstance(existing, list):
+                    existing = [None, None]
 
-        # Update the poll embed
-        if poll_data:
-            await self._update_poll_display(interaction, poll_data)
+                # Update slots
+                selections_list = [
+                    {"day": self.selected_slot1_day, "time": self.selected_slot1_time} if has_slot1 else existing[0],
+                    {"day": self.selected_slot2_day, "time": self.selected_slot2_time} if has_slot2 else (existing[1] if len(existing) > 1 else None)
+                ]
 
-        # Auto-dismiss the ephemeral message
-        selection_parts = []
-        if has_slot1:
-            selection_parts.append(f"Slot 1: {self.selected_slot1_day} at {self.selected_slot1_time}")
-        if has_slot2:
-            selection_parts.append(f"Slot 2: {self.selected_slot2_day} at {self.selected_slot2_time}")
+                polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
+                poll_data = polls[self.poll_id]
 
-        try:
-            await interaction.edit_original_response(
-                content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
-                view=None
-            )
-            await interaction.delete_original_response()
-        except discord.errors.NotFound:
-            # Message was already deleted or interaction expired, which is fine
-            pass
+            # Update the poll embed
+            if poll_data:
+                await self._update_poll_display(interaction, poll_data)
+
+            # Auto-dismiss the ephemeral message
+            selection_parts = []
+            if has_slot1:
+                selection_parts.append(f"Slot 1: {self.selected_slot1_day} at {self.selected_slot1_time}")
+            if has_slot2:
+                selection_parts.append(f"Slot 2: {self.selected_slot2_day} at {self.selected_slot2_time}")
+
+            try:
+                await interaction.edit_original_response(
+                    content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
+                    view=None
+                )
+                await interaction.delete_original_response()
+            except discord.errors.NotFound:
+                # Message was already deleted or interaction expired, which is fine
+                pass
+        except discord.HTTPException as e:
+            log.error(f"Failed to save {self.event_name} vote for user {self.user_id}: {e}")
+        except discord.Forbidden as e:
+            log.error(f"Missing permissions to save {self.event_name} vote for user {self.user_id}: {e}")
+        except Exception as e:
+            log.error(f"Unexpected error saving {self.event_name} vote for user {self.user_id}: {e}", exc_info=True)
 
     async def _clear_selection(self, interaction: discord.Interaction):
         """Clear the user's selection for this event"""
