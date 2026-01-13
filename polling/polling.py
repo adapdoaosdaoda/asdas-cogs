@@ -46,7 +46,7 @@ class EventPolling(commands.Cog):
                 "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
                 "color": discord.Color.greyple(),
                 "emoji": "🛡️",
-                "priority": 5  # Highest priority
+                "priority": 4  # Highest priority
             },
             "Sword Trial": {
                 "type": "fixed_days",
@@ -57,7 +57,7 @@ class EventPolling(commands.Cog):
                 "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
                 "color": discord.Color.greyple(),
                 "emoji": "⚔️",
-                "priority": 4
+                "priority": 3
             },
             "Party": {
                 "type": "daily",
@@ -77,7 +77,7 @@ class EventPolling(commands.Cog):
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.blue(),
                 "emoji": "⚡",
-                "priority": 3
+                "priority": 2
             },
             "Showdown": {
                 "type": "once",
@@ -87,7 +87,7 @@ class EventPolling(commands.Cog):
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.red(),
                 "emoji": "🏆",
-                "priority": 1  # Lowest priority
+                "priority": 1
             }
         }
 
