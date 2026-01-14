@@ -174,10 +174,14 @@ class EventPollView(discord.ui.View):
             polls = await self.cog.config.guild_from_id(self.guild_id).polls()
             if poll_id not in polls:
                 await interaction.response.send_message(
-                    "This poll is no longer active!",
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
                     view=DismissibleView(),
                     ephemeral=True
                 )
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass
                 return
 
             poll_data = polls[poll_id]
@@ -215,9 +219,14 @@ class EventPollView(discord.ui.View):
                 polls = await self.cog.config.guild_from_id(self.guild_id).polls()
                 if poll_id not in polls:
                     await interaction.response.send_message(
-                        "This poll is no longer active!",
+                        "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                        view=DismissibleView(),
                         ephemeral=True
                     )
+                    try:
+                        await interaction.delete_original_response()
+                    except:
+                        pass
                     return
 
                 poll_data = polls[poll_id]
@@ -389,10 +398,14 @@ class PartyModal(discord.ui.View):
         try:
             if not self.selected_time:
                 await interaction.response.send_message(
-                    "⚠️ Please select a time before saving!",
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
                     view=DismissibleView(),
                     ephemeral=True
                 )
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass
                 return
 
             # Defer the response to avoid timeout
@@ -403,9 +416,14 @@ class PartyModal(discord.ui.View):
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
-                        "This poll is no longer active!",
+                        "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                        view=DismissibleView(),
                         ephemeral=True
                     )
+                    try:
+                        await interaction.delete_original_response()
+                    except:
+                        pass
                     return
 
                 user_id_str = str(self.user_id)
@@ -465,9 +483,14 @@ class PartyModal(discord.ui.View):
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
                 await interaction.followup.send(
-                    "This poll is no longer active!",
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass
                 return
 
             user_id_str = str(self.user_id)
@@ -673,10 +696,14 @@ class FixedDaysModal(discord.ui.View):
         try:
             if not self.selected_times:
                 await interaction.response.send_message(
-                    "⚠️ Please select at least one time before saving!",
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
                     view=DismissibleView(),
                     ephemeral=True
                 )
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass
                 return
 
             # Defer the response to avoid timeout
@@ -687,9 +714,14 @@ class FixedDaysModal(discord.ui.View):
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
-                        "This poll is no longer active!",
+                        "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                        view=DismissibleView(),
                         ephemeral=True
                     )
+                    try:
+                        await interaction.delete_original_response()
+                    except:
+                        pass
                     return
 
                 user_id_str = str(self.user_id)
@@ -766,9 +798,14 @@ class FixedDaysModal(discord.ui.View):
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
                 await interaction.followup.send(
-                    "This poll is no longer active!",
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass
                 return
 
             user_id_str = str(self.user_id)
@@ -1053,10 +1090,14 @@ class WeeklyEventModal(discord.ui.View):
 
             if not has_slot1 and not has_slot2:
                 await interaction.response.send_message(
-                    "⚠️ Please select at least one complete slot (day + time) before saving!",
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
                     view=DismissibleView(),
                     ephemeral=True
                 )
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass
                 return
 
             # Defer the response to avoid timeout
@@ -1067,9 +1108,14 @@ class WeeklyEventModal(discord.ui.View):
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
-                        "This poll is no longer active!",
+                        "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                        view=DismissibleView(),
                         ephemeral=True
                     )
+                    try:
+                        await interaction.delete_original_response()
+                    except:
+                        pass
                     return
 
                 user_id_str = str(self.user_id)
@@ -1145,9 +1191,14 @@ class WeeklyEventModal(discord.ui.View):
         async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
             if self.poll_id not in polls:
                 await interaction.followup.send(
-                    "This poll is no longer active!",
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                    view=DismissibleView(),
                     ephemeral=True
                 )
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass
                 return
 
             user_id_str = str(self.user_id)
@@ -1436,27 +1487,28 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
             tz = pytz.timezone(timezone_str)
         except pytz.exceptions.UnknownTimeZoneError:
             await interaction.response.send_message(
-                f"❌ Unknown timezone or city: `{user_input}`\n\n"
-                f"You can use city names like:\n"
-                f"• London, Paris, Berlin\n"
-                f"• New York, Los Angeles, Chicago\n"
-                f"• Tokyo, Singapore, Sydney\n\n"
-                f"Or standard timezone formats like:\n"
-                f"• US/Eastern, US/Pacific\n"
-                f"• Europe/London, Asia/Tokyo\n\n"
-                f"See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+                "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
                 view=DismissibleView(),
                 ephemeral=True
             )
+            try:
+                await interaction.delete_original_response()
+            except:
+                pass
             return
 
         # Get poll data
         polls = await self.cog.config.guild_from_id(self.guild_id).polls()
         if self.poll_id not in polls:
             await interaction.response.send_message(
-                "❌ This poll is no longer active!",
+                "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
+                view=DismissibleView(),
                 ephemeral=True
             )
+            try:
+                await interaction.delete_original_response()
+            except:
+                pass
             return
 
         poll_data = polls[self.poll_id]
