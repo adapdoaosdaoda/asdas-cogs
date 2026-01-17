@@ -1,0 +1,19 @@
+{
+    "$schema": "https://raw.githubusercontent.com/Cog-Creators/Red-DiscordBot/V3/develop/schema/red_cog.schema.json",
+    "author": ["adapdoaosdaoda"],
+    "description": "Experimental monkey-patch to enable Select components in discord.py Modals. This patches discord.py's Modal class to allow select menus, which is supported in discord.js but not yet officially supported in discord.py. Use at your own risk - this may break if Discord's API rejects select components in modals.",
+    "install_msg": "⚠️ **WARNING: EXPERIMENTAL COG** ⚠️\n\nThis cog monkey-patches discord.py to enable Select components in Modals.\n\n**IMPORTANT:**\n• This is experimental and may not work if Discord's API rejects select components\n• discord.js supports this feature, but discord.py does not officially\n• May break with discord.py updates\n• Load this cog BEFORE any cogs that use Modals with Selects\n\nUse `[p]load modalpatch` to activate the patch.",
+    "short": "Enable Select components in discord.py Modals (experimental)",
+    "tags": [
+        "utility",
+        "modal",
+        "patch",
+        "experimental",
+        "discord.py"
+    ],
+    "requirements": [],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 8, 0],
+    "type": "COG",
+    "end_user_data_statement": "This cog does not store any user data. It only patches discord.py's Modal class."
+}

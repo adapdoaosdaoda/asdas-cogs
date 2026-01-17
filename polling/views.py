@@ -86,7 +86,7 @@ CITY_TIMEZONE_MAP = {
 
 
 class EventPollView(discord.ui.View):
-    """Main view with buttons for each event type"""
+    """Main view with Vote and Results buttons"""
 
     def __init__(self, cog, guild_id: int, creator_id: int, events: Dict, days: List[str], blocked_times: List[Dict]):
         super().__init__(timeout=None)
@@ -98,7 +98,18 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Add Results button first (grey, row 0)
+        # Add Vote button (primary, row 0)
+        vote_button = discord.ui.Button(
+            label="Vote",
+            style=discord.ButtonStyle.primary,
+            emoji="🗳️",
+            custom_id="event_poll:vote",
+            row=0
+        )
+        vote_button.callback = self._open_vote_modal
+        self.add_item(vote_button)
+
+        # Add Results button (secondary, row 0)
         results_button = discord.ui.Button(
             label="Results",
             style=discord.ButtonStyle.secondary,
@@ -109,40 +120,47 @@ class EventPollView(discord.ui.View):
         results_button.callback = self._show_results
         self.add_item(results_button)
 
-        # Create buttons for each event in 2 rows
-        # Row 0: Results, Hero's Realm, Sword Trial
-        # Row 1: Party, Breaking Army, Showdown
-        event_names = list(events.keys())
-        for idx, event_name in enumerate(event_names):
-            # Determine button style based on event
-            if "Hero's Realm" in event_name:
-                button_style = discord.ButtonStyle.secondary  # Grey
-                row = 0
-            elif "Sword Trial" in event_name:
-                button_style = discord.ButtonStyle.secondary  # Grey
-                row = 0
-            elif "Party" in event_name:
-                button_style = discord.ButtonStyle.success  # Green
-                row = 1
-            elif "Breaking Army" in event_name:
-                button_style = discord.ButtonStyle.primary  # Blue
-                row = 1
-            elif "Showdown" in event_name:
-                button_style = discord.ButtonStyle.danger  # Red
-                row = 1
-            else:
-                button_style = discord.ButtonStyle.secondary  # Grey
-                row = 1
+    async def _open_vote_modal(self, interaction: discord.Interaction):
+        """Open the unified voting modal with all event select menus"""
+        try:
+            from .modals import EventVotingModal
 
-            button = discord.ui.Button(
-                label=event_name,
-                style=button_style,
-                emoji=events[event_name]["emoji"],
-                custom_id=f"event_poll:{event_name}",
-                row=row
+            # Get poll_id from the message
+            poll_id = str(interaction.message.id)
+
+            # Get poll data and user's current selections
+            polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+            if poll_id not in polls:
+                await interaction.response.send_message(
+                    "This poll is no longer active!"
+                )
+                return
+
+            poll_data = polls[poll_id]
+            user_id_str = str(interaction.user.id)
+            user_selections = poll_data["selections"].get(user_id_str, {})
+
+            # Create and send the modal
+            modal = EventVotingModal(
+                self.cog,
+                self.guild_id,
+                poll_id,
+                interaction.user.id,
+                self.events,
+                user_selections
             )
-            button.callback = self._create_event_callback(event_name)
-            self.add_item(button)
+
+            await interaction.response.send_modal(modal)
+
+        except Exception as e:
+            log.error(f"Failed to open voting modal for user {interaction.user.id}: {e}", exc_info=True)
+            try:
+                await interaction.response.send_message(
+                    "❌ Failed to open voting modal. Make sure the ModalPatch cog is loaded!",
+                    ephemeral=True
+                )
+            except:
+                pass
 
     async def _show_results(self, interaction: discord.Interaction):
         """Show current poll results with category buttons"""
@@ -154,8 +172,7 @@ class EventPollView(discord.ui.View):
             polls = await self.cog.config.guild_from_id(self.guild_id).polls()
             if poll_id not in polls:
                 await interaction.response.send_message(
-                    "This poll is no longer active!",
-                    ephemeral=True
+                    "This poll is no longer active!"
                 )
                 return
 
@@ -184,86 +201,6 @@ class EventPollView(discord.ui.View):
         except Exception as e:
             log.error(f"Unexpected error showing results for user {interaction.user.id}: {e}", exc_info=True)
 
-    def _create_event_callback(self, event_name: str):
-        async def callback(interaction: discord.Interaction):
-            try:
-                # Get poll_id from the message (for persistent views)
-                poll_id = str(interaction.message.id)
-
-                # Get user's current selections
-                polls = await self.cog.config.guild_from_id(self.guild_id).polls()
-                if poll_id not in polls:
-                    await interaction.response.send_message(
-                        "This poll is no longer active!",
-                        ephemeral=True
-                    )
-                    return
-
-                poll_data = polls[poll_id]
-                user_id_str = str(interaction.user.id)
-                user_selections = poll_data["selections"].get(user_id_str, {})
-
-                # Check event type and show appropriate modal
-                event_info = self.events[event_name]
-                timezone_display = self.cog.timezone_display
-
-                if event_info["type"] == "daily":
-                    # Party event - single time selection
-                    view = PartyModal(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select your preferred time\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
-                elif event_info["type"] == "fixed_days":
-                    # Hero's Realm / Sword Trial - multiple fixed days
-                    view = FixedDaysModal(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Breaking Army / Showdown - 2 slots with day+time
-                    view = WeeklyEventModal(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events,
-                        days=self.days
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
-            except discord.HTTPException as e:
-                log.error(f"Failed to respond to {event_name} vote interaction for user {interaction.user.id}: {e}")
-            except discord.Forbidden as e:
-                log.error(f"Missing permissions to respond to {event_name} vote interaction for user {interaction.user.id}: {e}")
-            except Exception as e:
-                log.error(f"Unexpected error in {event_name} vote interaction for user {interaction.user.id}: {e}", exc_info=True)
-
-        return callback
 
 
 class PartyModal(discord.ui.View):
@@ -341,15 +278,6 @@ class PartyModal(discord.ui.View):
             clear_btn.callback = self._clear_selection
             self.add_item(clear_btn)
 
-        cancel_btn = discord.ui.Button(
-            label="Cancel",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌",
-            row=button_row
-        )
-        cancel_btn.callback = self._cancel
-        self.add_item(cancel_btn)
-
     async def _time_selected(self, interaction: discord.Interaction):
         """Handle time selection"""
         self.selected_time = interaction.data["values"][0]
@@ -360,8 +288,7 @@ class PartyModal(discord.ui.View):
         try:
             if not self.selected_time:
                 await interaction.response.send_message(
-                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                    ephemeral=True
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes."
                 )
                 try:
                     await interaction.delete_original_response()
@@ -377,8 +304,7 @@ class PartyModal(discord.ui.View):
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
-                        "This poll is no longer active!",
-                        ephemeral=True
+                        "This poll is no longer active!"
                     )
                     return
 
@@ -415,8 +341,7 @@ class PartyModal(discord.ui.View):
                     # If we can't respond, try followup
                     try:
                         await interaction.followup.send(
-                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                            ephemeral=True
+                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes."
                         )
                     except:
                         pass
@@ -456,17 +381,6 @@ class PartyModal(discord.ui.View):
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None
-            )
-        except discord.errors.NotFound:
-            # Message was already deleted or interaction expired, which is fine
-            pass
-
-    async def _cancel(self, interaction: discord.Interaction):
-        """Handle cancel"""
-        try:
-            await interaction.response.edit_message(
-                content="Selection cancelled.",
                 view=None
             )
         except discord.errors.NotFound:
@@ -610,15 +524,6 @@ class FixedDaysModal(discord.ui.View):
             clear_btn.callback = self._clear_selection
             self.add_item(clear_btn)
 
-        cancel_btn = discord.ui.Button(
-            label="Cancel",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌",
-            row=button_row
-        )
-        cancel_btn.callback = self._cancel
-        self.add_item(cancel_btn)
-
     def _create_time_callback(self, day: str):
         """Create a callback for a specific day's time selection"""
         async def callback(interaction: discord.Interaction):
@@ -631,8 +536,7 @@ class FixedDaysModal(discord.ui.View):
         try:
             if not self.selected_times:
                 await interaction.response.send_message(
-                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                    ephemeral=True
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes."
                 )
                 try:
                     await interaction.delete_original_response()
@@ -648,8 +552,7 @@ class FixedDaysModal(discord.ui.View):
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
-                        "This poll is no longer active!",
-                        ephemeral=True
+                        "This poll is no longer active!"
                     )
                     return
 
@@ -703,8 +606,7 @@ class FixedDaysModal(discord.ui.View):
                     # If we can't respond, try followup
                     try:
                         await interaction.followup.send(
-                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                            ephemeral=True
+                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes."
                         )
                     except:
                         pass
@@ -744,17 +646,6 @@ class FixedDaysModal(discord.ui.View):
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None
-            )
-        except discord.errors.NotFound:
-            # Message was already deleted or interaction expired, which is fine
-            pass
-
-    async def _cancel(self, interaction: discord.Interaction):
-        """Handle cancel"""
-        try:
-            await interaction.response.edit_message(
-                content="Selection cancelled.",
                 view=None
             )
         except discord.errors.NotFound:
@@ -960,15 +851,6 @@ class WeeklyEventModal(discord.ui.View):
             clear_btn.callback = self._clear_selection
             self.add_item(clear_btn)
 
-        cancel_btn = discord.ui.Button(
-            label="Cancel",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌",
-            row=4
-        )
-        cancel_btn.callback = self._cancel
-        self.add_item(cancel_btn)
-
     async def _slot1_day_selected(self, interaction: discord.Interaction):
         """Handle slot 1 day selection"""
         self.selected_slot1_day = interaction.data["values"][0]
@@ -998,8 +880,7 @@ class WeeklyEventModal(discord.ui.View):
 
             if not has_slot1 and not has_slot2:
                 await interaction.response.send_message(
-                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                    ephemeral=True
+                    "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes."
                 )
                 try:
                     await interaction.delete_original_response()
@@ -1015,8 +896,7 @@ class WeeklyEventModal(discord.ui.View):
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
-                        "This poll is no longer active!",
-                        ephemeral=True
+                        "This poll is no longer active!"
                     )
                     return
 
@@ -1069,8 +949,7 @@ class WeeklyEventModal(discord.ui.View):
                     # If we can't respond, try followup
                     try:
                         await interaction.followup.send(
-                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                            ephemeral=True
+                            "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes."
                         )
                     except:
                         pass
@@ -1110,17 +989,6 @@ class WeeklyEventModal(discord.ui.View):
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None
-            )
-        except discord.errors.NotFound:
-            # Message was already deleted or interaction expired, which is fine
-            pass
-
-    async def _cancel(self, interaction: discord.Interaction):
-        """Handle cancel"""
-        try:
-            await interaction.response.edit_message(
-                content="Selection cancelled.",
                 view=None
             )
         except discord.errors.NotFound:
@@ -1385,8 +1253,7 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         polls = await self.cog.config.guild_from_id(self.guild_id).polls()
         if self.poll_id not in polls:
             await interaction.response.send_message(
-                "❌ This poll is no longer active!",
-                ephemeral=True
+                "❌ This poll is no longer active!"
             )
             return
 
