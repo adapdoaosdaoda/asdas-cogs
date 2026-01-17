@@ -374,16 +374,8 @@ class PartyModal(discord.ui.View):
 
     async def _time_selected(self, interaction: discord.Interaction):
         """Handle time selection"""
-        try:
-            self.selected_time = interaction.data["values"][0]
-            await interaction.response.defer()
-        except discord.HTTPException as e:
-            if e.status == 429:  # Rate limited
-                log.error(f"Rate limited when selecting time for user {interaction.user.id}: {e}")
-            else:
-                log.error(f"Failed to defer time selection for user {interaction.user.id}: {e}")
-        except Exception as e:
-            log.error(f"Unexpected error in time selection for user {interaction.user.id}: {e}", exc_info=True)
+        self.selected_time = interaction.data["values"][0]
+        # No need to defer - we're only updating local state
 
     async def _submit(self, interaction: discord.Interaction):
         """Handle submit"""
@@ -426,13 +418,13 @@ class PartyModal(discord.ui.View):
             if poll_data:
                 await self._update_poll_display(interaction, poll_data)
 
-            # Auto-dismiss the ephemeral message
+            # Auto-dismiss the ephemeral message with delete_after
             try:
                 await interaction.edit_original_response(
                     content=f"✅ Selection saved for **{self.event_name}**!",
-                    view=None
+                    view=None,
+                    delete_after=2
                 )
-                await interaction.delete_original_response()
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
                 pass
@@ -488,13 +480,13 @@ class PartyModal(discord.ui.View):
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
 
-        # Auto-dismiss the ephemeral message
+        # Auto-dismiss the ephemeral message with delete_after
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None
+                view=None,
+                delete_after=2
             )
-            await interaction.delete_original_response()
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
             pass
@@ -504,29 +496,18 @@ class PartyModal(discord.ui.View):
         try:
             await interaction.response.edit_message(
                 content="Selection cancelled.",
-                view=None
+                view=None,
+                delete_after=2
             )
-            await interaction.delete_original_response()
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
             pass
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
-        """Update the poll embed and calendar"""
+        """Update the poll embed (debounced) - skip calendar/results updates to reduce rate limits"""
         try:
-            channel = interaction.guild.get_channel(poll_data["channel_id"])
-            if channel:
-                message = await channel.fetch_message(poll_data["message_id"])
-                updated_embed = await self.cog._create_poll_embed(
-                    poll_data["title"],
-                    self.guild_id,
-                    self.poll_id
-                )
-                updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                await message.edit(embed=updated_embed)
-
-            # Update any live calendar messages for this poll
-            await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+            # Queue debounced update instead of immediate update
+            await self.cog._queue_poll_update(self.guild_id, self.poll_id)
 
             # Check if we need to create initial weekly snapshot (for first vote)
             await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
@@ -672,7 +653,7 @@ class FixedDaysModal(discord.ui.View):
         """Create a callback for a specific day's time selection"""
         async def callback(interaction: discord.Interaction):
             self.selected_times[day] = interaction.data["values"][0]
-            await interaction.response.defer()
+            # No need to defer - we're only updating local state
         return callback
 
     async def _submit(self, interaction: discord.Interaction):
@@ -737,9 +718,9 @@ class FixedDaysModal(discord.ui.View):
             try:
                 await interaction.edit_original_response(
                     content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
-                    view=None
+                    view=None,
+                    delete_after=2
                 )
-                await interaction.delete_original_response()
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
                 pass
@@ -795,13 +776,13 @@ class FixedDaysModal(discord.ui.View):
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
 
-        # Auto-dismiss the ephemeral message
+        # Auto-dismiss the ephemeral message with delete_after
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None
+                view=None,
+                delete_after=2
             )
-            await interaction.delete_original_response()
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
             pass
@@ -811,29 +792,18 @@ class FixedDaysModal(discord.ui.View):
         try:
             await interaction.response.edit_message(
                 content="Selection cancelled.",
-                view=None
+                view=None,
+                delete_after=2
             )
-            await interaction.delete_original_response()
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
             pass
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
-        """Update the poll embed and calendar"""
+        """Update the poll embed (debounced) - skip calendar/results updates to reduce rate limits"""
         try:
-            channel = interaction.guild.get_channel(poll_data["channel_id"])
-            if channel:
-                message = await channel.fetch_message(poll_data["message_id"])
-                updated_embed = await self.cog._create_poll_embed(
-                    poll_data["title"],
-                    self.guild_id,
-                    self.poll_id
-                )
-                updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                await message.edit(embed=updated_embed)
-
-            # Update any live calendar messages for this poll
-            await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+            # Queue debounced update instead of immediate update
+            await self.cog._queue_poll_update(self.guild_id, self.poll_id)
 
             # Check if we need to create initial weekly snapshot (for first vote)
             await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
@@ -1040,22 +1010,22 @@ class WeeklyEventModal(discord.ui.View):
     async def _slot1_day_selected(self, interaction: discord.Interaction):
         """Handle slot 1 day selection"""
         self.selected_slot1_day = interaction.data["values"][0]
-        await interaction.response.defer()
+        # No need to defer - we're only updating local state
 
     async def _slot1_time_selected(self, interaction: discord.Interaction):
         """Handle slot 1 time selection"""
         self.selected_slot1_time = interaction.data["values"][0]
-        await interaction.response.defer()
+        # No need to defer - we're only updating local state
 
     async def _slot2_day_selected(self, interaction: discord.Interaction):
         """Handle slot 2 day selection"""
         self.selected_slot2_day = interaction.data["values"][0]
-        await interaction.response.defer()
+        # No need to defer - we're only updating local state
 
     async def _slot2_time_selected(self, interaction: discord.Interaction):
         """Handle slot 2 time selection"""
         self.selected_slot2_time = interaction.data["values"][0]
-        await interaction.response.defer()
+        # No need to defer - we're only updating local state
 
     async def _submit(self, interaction: discord.Interaction):
         """Handle submit"""
@@ -1122,9 +1092,9 @@ class WeeklyEventModal(discord.ui.View):
             try:
                 await interaction.edit_original_response(
                     content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
-                    view=None
+                    view=None,
+                    delete_after=2
                 )
-                await interaction.delete_original_response()
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
                 pass
@@ -1180,13 +1150,13 @@ class WeeklyEventModal(discord.ui.View):
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
 
-        # Auto-dismiss the ephemeral message
+        # Auto-dismiss the ephemeral message with delete_after
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None
+                view=None,
+                delete_after=2
             )
-            await interaction.delete_original_response()
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
             pass
@@ -1196,29 +1166,18 @@ class WeeklyEventModal(discord.ui.View):
         try:
             await interaction.response.edit_message(
                 content="Selection cancelled.",
-                view=None
+                view=None,
+                delete_after=2
             )
-            await interaction.delete_original_response()
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
             pass
 
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
-        """Update the poll embed and calendar"""
+        """Update the poll embed (debounced) - skip calendar/results updates to reduce rate limits"""
         try:
-            channel = interaction.guild.get_channel(poll_data["channel_id"])
-            if channel:
-                message = await channel.fetch_message(poll_data["message_id"])
-                updated_embed = await self.cog._create_poll_embed(
-                    poll_data["title"],
-                    self.guild_id,
-                    self.poll_id
-                )
-                updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                await message.edit(embed=updated_embed)
-
-            # Update any live calendar messages for this poll
-            await self.cog._update_calendar_messages(interaction.guild, poll_data, self.poll_id)
+            # Queue debounced update instead of immediate update
+            await self.cog._queue_poll_update(self.guild_id, self.poll_id)
 
             # Check if we need to create initial weekly snapshot (for first vote)
             await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
