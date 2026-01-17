@@ -4,6 +4,8 @@ import logging
 
 import discord
 
+from .timing import calculate_delete_time, calculate_warning_time
+
 log = logging.getLogger("red.eventchannels")
 
 
@@ -16,7 +18,7 @@ class HandlersMixin:
             creation_minutes = await self.config.guild(guild).creation_minutes()
             create_time = start_time - timedelta(minutes=creation_minutes)
             deletion_hours = await self.config.guild(guild).deletion_hours()
-            delete_time = start_time + timedelta(hours=deletion_hours)
+            delete_time = calculate_delete_time(start_time, deletion_hours)
             now = datetime.now(timezone.utc)
 
             # If this is a retry, adjust the create_time based on retry intervals
@@ -358,12 +360,12 @@ class HandlersMixin:
                 if text_channel:
                     try:
                         await text_channel.delete(reason="Failed to apply permissions")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 for voice_channel in voice_channels:
                     try:
                         await voice_channel.delete(reason="Failed to apply permissions")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 return
             except Exception as e:
@@ -372,41 +374,17 @@ class HandlersMixin:
                 if text_channel:
                     try:
                         await text_channel.delete(reason="Creation failed")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 for voice_channel in voice_channels:
                     try:
                         await voice_channel.delete(reason="Creation failed")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 return
 
-            # Store channel data (with lock to prevent race)
-            async with self._config_lock:
-                stored = await self.config.guild(guild).event_channels()
-
-                # Check if there's a thread linked to this event
-                thread_links = await self.config.guild(guild).thread_event_links()
-                linked_thread_id = None
-                for thread_id, event_id in thread_links.items():
-                    if event_id == str(event.id):
-                        linked_thread_id = int(thread_id)
-                        log.info(f"Found pre-linked thread {thread_id} for event '{event.name}' (ID: {event.id})")
-                        break
-
-                # Create event channel entry
-                stored[str(event.id)] = {
-                    "text": text_channel.id,
-                    "voice": [vc.id for vc in voice_channels],  # Store list of voice channel IDs
-                    "role": role.id,
-                }
-
-                # Add thread link if it exists
-                if linked_thread_id:
-                    stored[str(event.id)]["forum_thread"] = linked_thread_id
-                    log.info(f"Added forum_thread {linked_thread_id} to event channels for event '{event.name}'")
-
-                await self.config.guild(guild).event_channels.set(stored)
+            # Store channel data
+            await self._store_event_channel_data(guild, event, text_channel, voice_channels, role)
 
             # ---------- Event Start ----------
 
@@ -414,105 +392,21 @@ class HandlersMixin:
             await asyncio.sleep(max(0, (start_time - datetime.now(timezone.utc)).total_seconds()))
 
             # Send event start message if configured
-            event_start_template = await self.config.guild(guild).event_start_message()
-            if event_start_template:
-                try:
-                    event_start_msg = event_start_template.format(
-                        role=role.mention,
-                        event=event.name
-                    )
-                except KeyError as e:
-                    log.error(f"Invalid placeholder {e} in event start message template. Valid placeholders: {{role}}, {{event}}")
-                    event_start_msg = None
-
-                if event_start_msg:
-                    try:
-                        await text_channel.send(event_start_msg, allowed_mentions=discord.AllowedMentions(roles=True))
-                        log.info(f"Sent event start message to {text_channel.name}")
-                    except discord.Forbidden:
-                        log.warning(f"Could not send event start message to {text_channel.name} - missing permissions")
+            await self._send_event_start_message(guild, event, text_channel, role)
 
             # ---------- Deletion Warning ----------
 
-            # Calculate when to send deletion warning (15 minutes before deletion)
-            warning_time = delete_time - timedelta(minutes=15)
+            # Calculate when to send deletion warning
+            warning_time = calculate_warning_time(delete_time)
             await asyncio.sleep(max(0, (warning_time - datetime.now(timezone.utc)).total_seconds()))
 
-            # Send deletion warning and lock channels (always if there are user messages)
-            deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
-            if deletion_warning_template:
-                # Check if there are any user messages (for archiving and extension)
-                try:
-                    has_user_messages = await self._has_user_messages(text_channel)
-
-                    if has_user_messages:
-                        log.info(f"User messages found in {text_channel.name} - sending deletion warning with extend option")
-                    else:
-                        log.info(f"No user messages found in {text_channel.name} - skipping deletion warning")
-
-                    if has_user_messages:
-                        try:
-                            deletion_warning_msg = deletion_warning_template.format(
-                                role=role.mention,
-                                event=event.name
-                            )
-                        except KeyError as e:
-                            log.error(f"Invalid placeholder {e} in deletion warning message template. Valid placeholders: {{role}}, {{event}}")
-                            deletion_warning_msg = None
-
-                        if deletion_warning_msg:
-                            try:
-                                warning_message = await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
-                                log.info(f"Sent deletion warning to {text_channel.name}")
-
-                                # Add extend reaction (⏰ clock emoji)
-                                try:
-                                    await warning_message.add_reaction("⏰")
-                                    log.info(f"Added extend reaction to deletion warning in {text_channel.name}")
-
-                                    # Store deletion warning info for extend functionality
-                                    async with self._config_lock:
-                                        deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                                        deletion_extensions[str(event.id)] = {
-                                            "delete_time": delete_time.timestamp(),
-                                            "warning_message_id": warning_message.id,
-                                            "text_channel_id": text_channel.id,
-                                        }
-                                        await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
-                                except discord.Forbidden:
-                                    log.warning(f"Could not add reaction to deletion warning - missing permissions")
-                            except discord.Forbidden:
-                                log.warning(f"Could not send deletion warning to {text_channel.name} - missing permissions")
-                except Exception as e:
-                    log.error(f"Error checking message history for deletion warning in {text_channel.name}: {e}")
+            # Send deletion warning if channel has user messages
+            await self._send_deletion_warning(guild, event, text_channel, role, delete_time)
 
             # ---------- Cleanup ----------
 
-            # Wait until deletion time, but check for extensions
-            while True:
-                # Check if deletion has been extended
-                deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                extension_data = deletion_extensions.get(str(event.id))
-
-                if extension_data:
-                    # Use the extended deletion time
-                    extended_delete_time = datetime.fromtimestamp(
-                        extension_data["delete_time"],
-                        tz=timezone.utc
-                    )
-                    time_until_deletion = (extended_delete_time - datetime.now(timezone.utc)).total_seconds()
-                else:
-                    # Use the original deletion time
-                    time_until_deletion = (delete_time - datetime.now(timezone.utc)).total_seconds()
-
-                if time_until_deletion <= 0:
-                    # Time to delete
-                    break
-
-                # Sleep for the remaining time, but wake up periodically to check for extensions
-                # Sleep for minimum of 60 seconds or remaining time
-                sleep_time = min(60, time_until_deletion)
-                await asyncio.sleep(sleep_time)
+            # Wait until deletion time, checking for extensions
+            await self._wait_for_deletion_time(guild, str(event.id), delete_time)
 
             # Refetch stored data and delete/archive channels (with lock to prevent race)
             async with self._config_lock:
@@ -521,66 +415,14 @@ class HandlersMixin:
                 if not data:
                     return
 
-                # Handle text channel - archive if it has user messages, otherwise delete
-                text_channel = guild.get_channel(data.get("text"))
-                text_channel_archived = False
-                if text_channel:
-                    # Check if channel has user messages
-                    has_user_messages = await self._has_user_messages(text_channel)
+                # Delete or archive channels
+                await self._delete_or_archive_channels(guild, data, event.name, str(event.id))
 
-                    if has_user_messages:
-                        # Archive the channel instead of deleting
-                        role = guild.get_role(data.get("role"))
-                        archived = await self._archive_text_channel(guild, text_channel, role, event.name, str(event.id))
-                        if archived:
-                            text_channel_archived = True
-                            log.info(f"Text channel archived for event '{event.name}'")
-                        else:
-                            # If archiving failed, delete the channel
-                            try:
-                                await text_channel.delete(reason="Scheduled event ended (archive failed)")
-                            except discord.NotFound:
-                                pass
-                    else:
-                        # No user messages, delete the channel
-                        try:
-                            await text_channel.delete(reason="Scheduled event ended")
-                        except discord.NotFound:
-                            pass
-
-                # Delete all voice channels
-                voice_channel_ids = data.get("voice", [])
-                # Handle both old format (single ID) and new format (list of IDs)
-                if isinstance(voice_channel_ids, int):
-                    voice_channel_ids = [voice_channel_ids]
-
-                for vc_id in voice_channel_ids:
-                    voice_channel = guild.get_channel(vc_id)
-                    if voice_channel:
-                        try:
-                            await voice_channel.delete(reason="Scheduled event ended")
-                        except discord.NotFound:
-                            pass
-
+                # Get role before cleaning up state
                 role = guild.get_role(data["role"])
 
-                # Remove from stored config before role deletion
-                stored.pop(str(event.id), None)
-                await self.config.guild(guild).event_channels.set(stored)
-
-                # Also remove from thread_event_links
-                thread_id = data.get("forum_thread")
-                if thread_id:
-                    thread_links = await self.config.guild(guild).thread_event_links()
-                    thread_links.pop(str(thread_id), None)
-                    await self.config.guild(guild).thread_event_links.set(thread_links)
-                    log.info(f"Removed thread link for thread {thread_id} (event ended)")
-
-                # Clean up deletion extensions tracking
-                deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                if str(event.id) in deletion_extensions:
-                    deletion_extensions.pop(str(event.id), None)
-                    await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
+                # Clean up all event state from config
+                await self._cleanup_event_state(guild, str(event.id))
 
             # Remove role from divider and delete role (outside lock, uses own lock)
             if role:
@@ -598,66 +440,18 @@ class HandlersMixin:
                 stored = await self.config.guild(guild).event_channels()
                 data = stored.get(str(event.id))
                 if data:
-                    # Handle text channel - archive if it has user messages, otherwise delete
-                    text_channel = guild.get_channel(data.get("text"))
-                    text_channel_archived = False
-                    if text_channel:
-                        # Check if channel has user messages
-                        has_user_messages = await self._has_user_messages(text_channel)
+                    # Delete or archive channels
+                    await self._delete_or_archive_channels(
+                        guild, data, event.name, str(event.id),
+                        reason="Scheduled event cancelled",
+                        log_prefix="Cancelled: "
+                    )
 
-                        if has_user_messages:
-                            # Archive the channel instead of deleting
-                            role = guild.get_role(data.get("role"))
-                            archived = await self._archive_text_channel(guild, text_channel, role, event.name, str(event.id))
-                            if archived:
-                                text_channel_archived = True
-                                log.info(f"Text channel archived for cancelled event '{event.name}'")
-                            else:
-                                # If archiving failed, delete the channel
-                                try:
-                                    await text_channel.delete(reason="Scheduled event cancelled (archive failed)")
-                                except (discord.NotFound, discord.Forbidden):
-                                    pass
-                        else:
-                            # No user messages, delete the channel
-                            try:
-                                await text_channel.delete(reason="Scheduled event cancelled")
-                            except (discord.NotFound, discord.Forbidden):
-                                pass
-
-                    # Delete all voice channels
-                    voice_channel_ids = data.get("voice", [])
-                    # Handle both old format (single ID) and new format (list of IDs)
-                    if isinstance(voice_channel_ids, int):
-                        voice_channel_ids = [voice_channel_ids]
-
-                    for vc_id in voice_channel_ids:
-                        voice_channel = guild.get_channel(vc_id)
-                        if voice_channel:
-                            try:
-                                await voice_channel.delete(reason="Scheduled event cancelled")
-                            except (discord.NotFound, discord.Forbidden):
-                                pass
-
+                    # Get role before cleaning up state
                     role = guild.get_role(data["role"])
 
-                    # Remove from stored config
-                    stored.pop(str(event.id), None)
-                    await self.config.guild(guild).event_channels.set(stored)
-
-                    # Also remove from thread_event_links
-                    thread_id = data.get("forum_thread")
-                    if thread_id:
-                        thread_links = await self.config.guild(guild).thread_event_links()
-                        thread_links.pop(str(thread_id), None)
-                        await self.config.guild(guild).thread_event_links.set(thread_links)
-                        log.info(f"Removed thread link for thread {thread_id} (event cancelled)")
-
-                    # Clean up deletion extensions tracking
-                    deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                    if str(event.id) in deletion_extensions:
-                        deletion_extensions.pop(str(event.id), None)
-                        await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
+                    # Clean up all event state from config
+                    await self._cleanup_event_state(guild, str(event.id), log_prefix="Cancelled: ")
 
             # Remove role from divider and clean up (outside lock, uses own locks)
             if data:
@@ -886,12 +680,12 @@ class HandlersMixin:
                 if text_channel:
                     try:
                         await text_channel.delete(reason="Force create failed")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 for voice_channel in voice_channels:
                     try:
                         await voice_channel.delete(reason="Force create failed")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 return
             except Exception as e:
@@ -900,134 +694,42 @@ class HandlersMixin:
                 if text_channel:
                     try:
                         await text_channel.delete(reason="Force create failed")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 for voice_channel in voice_channels:
                     try:
                         await voice_channel.delete(reason="Force create failed")
-                    except:
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
                         pass
                 return
 
-            # Store channel data (with lock)
-            async with self._config_lock:
-                stored = await self.config.guild(guild).event_channels()
-
-                # Check if there's a thread linked to this event
-                thread_links = await self.config.guild(guild).thread_event_links()
-                linked_thread_id = None
-                for thread_id, event_id in thread_links.items():
-                    if event_id == str(event.id):
-                        linked_thread_id = int(thread_id)
-                        log.info(f"Force create: Found pre-linked thread {thread_id} for event '{event.name}'")
-                        break
-
-                # Create event channel entry
-                stored[str(event.id)] = {
-                    "text": text_channel.id,
-                    "voice": [vc.id for vc in voice_channels],
-                    "role": role.id,
-                }
-
-                # Add thread link if it exists
-                if linked_thread_id:
-                    stored[str(event.id)]["forum_thread"] = linked_thread_id
-                    log.info(f"Force create: Added forum_thread {linked_thread_id} to event channels")
-
-                await self.config.guild(guild).event_channels.set(stored)
+            # Store channel data
+            await self._store_event_channel_data(
+                guild, event, text_channel, voice_channels, role,
+                log_prefix="Force create: "
+            )
 
             log.info(f"✅ Force create successful for event '{event.name}' by {requested_by}")
 
             # Now schedule the normal cleanup task (event start message, deletion warning, cleanup)
             deletion_hours = await self.config.guild(guild).deletion_hours()
-            delete_time = start_time + timedelta(hours=deletion_hours)
-            now = datetime.now(timezone.utc)
+            delete_time = calculate_delete_time(start_time, deletion_hours)
 
             # Wait until event starts
-            await asyncio.sleep(max(0, (start_time - now).total_seconds()))
+            await asyncio.sleep(max(0, (start_time - datetime.now(timezone.utc)).total_seconds()))
 
-            # Send event start message if configured
-            event_start_template = await self.config.guild(guild).event_start_message()
-            if event_start_template:
-                try:
-                    event_start_msg = event_start_template.format(
-                        role=role.mention,
-                        event=event.name
-                    )
-                    await text_channel.send(event_start_msg, allowed_mentions=discord.AllowedMentions(roles=True))
-                    log.info(f"Force create: Sent event start message")
-                except KeyError as e:
-                    log.error(f"Invalid placeholder {e} in event start message template")
-                except discord.Forbidden:
-                    log.warning(f"Force create: Could not send event start message - missing permissions")
+            # Send event start message
+            await self._send_event_start_message(guild, event, text_channel, role, log_prefix="Force create: ")
 
-            # Calculate when to send deletion warning (15 minutes before deletion)
-            warning_time = delete_time - timedelta(minutes=15)
+            # Calculate when to send deletion warning
+            warning_time = calculate_warning_time(delete_time)
             await asyncio.sleep(max(0, (warning_time - datetime.now(timezone.utc)).total_seconds()))
 
-            # Send deletion warning and lock channels
-            deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
-            if deletion_warning_template:
-                try:
-                    # Always send warning if there are user messages (for archiving and extension)
-                    has_user_messages = await self._has_user_messages(text_channel)
+            # Send deletion warning if channel has user messages
+            await self._send_deletion_warning(guild, event, text_channel, role, delete_time, log_prefix="Force create: ")
 
-                    if has_user_messages:
-                        try:
-                            deletion_warning_msg = deletion_warning_template.format(
-                                role=role.mention,
-                                event=event.name
-                            )
-                            warning_message = await text_channel.send(deletion_warning_msg, allowed_mentions=discord.AllowedMentions(roles=True))
-                            log.info(f"Force create: Sent deletion warning")
-
-                            # Add extend reaction
-                            try:
-                                await warning_message.add_reaction("⏰")
-                                log.info(f"Force create: Added extend reaction to deletion warning")
-
-                                # Store deletion warning info
-                                async with self._config_lock:
-                                    deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                                    deletion_extensions[str(event.id)] = {
-                                        "delete_time": delete_time.timestamp(),
-                                        "warning_message_id": warning_message.id,
-                                        "text_channel_id": text_channel.id,
-                                    }
-                                    await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
-                            except discord.Forbidden:
-                                log.warning(f"Force create: Could not add reaction to deletion warning - missing permissions")
-                        except KeyError as e:
-                            log.error(f"Invalid placeholder {e} in deletion warning message template")
-                        except discord.Forbidden:
-                            log.warning(f"Force create: Could not send deletion warning - missing permissions")
-                except Exception as e:
-                    log.error(f"Force create: Error checking message history: {e}")
-
-            # Wait until deletion time, but check for extensions
-            while True:
-                # Check if deletion has been extended
-                deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                extension_data = deletion_extensions.get(str(event.id))
-
-                if extension_data:
-                    # Use the extended deletion time
-                    extended_delete_time = datetime.fromtimestamp(
-                        extension_data["delete_time"],
-                        tz=timezone.utc
-                    )
-                    time_until_deletion = (extended_delete_time - datetime.now(timezone.utc)).total_seconds()
-                else:
-                    # Use the original deletion time
-                    time_until_deletion = (delete_time - datetime.now(timezone.utc)).total_seconds()
-
-                if time_until_deletion <= 0:
-                    # Time to delete
-                    break
-
-                # Sleep for the remaining time, but wake up periodically to check for extensions
-                sleep_time = min(60, time_until_deletion)
-                await asyncio.sleep(sleep_time)
+            # Wait until deletion time, checking for extensions
+            await self._wait_for_deletion_time(guild, str(event.id), delete_time)
 
             # Delete/archive channels and clean up (with lock)
             async with self._config_lock:
@@ -1036,65 +738,17 @@ class HandlersMixin:
                 if not data:
                     return
 
-                # Handle text channel - archive if it has user messages, otherwise delete
-                text_channel = guild.get_channel(data.get("text"))
-                text_channel_archived = False
-                if text_channel:
-                    # Check if channel has user messages
-                    has_user_messages = await self._has_user_messages(text_channel)
+                # Delete or archive channels
+                await self._delete_or_archive_channels(
+                    guild, data, event.name, str(event.id),
+                    log_prefix="Force create: "
+                )
 
-                    if has_user_messages:
-                        # Archive the channel instead of deleting
-                        role = guild.get_role(data.get("role"))
-                        archived = await self._archive_text_channel(guild, text_channel, role, event.name, str(event.id))
-                        if archived:
-                            text_channel_archived = True
-                            log.info(f"Force create: Text channel archived for event '{event.name}'")
-                        else:
-                            # If archiving failed, delete the channel
-                            try:
-                                await text_channel.delete(reason="Scheduled event ended (archive failed)")
-                            except discord.NotFound:
-                                pass
-                    else:
-                        # No user messages, delete the channel
-                        try:
-                            await text_channel.delete(reason="Scheduled event ended")
-                        except discord.NotFound:
-                            pass
-
-                # Delete all voice channels
-                voice_channel_ids = data.get("voice", [])
-                if isinstance(voice_channel_ids, int):
-                    voice_channel_ids = [voice_channel_ids]
-
-                for vc_id in voice_channel_ids:
-                    voice_channel = guild.get_channel(vc_id)
-                    if voice_channel:
-                        try:
-                            await voice_channel.delete(reason="Scheduled event ended")
-                        except discord.NotFound:
-                            pass
-
+                # Get role before cleaning up state
                 role = guild.get_role(data["role"])
 
-                # Remove from stored config before role deletion
-                stored.pop(str(event.id), None)
-                await self.config.guild(guild).event_channels.set(stored)
-
-                # Also remove from thread_event_links
-                thread_id = data.get("forum_thread")
-                if thread_id:
-                    thread_links = await self.config.guild(guild).thread_event_links()
-                    thread_links.pop(str(thread_id), None)
-                    await self.config.guild(guild).thread_event_links.set(thread_links)
-                    log.info(f"Force create: Removed thread link (event ended)")
-
-                # Clean up deletion extensions tracking
-                deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                if str(event.id) in deletion_extensions:
-                    deletion_extensions.pop(str(event.id), None)
-                    await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
+                # Clean up all event state from config
+                await self._cleanup_event_state(guild, str(event.id), log_prefix="Force create: ")
 
             # Remove role from divider and delete role
             if role:
@@ -1266,3 +920,332 @@ class HandlersMixin:
         except Exception as e:
             log.error(f"Failed to archive channel {text_channel.name}: {e}. Channel will be deleted instead.")
             return False
+
+    # ==========================================================================
+    # Helper Methods - Extracted to reduce duplication
+    # ==========================================================================
+
+    async def _store_event_channel_data(
+        self,
+        guild: discord.Guild,
+        event: discord.ScheduledEvent,
+        text_channel: discord.TextChannel,
+        voice_channels: list,
+        role: discord.Role,
+        log_prefix: str = ""
+    ) -> None:
+        """Store event channel data in config.
+
+        This helper centralizes the storage logic used by both _handle_event
+        and _force_create_event_channels.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : discord.ScheduledEvent
+            The scheduled event
+        text_channel : discord.TextChannel
+            The created text channel
+        voice_channels : list
+            List of created voice channels
+        role : discord.Role
+            The event role
+        log_prefix : str
+            Optional prefix for log messages (e.g., "Force create: ")
+        """
+        async with self._config_lock:
+            stored = await self.config.guild(guild).event_channels()
+
+            # Check if there's a thread linked to this event
+            thread_links = await self.config.guild(guild).thread_event_links()
+            linked_thread_id = None
+            for thread_id, event_id in thread_links.items():
+                if event_id == str(event.id):
+                    linked_thread_id = int(thread_id)
+                    log.info(f"{log_prefix}Found pre-linked thread {thread_id} for event '{event.name}' (ID: {event.id})")
+                    break
+
+            # Create event channel entry
+            stored[str(event.id)] = {
+                "text": text_channel.id,
+                "voice": [vc.id for vc in voice_channels],
+                "role": role.id,
+            }
+
+            # Add thread link if it exists
+            if linked_thread_id:
+                stored[str(event.id)]["forum_thread"] = linked_thread_id
+                log.info(f"{log_prefix}Added forum_thread {linked_thread_id} to event channels for event '{event.name}'")
+
+            await self.config.guild(guild).event_channels.set(stored)
+
+    async def _cleanup_event_state(
+        self,
+        guild: discord.Guild,
+        event_id: str,
+        log_prefix: str = ""
+    ) -> None:
+        """Clean up event state from all config stores.
+
+        This helper centralizes the cleanup logic used in multiple places:
+        normal cleanup, force create cleanup, and cancelled event cleanup.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event_id : str
+            The event ID as a string
+        log_prefix : str
+            Optional prefix for log messages
+        """
+        # Remove from event_channels
+        stored = await self.config.guild(guild).event_channels()
+        data = stored.pop(event_id, None)
+        await self.config.guild(guild).event_channels.set(stored)
+
+        # Remove from thread_event_links if there was a linked thread
+        if data:
+            thread_id = data.get("forum_thread")
+            if thread_id:
+                thread_links = await self.config.guild(guild).thread_event_links()
+                thread_links.pop(str(thread_id), None)
+                await self.config.guild(guild).thread_event_links.set(thread_links)
+                log.info(f"{log_prefix}Removed thread link for thread {thread_id}")
+
+        # Clean up deletion extensions tracking
+        deletion_extensions = await self.config.guild(guild).deletion_extensions()
+        if event_id in deletion_extensions:
+            deletion_extensions.pop(event_id, None)
+            await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
+
+    async def _delete_or_archive_channels(
+        self,
+        guild: discord.Guild,
+        data: dict,
+        event_name: str,
+        event_id: str,
+        reason: str = "Scheduled event ended",
+        log_prefix: str = ""
+    ) -> bool:
+        """Delete voice channels and archive or delete text channel.
+
+        Returns True if text channel was archived, False if deleted.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        data : dict
+            The event channel data from config
+        event_name : str
+            The event name (for logging)
+        event_id : str
+            The event ID
+        reason : str
+            Reason for deletion
+        log_prefix : str
+            Optional prefix for log messages
+        """
+        text_channel_archived = False
+
+        # Handle text channel - archive if it has user messages, otherwise delete
+        text_channel = guild.get_channel(data.get("text"))
+        if text_channel:
+            has_user_messages = await self._has_user_messages(text_channel)
+
+            if has_user_messages:
+                # Archive the channel instead of deleting
+                role = guild.get_role(data.get("role"))
+                archived = await self._archive_text_channel(guild, text_channel, role, event_name, event_id)
+                if archived:
+                    text_channel_archived = True
+                    log.info(f"{log_prefix}Text channel archived for event '{event_name}'")
+                else:
+                    # If archiving failed, delete the channel
+                    try:
+                        await text_channel.delete(reason=f"{reason} (archive failed)")
+                    except discord.NotFound:
+                        pass
+            else:
+                # No user messages, delete the channel
+                try:
+                    await text_channel.delete(reason=reason)
+                except discord.NotFound:
+                    pass
+
+        # Delete all voice channels
+        voice_channel_ids = data.get("voice", [])
+        # Handle both old format (single ID) and new format (list of IDs)
+        if isinstance(voice_channel_ids, int):
+            voice_channel_ids = [voice_channel_ids]
+
+        for vc_id in voice_channel_ids:
+            voice_channel = guild.get_channel(vc_id)
+            if voice_channel:
+                try:
+                    await voice_channel.delete(reason=reason)
+                except discord.NotFound:
+                    pass
+
+        return text_channel_archived
+
+    async def _wait_for_deletion_time(
+        self,
+        guild: discord.Guild,
+        event_id: str,
+        delete_time: datetime
+    ) -> None:
+        """Wait until deletion time, checking periodically for extensions.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event_id : str
+            The event ID as string
+        delete_time : datetime
+            The original scheduled deletion time
+        """
+        while True:
+            # Check if deletion has been extended
+            deletion_extensions = await self.config.guild(guild).deletion_extensions()
+            extension_data = deletion_extensions.get(event_id)
+
+            if extension_data:
+                # Use the extended deletion time
+                extended_delete_time = datetime.fromtimestamp(
+                    extension_data["delete_time"],
+                    tz=timezone.utc
+                )
+                time_until_deletion = (extended_delete_time - datetime.now(timezone.utc)).total_seconds()
+            else:
+                # Use the original deletion time
+                time_until_deletion = (delete_time - datetime.now(timezone.utc)).total_seconds()
+
+            if time_until_deletion <= 0:
+                # Time to delete
+                break
+
+            # Sleep for the remaining time, but wake up periodically to check for extensions
+            sleep_time = min(60, time_until_deletion)
+            await asyncio.sleep(sleep_time)
+
+    async def _send_deletion_warning(
+        self,
+        guild: discord.Guild,
+        event: discord.ScheduledEvent,
+        text_channel: discord.TextChannel,
+        role: discord.Role,
+        delete_time: datetime,
+        log_prefix: str = ""
+    ) -> None:
+        """Send deletion warning message with extend reaction if channel has user messages.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : discord.ScheduledEvent
+            The scheduled event
+        text_channel : discord.TextChannel
+            The text channel to send warning to
+        role : discord.Role
+            The event role (for mentions)
+        delete_time : datetime
+            The scheduled deletion time
+        log_prefix : str
+            Optional prefix for log messages
+        """
+        deletion_warning_template = await self.config.guild(guild).deletion_warning_message()
+        if not deletion_warning_template:
+            return
+
+        try:
+            has_user_messages = await self._has_user_messages(text_channel)
+
+            if has_user_messages:
+                log.info(f"{log_prefix}User messages found in {text_channel.name} - sending deletion warning with extend option")
+            else:
+                log.info(f"{log_prefix}No user messages found in {text_channel.name} - skipping deletion warning")
+                return
+
+            try:
+                deletion_warning_msg = deletion_warning_template.format(
+                    role=role.mention,
+                    event=event.name
+                )
+            except KeyError as e:
+                log.error(f"Invalid placeholder {e} in deletion warning message template. Valid placeholders: {{role}}, {{event}}")
+                return
+
+            try:
+                warning_message = await text_channel.send(
+                    deletion_warning_msg,
+                    allowed_mentions=discord.AllowedMentions(roles=True)
+                )
+                log.info(f"{log_prefix}Sent deletion warning to {text_channel.name}")
+
+                # Add extend reaction (⏰ clock emoji)
+                try:
+                    await warning_message.add_reaction("⏰")
+                    log.info(f"{log_prefix}Added extend reaction to deletion warning in {text_channel.name}")
+
+                    # Store deletion warning info for extend functionality
+                    async with self._config_lock:
+                        deletion_extensions = await self.config.guild(guild).deletion_extensions()
+                        deletion_extensions[str(event.id)] = {
+                            "delete_time": delete_time.timestamp(),
+                            "warning_message_id": warning_message.id,
+                            "text_channel_id": text_channel.id,
+                        }
+                        await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
+                except discord.Forbidden:
+                    log.warning(f"{log_prefix}Could not add reaction to deletion warning - missing permissions")
+            except discord.Forbidden:
+                log.warning(f"{log_prefix}Could not send deletion warning to {text_channel.name} - missing permissions")
+        except Exception as e:
+            log.error(f"{log_prefix}Error checking message history for deletion warning in {text_channel.name}: {e}")
+
+    async def _send_event_start_message(
+        self,
+        guild: discord.Guild,
+        event: discord.ScheduledEvent,
+        text_channel: discord.TextChannel,
+        role: discord.Role,
+        log_prefix: str = ""
+    ) -> None:
+        """Send event start message if configured.
+
+        Parameters
+        ----------
+        guild : discord.Guild
+            The guild
+        event : discord.ScheduledEvent
+            The scheduled event
+        text_channel : discord.TextChannel
+            The text channel to send message to
+        role : discord.Role
+            The event role (for mentions)
+        log_prefix : str
+            Optional prefix for log messages
+        """
+        event_start_template = await self.config.guild(guild).event_start_message()
+        if not event_start_template:
+            return
+
+        try:
+            event_start_msg = event_start_template.format(
+                role=role.mention,
+                event=event.name
+            )
+        except KeyError as e:
+            log.error(f"Invalid placeholder {e} in event start message template. Valid placeholders: {{role}}, {{event}}")
+            return
+
+        try:
+            await text_channel.send(event_start_msg, allowed_mentions=discord.AllowedMentions(roles=True))
+            log.info(f"{log_prefix}Sent event start message to {text_channel.name}")
+        except discord.Forbidden:
+            log.warning(f"{log_prefix}Could not send event start message to {text_channel.name} - missing permissions")

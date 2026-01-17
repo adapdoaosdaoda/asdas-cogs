@@ -1,0 +1,25 @@
+{
+    "$schema": "https://raw.githubusercontent.com/Cog-Creators/Red-DiscordBot/V3/develop/schema/red_cog.schema.json",
+    "author": [
+        "adapdoaosdaoda"
+    ],
+    "description": "Automatically creates text and voice channels from Discord Scheduled Events with customizable timing, cleanup, and dynamic voice channel creation based on role membership.",
+    "end_user_data_statement": "This cog does not store end user data. It only stores guild-level configuration and event-to-channel mappings.",
+    "install_msg": "Thanks for installing EventChannels! Use `[p]ecset` to configure the cog, then create Discord events to see automatic channel creation in action.",
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        8,
+        0
+    ],
+    "name": "EventChannels",
+    "requirements": [],
+    "short": "Auto-create channels from Discord Scheduled Events with cleanup.",
+    "tags": [
+        "events",
+        "channels",
+        "automation",
+        "scheduled events",
+        "voice"
+    ]
+}

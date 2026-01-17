@@ -1,0 +1,26 @@
+{
+    "$schema": "https://raw.githubusercontent.com/Cog-Creators/Red-DiscordBot/V3/develop/schema/red_cog.schema.json",
+    "author": [
+        "adapdoaosdaoda"
+    ],
+    "description": "Weekly game information tracker for Where Winds Meet. Manages Trade Commission reset schedules and provides formatted updates.",
+    "end_user_data_statement": "This cog does not store end user data. It only stores guild-level configuration for Trade Commission scheduling and game information.",
+    "install_msg": "Thanks for installing TradeCommission! Use `[p]tcset` to configure weekly reset timing and game information.",
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        8,
+        0
+    ],
+    "name": "TradeCommission",
+    "requirements": [
+        "pytz"
+    ],
+    "short": "Weekly game info tracker for Where Winds Meet.",
+    "tags": [
+        "gaming",
+        "schedule",
+        "where winds meet",
+        "weekly"
+    ]
+}

@@ -458,3 +458,155 @@ class UtilsMixin:
                 }
 
         return None
+
+    def build_event_channel_overwrites(
+        self,
+        guild: discord.Guild,
+        role: discord.Role,
+        whitelisted_role_ids: list[int]
+    ) -> dict[discord.Role | discord.Member, discord.PermissionOverwrite]:
+        """Build permission overwrites for event channels.
+
+        Args:
+            guild: The Discord guild
+            role: The event role to grant permissions to
+            whitelisted_role_ids: List of whitelisted role IDs to also grant permissions
+
+        Returns:
+            Dictionary of permission overwrites for the channel
+        """
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+            ),
+            role: discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                connect=True,
+                speak=True,
+            ),
+        }
+
+        # Add whitelisted roles to overwrites
+        for whitelisted_role_id in whitelisted_role_ids:
+            whitelisted_role = guild.get_role(whitelisted_role_id)
+            if whitelisted_role:
+                overwrites[whitelisted_role] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    connect=True,
+                    speak=True,
+                )
+
+        return overwrites
+
+    def generate_channel_name(
+        self,
+        event_name: str,
+        channel_format: str,
+        space_replacer: str,
+        channel_type: str,
+        index: int | None = None,
+        char_limit: int = 100,
+        limit_char: str = ""
+    ) -> str:
+        """Generate channel name with optional index suffix.
+
+        Args:
+            event_name: The event name to base the channel name on
+            channel_format: Format string for channel name (e.g., "{name}᲼{type}")
+            space_replacer: Character to replace spaces with
+            channel_type: Type of channel ("text" or "voice")
+            index: Optional index for multiple voice channels
+            char_limit: Character limit for the base name (default 100)
+            limit_char: Character to limit name at (truncate before first occurrence)
+
+        Returns:
+            Formatted channel name
+        """
+        base_name = event_name.lower().replace(" ", space_replacer)
+
+        # Apply character limit to base name only
+        if limit_char:
+            # Character-based limiting: truncate before first occurrence (exclusive)
+            char_index = base_name.find(limit_char)
+            if char_index != -1:
+                base_name = base_name[:char_index]
+            elif len(base_name) > char_limit:
+                base_name = base_name[:char_limit]
+        elif len(base_name) > char_limit:
+            # Numeric limiting
+            base_name = base_name[:char_limit]
+
+        # Format with the limited base name
+        channel_name = channel_format.format(name=base_name, type=channel_type)
+
+        # Add index suffix for voice channels
+        if index is not None:
+            channel_name += f"-{index}"
+
+        return channel_name
+
+    async def wait_for_role(
+        self,
+        guild: discord.Guild,
+        expected_role_name: str,
+        event_start_time,
+        timeout: int = 60
+    ) -> discord.Role | None:
+        """Wait for role to appear with exponential backoff.
+
+        Args:
+            guild: The Discord guild
+            expected_role_name: Name of the role to wait for
+            event_start_time: Event start time (for extended waiting if event is imminent)
+            timeout: Initial timeout in seconds (default 60)
+
+        Returns:
+            The role if found, otherwise None
+        """
+        from datetime import datetime, timedelta, timezone
+
+        role = discord.utils.get(guild.roles, name=expected_role_name)
+        if role:
+            return role
+
+        # Try with exponential backoff: 5s, 10s, 20s, 40s... up to timeout
+        delay = 5
+        total_waited = 0
+        while not role and total_waited < timeout:
+            await asyncio.sleep(delay)
+            total_waited += delay
+            role = discord.utils.get(guild.roles, name=expected_role_name)
+            if not role:
+                delay *= 2  # Double the delay each time
+
+        # If still no role and event is starting soon/now, wait up to 1 minute after start time
+        if not role:
+            now = datetime.now(timezone.utc)
+            time_until_start = (event_start_time - now).total_seconds()
+
+            # If event starts within 15 seconds or already started (up to 1 min ago)
+            if -60 <= time_until_start <= 15:
+                log.info(f"Event starting imminently. Waiting up to 1 minute after start for role '{expected_role_name}'...")
+
+                # Wait until 1 minute after event start using exponential backoff
+                one_min_after_start = event_start_time + timedelta(minutes=1)
+                deadline = one_min_after_start.timestamp()
+
+                delay = 5
+                total_waited = 0
+                while not role and datetime.now(timezone.utc).timestamp() < deadline:
+                    remaining_time = deadline - datetime.now(timezone.utc).timestamp()
+                    sleep_time = min(delay, remaining_time)
+
+                    if sleep_time > 0:
+                        await asyncio.sleep(sleep_time)
+                        total_waited += sleep_time
+                        role = discord.utils.get(guild.roles, name=expected_role_name)
+                        if not role:
+                            delay *= 2  # Double the delay each time
+
+        return role
