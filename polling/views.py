@@ -85,26 +85,6 @@ CITY_TIMEZONE_MAP = {
 }
 
 
-class DismissibleView(discord.ui.View):
-    """Simple view with a close button for dismissible messages"""
-
-    def __init__(self):
-        super().__init__(timeout=180)
-
-        close_btn = discord.ui.Button(
-            label="Close",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌"
-        )
-        close_btn.callback = self._close
-        self.add_item(close_btn)
-
-    async def _close(self, interaction: discord.Interaction):
-        """Handle close button"""
-        await interaction.response.edit_message(view=None)
-        await interaction.delete_original_response()
-
-
 class EventPollView(discord.ui.View):
     """Main view with buttons for each event type"""
 
@@ -175,7 +155,6 @@ class EventPollView(discord.ui.View):
             if poll_id not in polls:
                 await interaction.response.send_message(
                     "This poll is no longer active!",
-                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -216,7 +195,6 @@ class EventPollView(discord.ui.View):
                 if poll_id not in polls:
                     await interaction.response.send_message(
                         "This poll is no longer active!",
-                        view=DismissibleView(),
                         ephemeral=True
                     )
                     return
@@ -383,7 +361,6 @@ class PartyModal(discord.ui.View):
             if not self.selected_time:
                 await interaction.response.send_message(
                     "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                    view=DismissibleView(),
                     ephemeral=True
                 )
                 try:
@@ -401,7 +378,6 @@ class PartyModal(discord.ui.View):
                 if self.poll_id not in polls:
                     await interaction.followup.send(
                         "This poll is no longer active!",
-                        view=DismissibleView(),
                         ephemeral=True
                     )
                     return
@@ -418,12 +394,11 @@ class PartyModal(discord.ui.View):
             if poll_data:
                 await self._update_poll_display(interaction, poll_data)
 
-            # Auto-dismiss the ephemeral message with delete_after
+            # Update message without view
             try:
                 await interaction.edit_original_response(
                     content=f"✅ Selection saved for **{self.event_name}**!",
-                    view=None,
-                    delete_after=2
+                    view=None
                 )
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
@@ -434,7 +409,6 @@ class PartyModal(discord.ui.View):
                 try:
                     await interaction.response.send_message(
                         "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                        view=DismissibleView(),
                         ephemeral=True
                     )
                 except:
@@ -442,7 +416,6 @@ class PartyModal(discord.ui.View):
                     try:
                         await interaction.followup.send(
                             "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                            view=DismissibleView(),
                             ephemeral=True
                         )
                     except:
@@ -464,7 +437,6 @@ class PartyModal(discord.ui.View):
             if self.poll_id not in polls:
                 await interaction.followup.send(
                     "This poll is no longer active!",
-                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -480,12 +452,11 @@ class PartyModal(discord.ui.View):
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
 
-        # Auto-dismiss the ephemeral message with delete_after
+        # Update message without view
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None,
-                delete_after=2
+                view=None
             )
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
@@ -496,8 +467,7 @@ class PartyModal(discord.ui.View):
         try:
             await interaction.response.edit_message(
                 content="Selection cancelled.",
-                view=None,
-                delete_after=2
+                view=None
             )
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
@@ -662,7 +632,6 @@ class FixedDaysModal(discord.ui.View):
             if not self.selected_times:
                 await interaction.response.send_message(
                     "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                    view=DismissibleView(),
                     ephemeral=True
                 )
                 try:
@@ -680,7 +649,6 @@ class FixedDaysModal(discord.ui.View):
                 if self.poll_id not in polls:
                     await interaction.followup.send(
                         "This poll is no longer active!",
-                        view=DismissibleView(),
                         ephemeral=True
                     )
                     return
@@ -713,13 +681,12 @@ class FixedDaysModal(discord.ui.View):
             if poll_data:
                 await self._update_poll_display(interaction, poll_data)
 
-            # Auto-dismiss the ephemeral message
+            # Update message without view
             selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
             try:
                 await interaction.edit_original_response(
                     content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
-                    view=None,
-                    delete_after=2
+                    view=None
                 )
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
@@ -730,7 +697,6 @@ class FixedDaysModal(discord.ui.View):
                 try:
                     await interaction.response.send_message(
                         "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                        view=DismissibleView(),
                         ephemeral=True
                     )
                 except:
@@ -738,7 +704,6 @@ class FixedDaysModal(discord.ui.View):
                     try:
                         await interaction.followup.send(
                             "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                            view=DismissibleView(),
                             ephemeral=True
                         )
                     except:
@@ -760,7 +725,6 @@ class FixedDaysModal(discord.ui.View):
             if self.poll_id not in polls:
                 await interaction.followup.send(
                     "This poll is no longer active!",
-                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -776,12 +740,11 @@ class FixedDaysModal(discord.ui.View):
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
 
-        # Auto-dismiss the ephemeral message with delete_after
+        # Update message without view
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None,
-                delete_after=2
+                view=None
             )
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
@@ -792,8 +755,7 @@ class FixedDaysModal(discord.ui.View):
         try:
             await interaction.response.edit_message(
                 content="Selection cancelled.",
-                view=None,
-                delete_after=2
+                view=None
             )
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
@@ -1037,7 +999,6 @@ class WeeklyEventModal(discord.ui.View):
             if not has_slot1 and not has_slot2:
                 await interaction.response.send_message(
                     "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                    view=DismissibleView(),
                     ephemeral=True
                 )
                 try:
@@ -1055,7 +1016,6 @@ class WeeklyEventModal(discord.ui.View):
                 if self.poll_id not in polls:
                     await interaction.followup.send(
                         "This poll is no longer active!",
-                        view=DismissibleView(),
                         ephemeral=True
                     )
                     return
@@ -1082,7 +1042,7 @@ class WeeklyEventModal(discord.ui.View):
             if poll_data:
                 await self._update_poll_display(interaction, poll_data)
 
-            # Auto-dismiss the ephemeral message
+            # Update message without view
             selection_parts = []
             if has_slot1:
                 selection_parts.append(f"Slot 1: {self.selected_slot1_day} at {self.selected_slot1_time}")
@@ -1092,8 +1052,7 @@ class WeeklyEventModal(discord.ui.View):
             try:
                 await interaction.edit_original_response(
                     content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
-                    view=None,
-                    delete_after=2
+                    view=None
                 )
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
@@ -1104,7 +1063,6 @@ class WeeklyEventModal(discord.ui.View):
                 try:
                     await interaction.response.send_message(
                         "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                        view=DismissibleView(),
                         ephemeral=True
                     )
                 except:
@@ -1112,7 +1070,6 @@ class WeeklyEventModal(discord.ui.View):
                     try:
                         await interaction.followup.send(
                             "⏳ The bot is currently being rate-limited by Discord. Please try again in a few minutes.",
-                            view=DismissibleView(),
                             ephemeral=True
                         )
                     except:
@@ -1134,7 +1091,6 @@ class WeeklyEventModal(discord.ui.View):
             if self.poll_id not in polls:
                 await interaction.followup.send(
                     "This poll is no longer active!",
-                    view=DismissibleView(),
                     ephemeral=True
                 )
                 return
@@ -1150,12 +1106,11 @@ class WeeklyEventModal(discord.ui.View):
         if poll_data:
             await self._update_poll_display(interaction, poll_data)
 
-        # Auto-dismiss the ephemeral message with delete_after
+        # Update message without view
         try:
             await interaction.edit_original_response(
                 content=f"🗑️ Cleared selection for **{self.event_name}**",
-                view=None,
-                delete_after=2
+                view=None
             )
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
@@ -1166,8 +1121,7 @@ class WeeklyEventModal(discord.ui.View):
         try:
             await interaction.response.edit_message(
                 content="Selection cancelled.",
-                view=None,
-                delete_after=2
+                view=None
             )
         except discord.errors.NotFound:
             # Message was already deleted or interaction expired, which is fine
@@ -1423,7 +1377,6 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
                 f"• US/Eastern, US/Pacific\n"
                 f"• Europe/London, Asia/Tokyo\n\n"
                 f"See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
-                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -1433,7 +1386,6 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         if self.poll_id not in polls:
             await interaction.response.send_message(
                 "❌ This poll is no longer active!",
-                view=DismissibleView(),
                 ephemeral=True
             )
             return
@@ -1543,11 +1495,10 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         calendar_file = discord.File(image_buffer, filename=f"calendar_{timezone_str.replace('/', '_')}.png")
         embed.set_image(url=f"attachment://calendar_{timezone_str.replace('/', '_')}.png")
         
-        # Send as ephemeral message with dismissible view
+        # Send as ephemeral message
         await interaction.response.send_message(
             embed=embed,
             file=calendar_file,
-            view=DismissibleView(),
             ephemeral=True
         )
 
