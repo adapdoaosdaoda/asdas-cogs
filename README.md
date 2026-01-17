@@ -159,8 +159,6 @@ For help, questions, or feature requests:
 - **Check [Troubleshooting](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels-Troubleshooting)**
 - **[Open an issue](https://github.com/adapdoaosdaoda/asdas-cogs/issues)**
 
-For Reminders-specific questions, see the [AAA3A-cogs repository](https://github.com/AAA3A-AAA3A/AAA3A-cogs).
-
 ## 📝 Credits
 
 - **Claude** - Everything 🎉🎊
@@ -180,3 +178,4 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 - **Reminders** - Identical to original from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
 
 Unless otherwise stated, do whatever you want.
+
