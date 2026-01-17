@@ -15,6 +15,8 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]cog install asdas-cogs eventchannels
 [p]cog install asdas-cogs eventrolereadd
 [p]cog install asdas-cogs forumthreadmessage
+[p]cog install asdas-cogs msgmover
+[p]cog install asdas-cogs polling
 [p]cog install asdas-cogs reminders
 [p]cog install asdas-cogs tradecommission
 ```
@@ -24,6 +26,8 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]load eventchannels
 [p]load eventrolereadd
 [p]load forumthreadmessage
+[p]load msgmover
+[p]load polling
 [p]load reminders
 [p]load tradecommission
 ```
@@ -81,6 +85,27 @@ Automatically send, edit, and optionally delete messages in new forum threads.
 - Fully configurable message content
 - Silent message sending (no notifications)
 
+### MsgMover
+[coffeebank's](https://github.com/coffeebank/coffee-cogs) message utilities cog for moving messages across channels and servers using webhooks.
+
+**Key Features:**
+- `msgcopy`: Copy a set number of messages from one channel to another (single-use)
+- `msgrelay`: Forward new messages to other channels/servers (continuous)
+- Replicates usernames, profile pictures, attachments, and bot messages
+- Supports edited/deleted messages in relay mode
+- Timestamp spacers for copied messages
+
+### Polling
+Event scheduling polling system with visual calendar images and conflict detection.
+
+**Key Features:**
+- Dropdown menu-based voting for event times
+- Visual calendar generation with emoji rendering (requires Pillow and pilmoji)
+- Conflict detection to prevent overlapping time selections
+- Support for multiple event types (Hero's Realm, Sword Trial, Party, Breaking Army, Showdown)
+- Beautiful calendar visualizations
+- Text label fallback if pilmoji is not installed
+
 ### Reminders
 [AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
 
@@ -109,8 +134,13 @@ A Discord cog for Where Winds Meet that sends weekly Trade Commission informatio
 **Complete documentation is available in the [Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki):**
 
 - **[Installation Guide](https://github.com/adapdoaosdaoda/asdas-cogs/wiki#-installation)** - Get started
+- **[Birthday Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Birthday)** - Birthday announcements setup
+- **[BorkedSince Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/BorkedSince)** - Crash tracking configuration
 - **[EventChannels Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels)** - Complete guide with examples
 - **[EventRoleReadd Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd)** - Setup and commands
+- **[ForumThreadMessage Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/ForumThreadMessage)** - Auto-messaging setup
+- **[MsgMover Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/MsgMover)** - Message utilities guide
+- **[Polling Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Polling)** - Event polling system
 - **[Reminders Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders)** - Features and usage
 - **[TradeCommission Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/TradeCommission)** - Setup and commands
 
@@ -139,11 +169,14 @@ For Reminders-specific questions, see the [AAA3A-cogs repository](https://github
 - **EventChannels** - Custom development for Red-Discord Bot
 - **EventRoleReadd** - Custom development for Red-Discord Bot
 - **ForumThreadMessage** - Custom development for Red-Discord Bot
+- **MsgMover** - Cloned from [coffeebank's MsgMover cog](https://github.com/coffeebank/coffee-cogs)
+- **Polling** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
 - **TradeCommission** - Custom development for Red-Discord Bot
 
 ## 📄 License
 - **Birthday** - Identical to original from [Vex-cogs](https://github.com/Vexed01/Vex-Cogs), [GNU General Public License v3.0](https://github.com/Vexed01/Vex-Cogs/blob/master/LICENSE)
+- **MsgMover** - Identical to original from [coffee-cogs](https://github.com/coffeebank/coffee-cogs), [GNU General Public License v3.0](https://github.com/coffeebank/coffee-cogs/blob/main/LICENSE)
 - **Reminders** - Identical to original from [AAA3A-cogs](https://github.com/AAA3A-AAA3A/AAA3A-cogs), [MIT License](https://github.com/AAA3A-AAA3A/AAA3A-cogs/blob/main/LICENSE)
 
 Unless otherwise stated, do whatever you want.
