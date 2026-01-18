@@ -100,9 +100,11 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             placeholder=f"{emoji} {event_name} - Choose time ({tz})",
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=0,  # Optional
+            min_values=1,  # FIXED: Components in Modals must be required (>=1)
             max_values=1
         )
+        # FIXED: Explicitly set label for Modal display to satisfy API length reqs
+        select.label = event_name
         self.add_item(select)
 
     def _add_fixed_days_event_select(self, event_name: str, event_info: Dict,
@@ -151,9 +153,11 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             placeholder=f"{emoji} {event_name} - Choose day+time ({tz})",
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=0,  # Optional
+            min_values=1,  # FIXED: Components in Modals must be required (>=1)
             max_values=min(len(days), 4)  # Up to 4 selections (one per day)
         )
+        # FIXED: Explicitly set label for Modal display
+        select.label = event_name
         self.add_item(select)
 
     def _add_weekly_event_select(self, event_name: str, event_info: Dict,
@@ -202,9 +206,11 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             placeholder=f"{emoji} {event_name} - Choose up to 2 slots ({tz})",
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=0,  # Optional
+            min_values=1,  # FIXED: Components in Modals must be required (>=1)
             max_values=2  # 2 slots for weekly events
         )
+        # FIXED: Explicitly set label for Modal display
+        select.label = event_name
         self.add_item(select)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -337,8 +343,10 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
         """Check for time conflicts in selections"""
         # Simplified conflict checking - delegate to cog's logic
         try:
-            # For now, skip conflict checking in modal
-            # The cog's existing conflict detection can be used if needed
+            # We can construct a partial user_selections dict to check logic
+            # However, since checking against the Cog's logic requires more context
+            # we will trust the main loop logic in on_submit or expand this if needed.
+            # For now, return False to allow voting.
             return False, ""
         except Exception as e:
             log.error(f"Error checking conflicts: {e}")
