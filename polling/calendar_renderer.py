@@ -27,7 +27,10 @@ class CalendarRenderer:
     # Event-specific cell background colors
     EVENT_BG_COLORS = {
         "Hero's Realm": (92, 107, 192),     # #5C6BC0 - Indigo
+        "Hero's Realm (Catch-up)": (92, 107, 192),  # Inherit from Hero's Realm
+        "Hero's Realm (Reset)": (92, 107, 192),     # Inherit from Hero's Realm
         "Sword Trial": (255, 202, 40),      # #FFCA28 - Yellow
+        "Sword Trial (Echo)": (255, 202, 40),       # Inherit from Sword Trial
         "Party": (233, 30, 99),             # #e91e63 - Pink
         "Breaking Army": (52, 152, 219),    # #3498db - Blue
         "Showdown": (230, 126, 34),         # #e67e22 - Orange
@@ -398,22 +401,18 @@ class CalendarRenderer:
                             # Store base event name (without slot number) for rendering
                             schedule[slot_time_str][short_day].append((priority, base_event_name, slot_num, time_str, duration))
 
-        # Generate all time slots from 17:00 to 02:00 (30 min intervals)
-        all_times = []
-        hour = 17
-        minute = 0
-        while hour < 26:  # 26 represents 02:00 next day
-            display_hour = hour if hour < 24 else hour - 24
-            all_times.append(f"{display_hour:02d}:{minute:02d}")
-            minute += 30
-            if minute >= 60:
-                minute = 0
-                hour += 1
-
-        # Ensure all time slots exist
-        for time_str in all_times:
+        # Don't generate a fixed time range - instead, ensure all time slots that have events exist
+        # The _crop_empty_hours function will remove empty slots at the extremities
+        # This allows events to appear at any time after timezone conversion
+        for time_str in list(schedule.keys()):
+            # Ensure all days exist for each time slot
             if time_str not in schedule:
                 schedule[time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+            else:
+                # Ensure all days exist
+                for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+                    if d not in schedule[time_str]:
+                        schedule[time_str][d] = []
 
         # Add Guild War events from blocked times
         if blocked_times:
@@ -734,37 +733,57 @@ class CalendarRenderer:
                             else:
                                 emoji = events.get(event_name, {}).get("emoji", "•")
 
-                            # Create display text with emoji and name
-                            display_text = f"{emoji} {event_name}"
+                            # Split event name into multiple lines if it contains parentheses
+                            # E.g., "Hero's Realm (Catch-up)" becomes ["Hero's Realm", "(Catch-up)"]
+                            event_lines = []
+                            if "(" in event_name and ")" in event_name:
+                                # Split at opening parenthesis
+                                parts = event_name.split("(", 1)
+                                event_lines.append(parts[0].strip())
+                                event_lines.append(f"({parts[1]}")
+                            else:
+                                event_lines = [event_name]
 
-                            # Calculate text width for centering
-                            bbox = draw.textbbox((0, 0), display_text, font=self.font_bold)
-                            text_width = bbox[2] - bbox[0]
-                            text_height = bbox[3] - bbox[1]
+                            # Create display text lines with emoji on first line only
+                            display_lines = [f"{emoji} {event_lines[0]}"]
+                            if len(event_lines) > 1:
+                                display_lines.append(event_lines[1])
 
-                            # Center horizontally
-                            text_x = x + (self.CELL_WIDTH - text_width) // 2
+                            # Calculate positions for multi-line text
+                            line_height = 15  # Spacing between lines
+                            total_height = len(display_lines) * line_height
 
                             # Position events vertically based on index
                             if num_events_to_show == 1:
                                 # Single event: center vertically, except Party which goes to top
                                 if event_name == "Party":
                                     # Party takes top half even when alone (short duration event)
-                                    text_y = y + 10
+                                    base_y = y + 10
                                 else:
                                     # Other events center vertically
-                                    text_y = y + (self.CELL_HEIGHT - text_height) // 2
+                                    base_y = y + (self.CELL_HEIGHT - total_height) // 2
                             else:
                                 # Multiple events: stack vertically with line breaks, center each
                                 if event_idx == 0:
                                     # First event (Party in combo cells) moved up slightly
-                                    text_y = y + 10  # Moved up from 15
+                                    base_y = y + 5  # Adjusted for multi-line
                                 else:
-                                    text_y = y + 50  # Adjusted for smaller fonts (second line)
+                                    base_y = y + 45  # Adjusted for second event
 
+                            # Draw each line
                             if not hasattr(self, '_emoji_positions'):
                                 self._emoji_positions = []
-                            self._emoji_positions.append((text_x, text_y, display_text, self.font_bold))
+
+                            for line_idx, line_text in enumerate(display_lines):
+                                # Calculate text width for centering
+                                bbox = draw.textbbox((0, 0), line_text, font=self.font_bold)
+                                text_width = bbox[2] - bbox[0]
+
+                                # Center horizontally
+                                text_x = x + (self.CELL_WIDTH - text_width) // 2
+                                text_y = base_y + (line_idx * line_height)
+
+                                self._emoji_positions.append((text_x, text_y, line_text, self.font_bold))
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
