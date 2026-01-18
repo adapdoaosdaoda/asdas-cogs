@@ -41,18 +41,18 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
 
         timezone_display = cog.timezone_display
 
-        # Add header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content=f"Vote for all events\nTimezone: {timezone_display}",
-                style=1
-            ))
-
         # Track which selects we create
         self.selects = {}
 
         # 1. Party - time only (daily event)
         if "Party" in events:
+            # Add Party header
+            if TextDisplay:
+                self.add_item(TextDisplay(
+                    content="🎉 Party\nTimes in Server Time (UTC+1)",
+                    style=1
+                ))
+
             party_info = events["Party"]
             times = cog.generate_time_options(
                 party_info["time_range"][0],
@@ -65,16 +65,15 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             current_party = user_selections.get("Party")
             time_options = [
                 discord.SelectOption(
-                    label=f"Party: {time_str}",
+                    label=time_str,
                     value=time_str,
-                    emoji="🎉",
                     default=(current_party == time_str if current_party else False)
                 )
                 for time_str in times[:25]
             ]
 
             party_select = StringSelect(
-                placeholder=f"🎉 Party time...",
+                placeholder="Times in Server Time (UTC+1)",
                 options=time_options,
                 custom_id="party_time_select"
             )
@@ -83,6 +82,13 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
 
         # 2. Hero's Realm (Catch-up) - day + time
         if "Hero's Realm (Catch-up)" in events:
+            # Add Hero's Realm Day header
+            if TextDisplay:
+                self.add_item(TextDisplay(
+                    content="🛡️ Hero's Realm (Catch-up) Day\nMonday - Saturday",
+                    style=1
+                ))
+
             hero_info = events["Hero's Realm (Catch-up)"]
             available_days = hero_info.get("days", self.days)
             times = cog.generate_time_options(
@@ -104,34 +110,39 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             # Day select
             day_options = [
                 discord.SelectOption(
-                    label=f"HR: {day}",
+                    label=day,
                     value=day,
-                    emoji="🛡️",
                     default=(day == current_day)
                 )
                 for day in available_days
             ]
 
             hero_day_select = StringSelect(
-                placeholder="🛡️ Hero's Realm day...",
+                placeholder="Monday - Saturday",
                 options=day_options,
                 custom_id="hero_day_select"
             )
             self.add_item(hero_day_select)
 
+            # Add Hero's Realm Time header
+            if TextDisplay:
+                self.add_item(TextDisplay(
+                    content="🛡️ Hero's Realm (Catch-up) Time\nTimes in Server Time (UTC+1)",
+                    style=1
+                ))
+
             # Time select
             time_options = [
                 discord.SelectOption(
-                    label=f"HR: {time_str}",
+                    label=time_str,
                     value=time_str,
-                    emoji="🛡️",
                     default=(time_str == current_time)
                 )
                 for time_str in times[:25]
             ]
 
             hero_time_select = StringSelect(
-                placeholder="🛡️ Hero's Realm time...",
+                placeholder="Times in Server Time (UTC+1)",
                 options=time_options,
                 custom_id="hero_time_select"
             )
@@ -140,6 +151,13 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
 
         # 3. Sword Trial - Wed time + Fri time
         if "Sword Trial" in events:
+            # Add Sword Trial Wednesday header
+            if TextDisplay:
+                self.add_item(TextDisplay(
+                    content="⚔️ Sword Trial Wednesday Time\nTimes in Server Time (UTC+1)",
+                    style=1
+                ))
+
             sword_info = events["Sword Trial"]
             times = cog.generate_time_options(
                 sword_info["time_range"][0],
@@ -161,34 +179,39 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             # Wednesday time
             wed_options = [
                 discord.SelectOption(
-                    label=f"ST Wed: {time_str}",
+                    label=time_str,
                     value=time_str,
-                    emoji="⚔️",
                     default=(time_str == current_wed)
                 )
                 for time_str in times[:25]
             ]
 
             wed_select = StringSelect(
-                placeholder="⚔️ Sword Trial Wed...",
+                placeholder="Times in Server Time (UTC+1)",
                 options=wed_options,
                 custom_id="sword_wed_select"
             )
             self.add_item(wed_select)
 
+            # Add Sword Trial Friday header
+            if TextDisplay:
+                self.add_item(TextDisplay(
+                    content="⚔️ Sword Trial Friday Time\nTimes in Server Time (UTC+1)",
+                    style=1
+                ))
+
             # Friday time
             fri_options = [
                 discord.SelectOption(
-                    label=f"ST Fri: {time_str}",
+                    label=time_str,
                     value=time_str,
-                    emoji="⚔️",
                     default=(time_str == current_fri)
                 )
                 for time_str in times[:25]
             ]
 
             fri_select = StringSelect(
-                placeholder="⚔️ Sword Trial Fri...",
+                placeholder="Times in Server Time (UTC+1)",
                 options=fri_options,
                 custom_id="sword_fri_select"
             )
@@ -505,14 +528,6 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
 
         # Get event info
         event_info = events[event_name]
-        timezone_display = cog.timezone_display
-
-        # Add header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content=f"Select your 2 preferred slots\nTimezone: {timezone_display}",
-                style=1
-            ))
 
         # Generate time options
         start_hour, end_hour = event_info["time_range"]
@@ -525,73 +540,97 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         current_slot1 = current_selections[0] if len(current_selections) > 0 else None
         current_slot2 = current_selections[1] if len(current_selections) > 1 else None
 
+        # Slot 1 Day Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="⚡ Breaking Army Slot 1 Day\nMonday - Sunday",
+                style=1
+            ))
+
         # Slot 1 - Day
         day_options_1 = [
             discord.SelectOption(
                 label=day,
                 value=day,
-                emoji="📅",
                 default=(current_slot1 and current_slot1.get("day") == day)
             )
             for day in days
         ]
 
         self.slot1_day_select = StringSelect(
-            placeholder="Slot 1: Choose a day...",
+            placeholder="Monday - Sunday",
             options=day_options_1,
             custom_id="ba_slot1_day_select"
         )
         self.add_item(self.slot1_day_select)
+
+        # Slot 1 Time Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="⚡ Breaking Army Slot 1 Time\nTimes in Server Time (UTC+1)",
+                style=1
+            ))
 
         # Slot 1 - Time
         time_options_1 = [
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
-                emoji="🕐",
                 default=(current_slot1 and current_slot1.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot1_time_select = StringSelect(
-            placeholder=f"Slot 1: Choose a time... {timezone_display}",
+            placeholder="Times in Server Time (UTC+1)",
             options=time_options_1,
             custom_id="ba_slot1_time_select"
         )
         self.add_item(self.slot1_time_select)
+
+        # Slot 2 Day Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="⚡ Breaking Army Slot 2 Day\nMonday - Sunday",
+                style=1
+            ))
 
         # Slot 2 - Day
         day_options_2 = [
             discord.SelectOption(
                 label=day,
                 value=day,
-                emoji="📅",
                 default=(current_slot2 and current_slot2.get("day") == day)
             )
             for day in days
         ]
 
         self.slot2_day_select = StringSelect(
-            placeholder="Slot 2: Choose a day...",
+            placeholder="Monday - Sunday",
             options=day_options_2,
             custom_id="ba_slot2_day_select"
         )
         self.add_item(self.slot2_day_select)
+
+        # Slot 2 Time Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="⚡ Breaking Army Slot 2 Time\nTimes in Server Time (UTC+1)",
+                style=1
+            ))
 
         # Slot 2 - Time
         time_options_2 = [
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
-                emoji="🕐",
                 default=(current_slot2 and current_slot2.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot2_time_select = StringSelect(
-            placeholder=f"Slot 2: Choose a time... {timezone_display}",
+            placeholder="Times in Server Time (UTC+1)",
             options=time_options_2,
             custom_id="ba_slot2_time_select"
         )

@@ -144,44 +144,85 @@ class EventPollView(discord.ui.View):
         results_button.callback = self._show_results
         self.add_item(results_button)
 
-        # Create buttons for each event in 2 rows
-        # Row 0: Results, Hero's Realm, Sword Trial
-        # Row 1: Party, Breaking Army, Showdown
-        event_names = list(events.keys())
-        for idx, event_name in enumerate(event_names):
-            # Skip locked events (they don't allow voting)
-            if events[event_name].get("type") == "locked":
-                continue
+        # Create buttons for events
+        # Row 0: Results, Simple Events (Party/Hero/Sword combined)
+        # Row 1: Breaking Army, Showdown
 
-            # Determine button style based on event
-            if "Hero's Realm" in event_name:
-                button_style = discord.ButtonStyle.secondary  # Grey
-                row = 0
-            elif "Sword Trial" in event_name:
-                button_style = discord.ButtonStyle.secondary  # Grey
-                row = 0
-            elif "Party" in event_name:
-                button_style = discord.ButtonStyle.success  # Green
-                row = 1
-            elif "Breaking Army" in event_name:
-                button_style = discord.ButtonStyle.primary  # Blue
-                row = 1
-            elif "Showdown" in event_name:
-                button_style = discord.ButtonStyle.danger  # Red
-                row = 1
-            else:
-                button_style = discord.ButtonStyle.secondary  # Grey
-                row = 1
+        # Add combined button for Party, Hero's Realm, and Sword Trial
+        simple_events_button = discord.ui.Button(
+            label="Party / Hero's Realm / Sword Trial",
+            style=discord.ButtonStyle.secondary,
+            emoji="🎯",
+            custom_id="event_poll:simple_events",
+            row=0
+        )
+        simple_events_button.callback = self._create_simple_events_callback()
+        self.add_item(simple_events_button)
 
-            button = discord.ui.Button(
-                label=event_name,
-                style=button_style,
-                emoji=events[event_name]["emoji"],
-                custom_id=f"event_poll:{event_name}",
-                row=row
+        # Add separate buttons for Breaking Army and Showdown
+        if "Breaking Army" in events:
+            ba_button = discord.ui.Button(
+                label="Breaking Army",
+                style=discord.ButtonStyle.primary,
+                emoji=events["Breaking Army"]["emoji"],
+                custom_id="event_poll:Breaking Army",
+                row=1
             )
-            button.callback = self._create_event_callback(event_name)
-            self.add_item(button)
+            ba_button.callback = self._create_event_callback("Breaking Army")
+            self.add_item(ba_button)
+
+        if "Showdown" in events:
+            sd_button = discord.ui.Button(
+                label="Showdown",
+                style=discord.ButtonStyle.danger,
+                emoji=events["Showdown"]["emoji"],
+                custom_id="event_poll:Showdown",
+                row=1
+            )
+            sd_button.callback = self._create_event_callback("Showdown")
+            self.add_item(sd_button)
+
+    def _create_simple_events_callback(self):
+        """Create callback for combined simple events button"""
+        async def callback(interaction: discord.Interaction):
+            try:
+                # Get poll_id from the message
+                poll_id = str(interaction.message.id)
+
+                # Get user's current selections
+                polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+                if poll_id not in polls:
+                    await interaction.response.send_message(
+                        "This poll is no longer active!",
+                        view=DismissibleView(),
+                        ephemeral=True
+                    )
+                    return
+
+                poll_data = polls[poll_id]
+                user_id_str = str(interaction.user.id)
+                user_selections = poll_data["selections"].get(user_id_str, {})
+
+                # Open combined modal for Party, Hero's Realm, and Sword Trial
+                modal = CombinedSimpleEventsModal(
+                    cog=self.cog,
+                    guild_id=self.guild_id,
+                    poll_id=poll_id,
+                    user_id=interaction.user.id,
+                    user_selections=user_selections,
+                    events=self.events,
+                    days=self.days
+                )
+                await interaction.response.send_modal(modal)
+
+            except discord.HTTPException as e:
+                log.error(f"Failed to respond to simple events vote interaction for user {interaction.user.id}: {e}")
+            except discord.Forbidden as e:
+                log.error(f"Missing permissions to respond to simple events vote interaction for user {interaction.user.id}: {e}")
+            except Exception as e:
+                log.error(f"Unexpected error in simple events vote interaction for user {interaction.user.id}: {e}", exc_info=True)
+
+        return callback
 
     async def _show_results(self, interaction: discord.Interaction):
         """Show current poll results with category buttons"""

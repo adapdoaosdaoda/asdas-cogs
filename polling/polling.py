@@ -2072,7 +2072,7 @@ class EventPolling(commands.Cog):
                         else:
                             top_entries.append(f"**{rank}.** {day[:3]} {time} ({points} pts)")
 
-                    result_lines.append(" - ".join(top_entries))
+                    result_lines.append(" **|** ".join(top_entries))
                     result_lines.append("")
             else:
                 if event_info["slots"] > 1:
