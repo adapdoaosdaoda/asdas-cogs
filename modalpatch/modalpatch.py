@@ -151,7 +151,10 @@ def _patched_to_dict(self):
             label_text = getattr(item, 'placeholder', None) or "Select Option"
             
             # Create a temporary Label wrapper just for serialization
-            wrapper = Label(label=label_text, child=item)
+            # IMPORTANT: The 'label' argument to Label() becomes the 'content' field.
+            # Setting this to a single space prevents it from rendering as a text block
+            # above the select menu, allowing the select menu itself to be the primary focus.
+            wrapper = Label(label=" ", child=item)
             payload['components'].append(wrapper.to_component_dict())
             
         elif isinstance(item, TextDisplay):
