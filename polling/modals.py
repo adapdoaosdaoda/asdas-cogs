@@ -84,9 +84,22 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
 
         # Build options
         options = []
+        
+        # Check if user has a selection
         current_time = current_selection.get("time") if current_selection else None
+        has_selection = current_time is not None
 
-        for time_str in times[:25]:  # Max 25 options per select
+        # Add "Clear / No Vote" option (Required because min_values must be 1)
+        options.append(
+            discord.SelectOption(
+                label="Clear / No Vote",
+                value=f"{event_name}|||CLEAR",
+                emoji="🚫",
+                default=(not has_selection) # Default to Clear if no selection
+            )
+        )
+
+        for time_str in times[:24]:  # Limit to 24 options + 1 clear option = 25 max
             options.append(
                 discord.SelectOption(
                     label=time_str,
@@ -96,15 +109,16 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 )
             )
 
+        # Placeholder must be < 45 chars for ModalPatch compatibility
+        short_placeholder = f"{emoji} {event_name}"
+
         select = StringSelect(
-            placeholder=f"{emoji} {event_name} - Choose time ({tz})",
+            placeholder=short_placeholder,
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=1,  # FIXED: Components in Modals must be required (>=1)
+            min_values=1, # Must be 1 for Modals
             max_values=1
         )
-        # FIXED: Explicitly set label for Modal display to satisfy API length reqs
-        select.label = event_name
         self.add_item(select)
 
     def _add_fixed_days_event_select(self, event_name: str, event_info: Dict,
@@ -120,6 +134,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
         # Build options with day+time combinations
         options = []
         current_selections_set = set()
+        has_selection = False
 
         if current_selection and isinstance(current_selection, list):
             for idx, slot in enumerate(current_selection):
@@ -128,6 +143,17 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                     time = slot.get("time")
                     if time:
                         current_selections_set.add(f"{day}|||{time}")
+                        has_selection = True
+
+        # Add "Clear / No Vote" option
+        options.append(
+            discord.SelectOption(
+                label="Clear / No Vote",
+                value=f"{event_name}|||CLEAR",
+                emoji="🚫",
+                default=(not has_selection)
+            )
+        )
 
         # Create options for each day
         for day in days:
@@ -149,15 +175,15 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             if len(options) >= 25:
                 break
 
+        short_placeholder = f"{emoji} {event_name}"
+
         select = StringSelect(
-            placeholder=f"{emoji} {event_name} - Choose day+time ({tz})",
+            placeholder=short_placeholder,
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=1,  # FIXED: Components in Modals must be required (>=1)
-            max_values=min(len(days), 4)  # Up to 4 selections (one per day)
+            min_values=1, # Must be 1 for Modals
+            max_values=min(len(days) + 1, 5) # Allow selecting multiple days + clear option
         )
-        # FIXED: Explicitly set label for Modal display
-        select.label = event_name
         self.add_item(select)
 
     def _add_weekly_event_select(self, event_name: str, event_info: Dict,
@@ -173,6 +199,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
         # Build options with day+time combinations
         options = []
         current_selections_set = set()
+        has_selection = False
 
         if current_selection and isinstance(current_selection, list):
             for slot in current_selection:
@@ -181,6 +208,17 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                     time = slot.get("time")
                     if day and time:
                         current_selections_set.add(f"{day}|||{time}")
+                        has_selection = True
+
+        # Add "Clear / No Vote" option
+        options.append(
+            discord.SelectOption(
+                label="Clear / No Vote",
+                value=f"{event_name}|||CLEAR",
+                emoji="🚫",
+                default=(not has_selection)
+            )
+        )
 
         # Create limited options (max 25)
         for day in available_days:
@@ -202,15 +240,15 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             if len(options) >= 25:
                 break
 
+        short_placeholder = f"{emoji} {event_name}"
+
         select = StringSelect(
-            placeholder=f"{emoji} {event_name} - Choose up to 2 slots ({tz})",
+            placeholder=short_placeholder,
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=1,  # FIXED: Components in Modals must be required (>=1)
-            max_values=2  # 2 slots for weekly events
+            min_values=1, # Must be 1 for Modals
+            max_values=3 # 2 slots + clear option
         )
-        # FIXED: Explicitly set label for Modal display
-        select.label = event_name
         self.add_item(select)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -241,17 +279,27 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 if event_type == "daily":
                     # Format: "EventName|||Time"
                     value = child.values[0]
-                    parts = value.split("|||")
-                    if len(parts) == 2:
-                        parsed_selections[event_name] = {"time": parts[1]}
+                    
+                    # Handle "Clear" option
+                    if "|||CLEAR" in value:
+                        parsed_selections[event_name] = None
+                    else:
+                        parts = value.split("|||")
+                        if len(parts) == 2:
+                            parsed_selections[event_name] = {"time": parts[1]}
 
                 elif event_type == "fixed_days":
                     # Format: "EventName|||Day|||Time"
                     # Multiple selections allowed
                     days = event_info["days"]
                     selections_list = [None] * len(days)
+                    has_real_selection = False
 
                     for value in child.values:
+                        # Skip clear option in multi-select processing
+                        if "|||CLEAR" in value:
+                            continue
+                            
                         parts = value.split("|||")
                         if len(parts) == 3:
                             _, day, time = parts
@@ -259,7 +307,9 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                             if day in days:
                                 idx = days.index(day)
                                 selections_list[idx] = {"time": time}
+                                has_real_selection = True
 
+                    # If no real selections were made (only Clear or empty), result is list of Nones
                     parsed_selections[event_name] = selections_list
 
                 elif event_type == "once":
@@ -268,6 +318,10 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                     selections_list = []
 
                     for value in child.values:
+                        # Skip clear option in multi-select processing
+                        if "|||CLEAR" in value:
+                            continue
+
                         parts = value.split("|||")
                         if len(parts) == 3:
                             _, day, time = parts
@@ -281,6 +335,14 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
 
             # Validate for conflicts
             for event_name, selection in parsed_selections.items():
+                # Skip validation if selection is empty/cleared
+                if not selection:
+                    continue
+                
+                # Check for list of Nones (fixed days cleared)
+                if isinstance(selection, list) and all(s is None for s in selection):
+                    continue
+
                 has_conflict, conflict_msg = await self._check_conflicts(
                     event_name, selection, parsed_selections
                 )
@@ -308,12 +370,9 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 for event_name, selection in parsed_selections.items():
                     polls[self.poll_id]["selections"][user_id_str][event_name] = selection
 
-                # Clear events that weren't selected
-                for event_name in self.events.keys():
-                    if event_name not in parsed_selections:
-                        if event_name in polls[self.poll_id]["selections"][user_id_str]:
-                            del polls[self.poll_id]["selections"][user_id_str][event_name]
-
+                # Clear events that weren't selected (implied by loop above, but good for safety)
+                # Or specifically handle explicit clears
+                
                 poll_data = polls[self.poll_id]
 
             # Update poll display
@@ -322,7 +381,14 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
 
             # Send success message
-            selected_count = len(parsed_selections)
+            selected_count = 0
+            for sel in parsed_selections.values():
+                if isinstance(sel, list):
+                    if any(s is not None for s in sel):
+                        selected_count += 1
+                elif sel is not None:
+                    selected_count += 1
+
             await interaction.followup.send(
                 f"✅ **Votes Saved!**\n\nYou voted for {selected_count} event(s).",
                 ephemeral=True
@@ -343,10 +409,8 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
         """Check for time conflicts in selections"""
         # Simplified conflict checking - delegate to cog's logic
         try:
-            # We can construct a partial user_selections dict to check logic
-            # However, since checking against the Cog's logic requires more context
-            # we will trust the main loop logic in on_submit or expand this if needed.
-            # For now, return False to allow voting.
+            # For now, skip conflict checking in modal
+            # The cog's existing conflict detection can be used if needed
             return False, ""
         except Exception as e:
             log.error(f"Error checking conflicts: {e}")
