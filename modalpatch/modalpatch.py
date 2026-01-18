@@ -179,7 +179,7 @@ def _patched_refresh(self, interaction: discord.Interaction, components: List[Di
         if row['type'] == 1: # ActionRow
             flat_components.extend(row.get('components', []))
         
-        elif row['type'] == 18: # FIX: Handle Label (Type 18) unwrapping
+        elif row['type'] == 18: # Label (Type 18) unwrapping
             # The interaction response returns the inner component in 'component'
             if 'component' in row:
                 flat_components.append(row['component'])
@@ -191,10 +191,15 @@ def _patched_refresh(self, interaction: discord.Interaction, components: List[Di
     # Map custom_id to component data
     component_map = {c['custom_id']: c for c in flat_components if 'custom_id' in c}
 
-    for item in self._children:
+    def update_item_state(item):
         if isinstance(item, TextDisplay):
-            continue
+            return
             
+        # If item is a Label, update its child instead
+        if isinstance(item, Label):
+            update_item_state(item.child)
+            return
+
         # Handle Selects
         if isinstance(item, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
             c_data = component_map.get(item.custom_id)
@@ -204,14 +209,17 @@ def _patched_refresh(self, interaction: discord.Interaction, components: List[Di
                     item.refresh_state(interaction) 
                 except Exception:
                     pass
-            continue
+            return
 
         # Handle TextInputs (Standard)
         if isinstance(item, TextInput):
             c_data = component_map.get(item.custom_id)
             if c_data and 'value' in c_data:
                 item._value = c_data['value']
-                continue
+            return
+
+    for item in self._children:
+        update_item_state(item)
 
     pass
 

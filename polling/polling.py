@@ -2073,50 +2073,50 @@ class EventPolling(commands.Cog):
             emoji = event_info["emoji"]
             event_slots = winning_times.get(event_name, {})
 
-            if event_slots:
-                for slot_index in range(event_info["slots"]):
-                    if slot_index not in event_slots:
-                        continue
-
-                    winner_key, winner_points, all_entries = event_slots[slot_index]
-
-                    # Format header based on event type
-                    if event_info["slots"] > 1:
-                        if event_info["type"] == "fixed_days":
-                            day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
-                            result_lines.append(f"{emoji} **{event_name} ({day_name[:3]})**:")
-                        else:
-                            result_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**:")
+            # Format each slot for this event
+            for slot_index in range(event_info["slots"]):
+                slot_data = event_slots.get(slot_index)
+                
+                # Determine display label
+                if event_info["slots"] > 1:
+                    if event_info["type"] == "fixed_days":
+                        day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
+                        label = f"{emoji} **{event_name} ({day_name[:3]})**"
                     else:
-                        result_lines.append(f"{emoji} **{event_name}**:")
+                        label = f"{emoji} **{event_name} Slot {slot_index + 1}**"
+                else:
+                    label = f"{emoji} **{event_name}**"
 
-                    # Show top 3 entries on a single line
+                if not slot_data:
+                    result_lines.append(f"{label}: *No votes yet*")
+                    continue
+
+                winner_key, winner_points, all_entries = slot_data
+                
+                # Show top 3 entries if they exist
+                if all_entries:
                     top_entries = []
                     for rank, (key, points) in enumerate(all_entries[:3], 1):
                         day, time = key
-                        if event_info["type"] == "daily":
-                            top_entries.append(f"**{rank}.** {time} ({points} pts)")
-                        elif event_info["type"] == "fixed_days":
-                            if event_info["slots"] > 1:
-                                top_entries.append(f"**{rank}.** {time} ({points} pts)")
-                            else:
-                                top_entries.append(f"**{rank}.** {time} ({points} pts)")
+                        entry_text = f"**{rank}.** "
+                        if event_info["type"] == "daily" or event_info["type"] == "fixed_days":
+                            entry_text += f"{time}"
                         else:
-                            top_entries.append(f"**{rank}.** {day[:3]} {time} ({points} pts)")
-
-                    result_lines.append(" **|** ".join(top_entries))
-                    result_lines.append("")
-            else:
-                if event_info["slots"] > 1:
-                    for slot_index in range(event_info["slots"]):
-                        if event_info["type"] == "fixed_days":
-                            day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
-                            result_lines.append(f"{emoji} **{event_name} ({day_name[:3]})**: No votes yet")
-                        else:
-                            result_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**: No votes yet")
+                            entry_text += f"{day[:3]} {time}"
+                        
+                        entry_text += f" ({points} pts)"
+                        top_entries.append(entry_text)
+                    
+                    result_lines.append(f"{label}: {' **|** '.join(top_entries)}")
                 else:
-                    result_lines.append(f"{emoji} **{event_name}**: No votes yet")
-                result_lines.append("")
+                    # Fallback for defaults (points = 0) or single winner
+                    day, time = winner_key
+                    if winner_points == 0:
+                        result_lines.append(f"{label}: *Default:* {time}")
+                    else:
+                        # Use winner_key if all_entries is somehow empty but we have points
+                        display_day = f"{day[:3]} " if day and day not in ("Daily", "Fixed") else ""
+                        result_lines.append(f"{label}: **1.** {display_day}{time} ({winner_points} pts)")
 
         return "\n".join(result_lines)
 
