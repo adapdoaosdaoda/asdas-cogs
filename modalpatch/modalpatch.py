@@ -72,10 +72,11 @@ class Label(Item):
     Schema: type: 18, label (str), component (object).
     Used for Auto-Boxing Selects.
     """
-    def __init__(self, label: str, child: Item):
+    def __init__(self, label: str, child: Item, description: Optional[str] = None):
         super().__init__()
         self.label = label
         self.child = child
+        self.description = description
         self._row = None
 
     @property
@@ -89,12 +90,17 @@ class Label(Item):
         if isinstance(self.child, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
             child_payload.pop("disabled", None)
 
-        return {
+        payload = {
             "type": 18,
             "label": self.label or " ", 
             # FIX: Changed from 'components' (list) to 'component' (singular object)
             "component": child_payload
         }
+        
+        if self.description:
+            payload["description"] = self.description
+            
+        return payload
 
     def refresh_component(self, component: Any) -> None:
         pass

@@ -717,14 +717,6 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
 
         # Get event info
         event_info = events[event_name]
-        timezone_display = cog.timezone_display
-
-        # Add header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content=f"Select your 2 preferred slots\nTimezone: {timezone_display}",
-                style=1
-            ))
 
         # Generate time options
         start_hour, end_hour = event_info["time_range"]
@@ -737,73 +729,97 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         current_slot1 = current_selections[0] if len(current_selections) > 0 else None
         current_slot2 = current_selections[1] if len(current_selections) > 1 else None
 
+        # Slot 1 Day Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="🏆 Showdown Slot 1 Day\nMonday - Sunday",
+                style=1
+            ))
+
         # Slot 1 - Day
         day_options_1 = [
             discord.SelectOption(
                 label=day,
                 value=day,
-                emoji="📅",
                 default=(current_slot1 and current_slot1.get("day") == day)
             )
             for day in days
         ]
 
         self.slot1_day_select = StringSelect(
-            placeholder="Slot 1: Choose a day...",
+            placeholder="Monday - Sunday",
             options=day_options_1,
             custom_id="sd_slot1_day_select"
         )
         self.add_item(self.slot1_day_select)
+
+        # Slot 1 Time Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="🏆 Showdown Slot 1 Time\nTimes in Server Time (UTC+1)",
+                style=1
+            ))
 
         # Slot 1 - Time
         time_options_1 = [
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
-                emoji="🕐",
                 default=(current_slot1 and current_slot1.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot1_time_select = StringSelect(
-            placeholder=f"Slot 1: Choose a time... {timezone_display}",
+            placeholder="Times in Server Time (UTC+1)",
             options=time_options_1,
             custom_id="sd_slot1_time_select"
         )
         self.add_item(self.slot1_time_select)
+
+        # Slot 2 Day Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="🏆 Showdown Slot 2 Day\nMonday - Sunday",
+                style=1
+            ))
 
         # Slot 2 - Day
         day_options_2 = [
             discord.SelectOption(
                 label=day,
                 value=day,
-                emoji="📅",
                 default=(current_slot2 and current_slot2.get("day") == day)
             )
             for day in days
         ]
 
         self.slot2_day_select = StringSelect(
-            placeholder="Slot 2: Choose a day...",
+            placeholder="Monday - Sunday",
             options=day_options_2,
             custom_id="sd_slot2_day_select"
         )
         self.add_item(self.slot2_day_select)
+
+        # Slot 2 Time Header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content="🏆 Showdown Slot 2 Time\nTimes in Server Time (UTC+1)",
+                style=1
+            ))
 
         # Slot 2 - Time
         time_options_2 = [
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
-                emoji="🕐",
                 default=(current_slot2 and current_slot2.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot2_time_select = StringSelect(
-            placeholder=f"Slot 2: Choose a time... {timezone_display}",
+            placeholder="Times in Server Time (UTC+1)",
             options=time_options_2,
             custom_id="sd_slot2_time_select"
         )
