@@ -86,6 +86,10 @@ class Label(Item):
     def to_component_dict(self) -> Dict[str, Any]:
         child_payload = self.child.to_component_dict()
         
+        # Check if child is optional (min_values == 0)
+        # Default to 1 if attribute missing
+        is_optional = getattr(self.child, 'min_values', 1) == 0
+
         # Sanitize: Remove disabled fields from Selects inside Modals
         if isinstance(self.child, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
             child_payload.pop("disabled", None)
@@ -96,6 +100,11 @@ class Label(Item):
             # FIX: Changed from 'components' (list) to 'component' (singular object)
             "component": child_payload
         }
+        
+        # Propagate optional state to the Label wrapper (Type 18)
+        # This fixes the UI showing "Required" asterisk even when min_values=0
+        if is_optional:
+            payload["required"] = False
         
         if self.description:
             payload["description"] = self.description
