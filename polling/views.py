@@ -133,16 +133,17 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Add Results button first (grey, row 0)
-        results_button = discord.ui.Button(
-            label="Results",
-            style=discord.ButtonStyle.secondary,
-            emoji="🏆",
-            custom_id="event_poll:results",
+        # Add voting buttons first (row 0)
+        # Add combined button for Party, Hero's Realm, and Sword Trial (row 0, green)
+        simple_events_button = discord.ui.Button(
+            label="Party / Hero's Realm / Sword Trial",
+            style=discord.ButtonStyle.success,
+            emoji="🎯",
+            custom_id="event_poll:simple_events",
             row=0
         )
-        results_button.callback = self._show_results
-        self.add_item(results_button)
+        simple_events_button.callback = self._create_simple_events_callback()
+        self.add_item(simple_events_button)
 
         # Add separate buttons for Breaking Army and Showdown (row 0)
         if "Breaking Army" in events:
@@ -167,16 +168,16 @@ class EventPollView(discord.ui.View):
             sd_button.callback = self._create_event_callback("Showdown")
             self.add_item(sd_button)
 
-        # Add combined button for Party, Hero's Realm, and Sword Trial (row 1, green)
-        simple_events_button = discord.ui.Button(
-            label="Party / Hero's Realm / Sword Trial",
-            style=discord.ButtonStyle.success,
-            emoji="🎯",
-            custom_id="event_poll:simple_events",
+        # Add Results button last (grey, row 1)
+        results_button = discord.ui.Button(
+            label="Results",
+            style=discord.ButtonStyle.secondary,
+            emoji="🏆",
+            custom_id="event_poll:results",
             row=1
         )
-        simple_events_button.callback = self._create_simple_events_callback()
-        self.add_item(simple_events_button)
+        results_button.callback = self._show_results
+        self.add_item(results_button)
 
     def _create_simple_events_callback(self):
         """Create callback for combined simple events button"""
