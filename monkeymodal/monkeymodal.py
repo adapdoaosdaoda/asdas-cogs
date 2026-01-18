@@ -1,18 +1,26 @@
 """
-MonkeyModal - A robust utility cog for creating "Modern Modals" with Discord API v10 components
+MonkeyModal - A robust utility cog for creating "Modern Modals" with Discord Component V2
 
 This cog acts as a shared service allowing other cogs to create and await modals containing
 Select Menus and other Discord API v10 components that are not yet natively supported in discord.py.
 
-The cog bypasses discord.py's validation by making raw API v10 calls, allowing developers to build
-modals with all API v10 component types (Text Inputs, String/User/Role/Mentionable/Channel Selects)
-and await user submissions in a clean, Pythonic way.
+The cog bypasses discord.py's validation by making raw API v10 calls with proper Component V2
+structure, allowing developers to build modals with all API v10 component types
+(Text Inputs, String/User/Role/Mentionable/Channel Selects) and await user submissions
+in a clean, Pythonic way.
 
 Key features:
-- Explicit API v10 endpoint usage to ensure select menu support
-- All select components require a 'label' field (Discord API v10 requirement for modals)
+- Component V2 compliance: Text Inputs in Action Rows (Type 1), Select Menus in Labels (Type 18)
+- Raw API v10 endpoint usage bypassing discord.py's validation
+- All select components automatically wrapped in Label containers with proper labels
 - Fluent ModalBuilder interface for constructing complex modals
 - Async/await pattern for handling modal submissions
+
+Technical Implementation:
+- Text Inputs (Type 4) are wrapped in Action Rows (Type 1) as per Discord spec
+- Select Menus (Type 3, 5, 6, 7, 8) are wrapped in Label components (Type 18) for Component V2
+- Raw JSON payloads sent directly to Discord API v10 interaction callback endpoint
+- Submission parsing handles both Action Row and Label containers
 
 Requirements:
 - Red-DiscordBot >= 3.5.0
@@ -41,6 +49,7 @@ class ComponentType(IntEnum):
     ROLE_SELECT = 6
     MENTIONABLE_SELECT = 7
     CHANNEL_SELECT = 8
+    LABEL = 18  # Component V2: Used to wrap select menus in modals
 
 
 class TextInputStyle(IntEnum):
@@ -74,9 +83,13 @@ class ModalBuilder:
         self.title = title
         self.components: List[Dict[str, Any]] = []
 
-    def _add_component_in_action_row(self, component: Dict[str, Any]) -> "ModalBuilder":
+    def _add_component_in_container(self, component: Dict[str, Any]) -> "ModalBuilder":
         """
-        Wrap a component in an Action Row (Type 1) and add to the modal.
+        Wrap a component in the appropriate container type for modals.
+
+        Discord Component V2 specification requires:
+        - Text Inputs (Type 4): Must be in Action Rows (Type 1)
+        - Select Menus (Type 3, 5, 6, 7, 8): Must be in Labels (Type 18)
 
         Args:
             component: Component dictionary to wrap
@@ -84,11 +97,38 @@ class ModalBuilder:
         Returns:
             Self for method chaining
         """
-        action_row = {
-            "type": ComponentType.ACTION_ROW,
-            "components": [component]
-        }
-        self.components.append(action_row)
+        component_type = component.get("type")
+
+        # Determine container type based on component type
+        if component_type == ComponentType.TEXT_INPUT:
+            # Text inputs use Action Rows (Type 1)
+            container = {
+                "type": ComponentType.ACTION_ROW,
+                "components": [component]
+            }
+        elif component_type in (
+            ComponentType.STRING_SELECT,
+            ComponentType.USER_SELECT,
+            ComponentType.ROLE_SELECT,
+            ComponentType.MENTIONABLE_SELECT,
+            ComponentType.CHANNEL_SELECT
+        ):
+            # Select menus use Labels (Type 18) in Component V2
+            # Extract the label field from the component and use it as the Label's label
+            label = component.pop("label", "Select an option")
+            container = {
+                "type": ComponentType.LABEL,
+                "label": label,
+                "components": [component]
+            }
+        else:
+            # Fallback to Action Row for unknown types
+            container = {
+                "type": ComponentType.ACTION_ROW,
+                "components": [component]
+            }
+
+        self.components.append(container)
         return self
 
     def add_text_input(
@@ -135,7 +175,7 @@ class ModalBuilder:
         if max_length is not None:
             component["max_length"] = max_length
 
-        return self._add_component_in_action_row(component)
+        return self._add_component_in_container(component)
 
     def add_string_select(
         self,
@@ -181,7 +221,7 @@ class ModalBuilder:
         if placeholder is not None:
             component["placeholder"] = placeholder
 
-        return self._add_component_in_action_row(component)
+        return self._add_component_in_container(component)
 
     def add_user_select(
         self,
@@ -222,7 +262,7 @@ class ModalBuilder:
         if default_values is not None:
             component["default_values"] = default_values
 
-        return self._add_component_in_action_row(component)
+        return self._add_component_in_container(component)
 
     def add_role_select(
         self,
@@ -263,7 +303,7 @@ class ModalBuilder:
         if default_values is not None:
             component["default_values"] = default_values
 
-        return self._add_component_in_action_row(component)
+        return self._add_component_in_container(component)
 
     def add_mentionable_select(
         self,
@@ -304,7 +344,7 @@ class ModalBuilder:
         if default_values is not None:
             component["default_values"] = default_values
 
-        return self._add_component_in_action_row(component)
+        return self._add_component_in_container(component)
 
     def add_channel_select(
         self,
@@ -360,7 +400,7 @@ class ModalBuilder:
         if default_values is not None:
             component["default_values"] = default_values
 
-        return self._add_component_in_action_row(component)
+        return self._add_component_in_container(component)
 
     def build(self) -> Dict[str, Any]:
         """
@@ -442,7 +482,8 @@ class MonkeyModal(commands.Cog):
 
         try:
             log.debug(
-                f"Sending modal {modal_builder.custom_id} via explicit API v10 endpoint"
+                f"Sending modal {modal_builder.custom_id} via explicit API v10 endpoint\n"
+                f"Payload structure: {payload}"
             )
 
             # Use aiohttp directly to ensure we're hitting the exact v10 endpoint
@@ -525,6 +566,10 @@ class MonkeyModal(commands.Cog):
         """
         Parse the raw interaction data from a modal submission.
 
+        Handles both Component V1 and V2 structures:
+        - Action Rows (Type 1): Contain Text Inputs
+        - Labels (Type 18): Contain Select Menus
+
         Extracts values from different component types:
         - Type 4 (Text Input): Returns the string value
         - Type 3, 5, 6, 7, 8 (Selects): Returns list of selected IDs/values
@@ -537,11 +582,14 @@ class MonkeyModal(commands.Cog):
         """
         result = {}
 
-        for action_row in components:
-            if action_row.get("type") != ComponentType.ACTION_ROW:
+        for container in components:
+            container_type = container.get("type")
+
+            # Handle both Action Rows (Type 1) and Labels (Type 18)
+            if container_type not in (ComponentType.ACTION_ROW, ComponentType.LABEL):
                 continue
 
-            for component in action_row.get("components", []):
+            for component in container.get("components", []):
                 custom_id = component.get("custom_id")
                 component_type = component.get("type")
 
