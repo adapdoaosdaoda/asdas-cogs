@@ -363,12 +363,6 @@ class EventPolling(commands.Cog):
             # Update the message with the new view
             await message.edit(view=view)
 
-        except discord.HTTPException as e:
-            # Handle rate limiting and other HTTP errors gracefully
-            if e.status == 429:  # Rate limited
-                log.warning(f"Rate limited when restoring poll {poll_id}, will retry later")
-            else:
-                log.error(f"HTTP error when restoring poll {poll_id}: {e}")
         except discord.NotFound:
             # Message not found (404) - remove the poll from storage
             print(f"Poll {poll_id} not found (404), removing from storage")
@@ -376,6 +370,18 @@ class EventPolling(commands.Cog):
                 if poll_id in polls:
                     del polls[poll_id]
                     print(f"✓ Removed poll {poll_id} from guild {guild.id}")
+        except discord.HTTPException as e:
+            # Handle rate limiting and other HTTP errors gracefully
+            if e.status == 429:  # Rate limited
+                log.warning(f"Rate limited when restoring poll {poll_id}, will retry later")
+            elif e.status == 404:  # Handle 404 if it comes through as HTTPException
+                print(f"Poll {poll_id} not found (404 via HTTPException), removing from storage")
+                async with self.config.guild(guild).polls() as polls:
+                    if poll_id in polls:
+                        del polls[poll_id]
+                        print(f"✓ Removed poll {poll_id} from guild {guild.id}")
+            else:
+                log.error(f"HTTP error when restoring poll {poll_id}: {e}")
         except Exception as e:
             # Silently fail if we can't restore the view
             print(f"Could not restore poll view for poll {poll_id}: {e}")
