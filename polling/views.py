@@ -106,14 +106,6 @@ class DismissibleView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
 
-        close_btn = discord.ui.Button(
-            label="Close",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌"
-        )
-        close_btn.callback = self._close
-        self.add_item(close_btn)
-
     async def _close(self, interaction: discord.Interaction):
         """Handle close button"""
         await interaction.response.edit_message(view=None)

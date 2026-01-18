@@ -2540,7 +2540,12 @@ class EventPolling(commands.Cog):
 
                         # Calculate points for all possible times
                         if event_info["type"] == "daily":
-                            # Daily events
+                            # Daily events (handle both legacy dict and new list format)
+                            actual_selection = selection[0] if isinstance(selection, list) else selection
+                            voted_time = actual_selection.get("time")
+                            if not voted_time:
+                                continue
+                                
                             for target_time in all_times:
                                 points = self._calculate_weighted_points(voted_time, target_time)
                                 if points > 0:
