@@ -94,7 +94,7 @@ class Label(Item):
 
         return {
             "type": 10,
-            "content": self.label or " ", # Ensure content is never empty
+            "content": self.label or "\u200b", # Ensure content is never empty (use ZWS)
             "components": [child_payload]
         }
 
@@ -152,9 +152,9 @@ def _patched_to_dict(self):
             
             # Create a temporary Label wrapper just for serialization
             # IMPORTANT: The 'label' argument to Label() becomes the 'content' field.
-            # Setting this to a single space prevents it from rendering as a text block
-            # above the select menu, allowing the select menu itself to be the primary focus.
-            wrapper = Label(label=" ", child=item)
+            # Setting this to a Zero Width Space (\u200b) prevents it from rendering as a text block
+            # while satisfying the API's minimum length requirement (whitespace is often trimmed).
+            wrapper = Label(label="\u200b", child=item)
             payload['components'].append(wrapper.to_component_dict())
             
         elif isinstance(item, TextDisplay):
