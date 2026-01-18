@@ -72,8 +72,8 @@ class EventPolling(commands.Cog):
                 "emoji": "⚔️",
                 "priority": 4,
                 "default_times": {
-                    "Wednesday": "22:30",
-                    "Friday": "22:30"
+                    "Wednesday": "21:30",
+                    "Friday": "21:30"
                 }
             },
             "Sword Trial (Echo)": {
