@@ -79,9 +79,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    label="🎉 Party",
-                    description="times in server time (UTC+1)",
-                    child=party_select
+                    "🎉 Party",
+                    party_select,
+                    description="times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(party_select)
@@ -125,9 +125,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    label="🛡️ Hero's Realm (Catch-up) Day",
-                    description="description: Monday - Saturday",
-                    child=hero_day_select
+                    "🛡️ Hero's Realm (Catch-up) Day",
+                    hero_day_select,
+                    description="description: Monday - Saturday"
                 ))
             else:
                 self.add_item(hero_day_select)
@@ -152,9 +152,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    label="🛡️ Hero's Realm (Catch-up) Time",
-                    description="description: times in server time (UTC+1)",
-                    child=hero_time_select
+                    "🛡️ Hero's Realm (Catch-up) Time",
+                    hero_time_select,
+                    description="description: times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(hero_time_select)
@@ -198,9 +198,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    label="⚔️ Sword Trial Wednesday Time",
-                    description="description: times in server time (UTC+1)",
-                    child=wed_select
+                    "⚔️ Sword Trial Wednesday Time",
+                    wed_select,
+                    description="description: times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(wed_select)
@@ -225,9 +225,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    label="⚔️ Sword Trial Friday Time",
-                    description="description: times in server time (UTC+1)",
-                    child=fri_select
+                    "⚔️ Sword Trial Friday Time",
+                    fri_select,
+                    description="description: times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(fri_select)
@@ -358,9 +358,9 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             )
             if Label_cls:
                 self.add_item(Label_cls(
-                    label=f"🎉 {event_name}",
-                    description=f"times in server time (UTC+1)",
-                    child=self.time_select
+                    f"🎉 {event_name}",
+                    self.time_select,
+                    description=f"times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(self.time_select)
@@ -394,9 +394,9 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             )
             if Label_cls:
                 self.add_item(Label_cls(
-                    label=f"🛡️ {event_name} Day",
-                    description="description: Monday - Saturday",
-                    child=self.day_select
+                    f"🛡️ {event_name} Day",
+                    self.day_select,
+                    description="description: Monday - Saturday"
                 ))
             else:
                 self.add_item(self.day_select)
@@ -419,9 +419,9 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             )
             if Label_cls:
                 self.add_item(Label_cls(
-                    label=f"🛡️ {event_name} Time",
-                    description="description: times in server time (UTC+1)",
-                    child=self.time_select
+                    f"🛡️ {event_name} Time",
+                    self.time_select,
+                    description="description: times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(self.time_select)
@@ -455,9 +455,9 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 self.day_selects[day] = day_select
                 if Label_cls:
                     self.add_item(Label_cls(
-                        label=f"⚔️ {event_name} {day} Time",
-                        description="description: times in server time (UTC+1)",
-                        child=day_select
+                        f"⚔️ {event_name} {day} Time",
+                        day_select,
+                        description="description: times in server time (UTC+1)"
                     ))
                 else:
                     self.add_item(day_select)
@@ -594,9 +594,9 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="⚡ Breaking Army Slot 1 Day",
-                description="Monday - Sunday",
-                child=self.slot1_day_select
+                "⚡ Breaking Army Slot 1 Day",
+                self.slot1_day_select,
+                description="Monday - Sunday"
             ))
         else:
             self.add_item(self.slot1_day_select)
@@ -619,9 +619,9 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="⚡ Breaking Army Slot 1 Time",
-                description="Times in Server Time (UTC+1)",
-                child=self.slot1_time_select
+                "⚡ Breaking Army Slot 1 Time",
+                self.slot1_time_select,
+                description="Times in Server Time (UTC+1)"
             ))
         else:
             self.add_item(self.slot1_time_select)
@@ -644,9 +644,9 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="⚡ Breaking Army Slot 2 Day",
-                description="Monday - Sunday",
-                child=self.slot2_day_select
+                "⚡ Breaking Army Slot 2 Day",
+                self.slot2_day_select,
+                description="Monday - Sunday"
             ))
         else:
             self.add_item(self.slot2_day_select)
@@ -669,9 +669,9 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="⚡ Breaking Army Slot 2 Time",
-                description="Times in Server Time (UTC+1)",
-                child=self.slot2_time_select
+                "⚡ Breaking Army Slot 2 Time",
+                self.slot2_time_select,
+                description="Times in Server Time (UTC+1)"
             ))
         else:
             self.add_item(self.slot2_time_select)
@@ -790,9 +790,9 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="🏆 Showdown Slot 1 Day",
-                description="Monday - Sunday",
-                child=self.slot1_day_select
+                "🏆 Showdown Slot 1 Day",
+                self.slot1_day_select,
+                description="Monday - Sunday"
             ))
         else:
             self.add_item(self.slot1_day_select)
@@ -815,9 +815,9 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="🏆 Showdown Slot 1 Time",
-                description="Times in Server Time (UTC+1)",
-                child=self.slot1_time_select
+                "🏆 Showdown Slot 1 Time",
+                self.slot1_time_select,
+                description="Times in Server Time (UTC+1)"
             ))
         else:
             self.add_item(self.slot1_time_select)
@@ -840,9 +840,9 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="🏆 Showdown Slot 2 Day",
-                description="Monday - Sunday",
-                child=self.slot2_day_select
+                "🏆 Showdown Slot 2 Day",
+                self.slot2_day_select,
+                description="Monday - Sunday"
             ))
         else:
             self.add_item(self.slot2_day_select)
@@ -865,9 +865,9 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         )
         if Label_cls:
             self.add_item(Label_cls(
-                label="🏆 Showdown Slot 2 Time",
-                description="Times in Server Time (UTC+1)",
-                child=self.slot2_time_select
+                "🏆 Showdown Slot 2 Time",
+                self.slot2_time_select,
+                description="Times in Server Time (UTC+1)"
             ))
         else:
             self.add_item(self.slot2_time_select)

@@ -283,12 +283,9 @@ class ModalPatch(commands.Cog):
 
     def _apply_patches(self):
         try:
-            # Inject Classes into discord.ui if missing
-            if not hasattr(discord.ui, 'TextDisplay'):
-                setattr(discord.ui, 'TextDisplay', TextDisplay)
-            
-            if not hasattr(discord.ui, 'Label'):
-                setattr(discord.ui, 'Label', Label)
+            # Inject Classes into discord.ui (Force update to ensure latest version)
+            setattr(discord.ui, 'TextDisplay', TextDisplay)
+            setattr(discord.ui, 'Label', Label)
 
             # Apply Monkey Patches
             Modal.add_item = _patched_add_item
