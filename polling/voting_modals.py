@@ -86,80 +86,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             else:
                 self.add_item(party_select)
 
-        # 2. Hero's Realm (Catch-up) - day + time
-        if "Hero's Realm (Catch-up)" in events:
-            hero_info = events["Hero's Realm (Catch-up)"]
-            available_days = hero_info.get("days", self.days)
-            times = cog.generate_time_options(
-                hero_info["time_range"][0],
-                hero_info["time_range"][1],
-                hero_info["interval"],
-                hero_info["duration"],
-                "Hero's Realm (Catch-up)"
-            )
-
-            current_hero = user_selections.get("Hero's Realm (Catch-up)")
-            current_day = None
-            current_time = None
-            if current_hero and isinstance(current_hero, list) and len(current_hero) > 0:
-                if isinstance(current_hero[0], dict):
-                    current_day = current_hero[0].get("day")
-                    current_time = current_hero[0].get("time")
-
-            # Day select
-            day_options = [
-                discord.SelectOption(
-                    label=day,
-                    value=day,
-                    emoji="📅",
-                    default=(day == current_day)
-                )
-                for day in available_days
-            ]
-
-            hero_day_select = StringSelect(
-                placeholder="Choose a day...",
-                options=day_options,
-                custom_id="hero_day_select"
-            )
-            
-            if Label_cls:
-                self.add_item(Label_cls(
-                    "🛡️ Hero's Realm (Catch-up) Day",
-                    hero_day_select,
-                    description="description: Monday - Saturday"
-                ))
-            else:
-                self.add_item(hero_day_select)
-
-            # Time select
-            time_options = [
-                discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
-                    emoji="🕐",
-                    default=(time_str == current_time)
-                )
-                for time_str in times[:25]
-            ]
-
-            hero_time_select = StringSelect(
-                placeholder="Choose a time...",
-                options=time_options,
-                custom_id="hero_time_select"
-            )
-            self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
-            
-            if Label_cls:
-                self.add_item(Label_cls(
-                    "🛡️ Hero's Realm (Catch-up) Time",
-                    hero_time_select,
-                    description="description: times in server time (UTC+1)"
-                ))
-            else:
-                self.add_item(hero_time_select)
-
-        # 3. Sword Trial - Wed time + Fri time
+        # 2. Sword Trial - Wed time + Fri time
         if "Sword Trial" in events:
             sword_info = events["Sword Trial"]
             times = cog.generate_time_options(
@@ -231,6 +158,79 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 ))
             else:
                 self.add_item(fri_select)
+
+        # 3. Hero's Realm (Catch-up) - day + time
+        if "Hero's Realm (Catch-up)" in events:
+            hero_info = events["Hero's Realm (Catch-up)"]
+            available_days = hero_info.get("days", self.days)
+            times = cog.generate_time_options(
+                hero_info["time_range"][0],
+                hero_info["time_range"][1],
+                hero_info["interval"],
+                hero_info["duration"],
+                "Hero's Realm (Catch-up)"
+            )
+
+            current_hero = user_selections.get("Hero's Realm (Catch-up)")
+            current_day = None
+            current_time = None
+            if current_hero and isinstance(current_hero, list) and len(current_hero) > 0:
+                if isinstance(current_hero[0], dict):
+                    current_day = current_hero[0].get("day")
+                    current_time = current_hero[0].get("time")
+
+            # Day select
+            day_options = [
+                discord.SelectOption(
+                    label=day,
+                    value=day,
+                    emoji="📅",
+                    default=(day == current_day)
+                )
+                for day in available_days
+            ]
+
+            hero_day_select = StringSelect(
+                placeholder="Choose a day...",
+                options=day_options,
+                custom_id="hero_day_select"
+            )
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "🛡️ Hero's Realm (Catch-up) Day",
+                    hero_day_select,
+                    description="description: Monday - Saturday"
+                ))
+            else:
+                self.add_item(hero_day_select)
+
+            # Time select
+            time_options = [
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(time_str == current_time)
+                )
+                for time_str in times[:25]
+            ]
+
+            hero_time_select = StringSelect(
+                placeholder="Choose a time...",
+                options=time_options,
+                custom_id="hero_time_select"
+            )
+            self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "🛡️ Hero's Realm (Catch-up) Time",
+                    hero_time_select,
+                    description="description: times in server time (UTC+1)"
+                ))
+            else:
+                self.add_item(hero_time_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission - save all three events"""
