@@ -134,10 +134,6 @@ class EventPollView(discord.ui.View):
         # Row 1: Party, Breaking Army, Showdown
         event_names = list(events.keys())
         for idx, event_name in enumerate(event_names):
-            # Skip locked events (they don't allow voting)
-            if events[event_name].get("type") == "locked":
-                continue
-
             # Determine button style based on event
             if "Hero's Realm" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
@@ -1357,10 +1353,6 @@ class ResultsCategoryView(discord.ui.View):
 
         # Add buttons for each event in specific rows
         for event_name, event_info in events.items():
-            # Skip locked events in results (they always show in calendar)
-            if event_info.get("type") == "locked":
-                continue
-
             # Determine button style and row based on event
             if "Hero's Realm" in event_name:
                 button_style = discord.ButtonStyle.secondary  # Grey
@@ -1428,13 +1420,13 @@ class ResultsCategoryView(discord.ui.View):
 
 class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"):
     """Modal for entering timezone"""
-
+    
     timezone_input = discord.ui.TextInput(
         label="Timezone",
         placeholder="e.g., London, New York, Tokyo, or US/Eastern",
         style=discord.TextStyle.short,
         required=True,
-        max_length=45
+        max_length=50
     )
     
     def __init__(self, cog, guild_id: int, poll_id: str, is_weekly: bool = False):

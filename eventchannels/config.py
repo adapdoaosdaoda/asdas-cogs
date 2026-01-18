@@ -1,12 +1,5 @@
 """Configuration defaults for EventChannels cog."""
 
-from .timing import (
-    DEFAULT_CREATION_MINUTES,
-    DEFAULT_DELETION_HOURS,
-    WARNING_MINUTES,
-    EXTENSION_HOURS,
-)
-
 # Default configuration values
 DEFAULT_CONFIG = {
     "event_channels": {},
@@ -15,11 +8,11 @@ DEFAULT_CONFIG = {
     "role_format": "{name} {day_abbrev} {day}. {month_abbrev} {time}",
     "channel_format": "{name}᲼{type}",
     "space_replacer": "᲼",
-    "creation_minutes": DEFAULT_CREATION_MINUTES,
-    "deletion_hours": DEFAULT_DELETION_HOURS,
+    "creation_minutes": 15,
+    "deletion_hours": 4,
     "announcement_message": "{role} The event is starting soon!",
     "event_start_message": "{role} The event is starting now!",
-    "deletion_warning_message": f"⚠️ These channels will be deleted in {WARNING_MINUTES} minutes. React with ⏰ to extend deletion by {EXTENSION_HOURS} hours.",
+    "deletion_warning_message": "⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours.",
     "divider_enabled": True,
     "divider_name": "━━━━━━ EVENT CHANNELS ━━━━━━",
     "divider_channel_id": None,

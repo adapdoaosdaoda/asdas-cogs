@@ -12,12 +12,6 @@ from .events import EventsMixin
 from .commands_config import CommandsConfigMixin
 from .commands_view import CommandsViewMixin
 from .commands_test import CommandsTestMixin
-from .timing import (
-    DEFAULT_CREATION_MINUTES,
-    DEFAULT_DELETION_HOURS,
-    WARNING_MINUTES,
-    EXTENSION_HOURS,
-)
 
 log = logging.getLogger("red.eventchannels")
 
@@ -36,11 +30,11 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             role_format="{name} {day_abbrev} {day}. {month_abbrev} {time}",  # Default role format
             channel_format="{name}᲼{type}",  # Default channel name format
             space_replacer="᲼",  # Character to replace spaces in channel names
-            creation_minutes=DEFAULT_CREATION_MINUTES,  # Default creation time in minutes before event
-            deletion_hours=DEFAULT_DELETION_HOURS,  # Default deletion time in hours
+            creation_minutes=15,  # Default creation time in minutes before event
+            deletion_hours=4,  # Default deletion time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
             event_start_message="{role} The event is starting now!",  # Message sent at event start
-            deletion_warning_message=f"⚠️ These channels will be deleted in {WARNING_MINUTES} minutes. React with ⏰ to extend deletion by {EXTENSION_HOURS} hours.",  # Warning before deletion
+            deletion_warning_message="⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours.",  # Warning before deletion
             divider_enabled=True,  # Enable divider channel by default
             divider_name="━━━━━━ EVENT CHANNELS ━━━━━━",  # Default divider name
             divider_channel_id=None,  # Stores the divider channel ID
@@ -102,7 +96,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             f"Channels with user messages are automatically archived instead of deleted.\n"
             f"Archived channels are moved to the archive category, made read-only, and prefixed with 'archived-'.\n\n"
             f"**Deletion Extension:**\n"
-            f"React with ⏰ to the deletion warning message to extend deletion by {EXTENSION_HOURS} hours.\n"
+            f"React with ⏰ to the deletion warning message to extend deletion by 4 hours.\n"
             f"This allows you to keep channels open longer if needed."
         )
         embed.add_field(name="Archive & Deletion Features", value=archive_commands, inline=False)
