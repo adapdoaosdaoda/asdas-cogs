@@ -253,7 +253,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 if "Party" in self.selects:
                     party_select = self.selects["Party"]["time"]
                     if party_select.values:
-                        polls[self.poll_id]["selections"][user_id_str]["Party"] = party_select.values[0]
+                        polls[self.poll_id]["selections"][user_id_str]["Party"] = {"time": party_select.values[0]}
 
                 # Save Hero's Realm vote
                 if "Hero's Realm (Catch-up)" in self.selects:
@@ -474,7 +474,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             if event_info["type"] == "daily":
                 # Party - single time string
                 if self.time_select.values:
-                    selection = self.time_select.values[0]
+                    selection = {"time": self.time_select.values[0]}
                 else:
                     selection = None
 

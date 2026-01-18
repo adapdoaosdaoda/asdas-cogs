@@ -882,13 +882,20 @@ class EventPolling(commands.Cog):
                     else:
                         # Single-slot event (stored as dict)
                         # Format the selection string
+                        if isinstance(selection, str):
+                            time_val = selection
+                            day_val = "Unknown"
+                        else:
+                            time_val = selection["time"]
+                            day_val = selection.get("day", "Unknown")
+
                         if event_info["type"] == "daily":
-                            key = selection["time"]
+                            key = time_val
                         elif event_info["type"] == "fixed_days":
                             days_str = ", ".join([d[:3] for d in event_info["days"]])
-                            key = f"{selection['time']} ({days_str})"
+                            key = f"{time_val} ({days_str})"
                         else:
-                            key = f"{selection['day']} at {selection['time']}"
+                            key = f"{day_val} at {time_val}"
 
                         if key not in event_results:
                             event_results[key] = []
@@ -2005,12 +2012,19 @@ class EventPolling(commands.Cog):
                         else:
                             # Legacy single-slot format
                             if slot_index == 0:
-                                if event_info["type"] == "daily":
-                                    key = ("Daily", selection["time"])
-                                elif event_info["type"] == "fixed_days":
-                                    key = ("Fixed", selection["time"])
+                                if isinstance(selection, str):
+                                    time_val = selection
+                                    day_val = "Unknown"
                                 else:
-                                    key = (selection.get("day", "Unknown"), selection["time"])
+                                    time_val = selection["time"]
+                                    day_val = selection.get("day", "Unknown")
+
+                                if event_info["type"] == "daily":
+                                    key = ("Daily", time_val)
+                                elif event_info["type"] == "fixed_days":
+                                    key = ("Fixed", time_val)
+                                else:
+                                    key = (day_val, time_val)
                                 vote_counts[key] = vote_counts.get(key, 0) + 1
 
                 if vote_counts:
@@ -2532,24 +2546,19 @@ class EventPolling(commands.Cog):
                         else:
                             # Single-slot format
                             if slot_index == 0:
-                                voted_time = selection["time"]
-                                voted_day = selection.get("day")
+                                if isinstance(selection, str):
+                                    voted_time = selection
+                                    voted_day = None
+                                else:
+                                    voted_time = selection["time"]
+                                    voted_day = selection.get("day")
 
                         if not voted_time:
                             continue
 
                         # Calculate points for all possible times
                         if event_info["type"] == "daily":
-                            # Daily events (handle both legacy dict and new list format)
-                            actual_selection = selection[0] if isinstance(selection, list) else selection
-                            # Check if actual_selection is valid (could be None in list)
-                            if not actual_selection:
-                                continue
-                                
-                            voted_time = actual_selection.get("time")
-                            if not voted_time:
-                                continue
-                                
+                            # Daily events
                             for target_time in all_times:
                                 points = self._calculate_weighted_points(voted_time, target_time)
                                 if points > 0:
