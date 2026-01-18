@@ -39,12 +39,12 @@ class EventPolling(commands.Cog):
         # Priority order for calendar display (higher number = higher priority)
         self.events = {
             "Hero's Realm (Catch-up)": {
-                "type": "fixed_days",
-                "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+                "type": "once",
+                "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],  # Available voting days (Mon-Sat only)
                 "time_range": (17, 26),  # 17:00 to 02:00 (26 = 02:00 next day)
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 6,  # 6 slots: one for each day (Mon-Sat)
+                "slots": 1,  # Single slot - users vote for ONE preferred day+time from Mon-Sat
                 "color": discord.Color.greyple(),
                 "emoji": "🛡️",
                 "priority": 5,  # Highest priority
@@ -168,9 +168,7 @@ class EventPolling(commands.Cog):
         self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
 
         # Restore views for all existing polls after bot restart
-        # Only wait if bot is not already ready (prevents timeout during reload)
-        if not self.bot.is_ready():
-            await self.bot.wait_until_ready()
+        # Don't wait for ready during reload - bot is already running
         all_guilds = await self.config.all_guilds()
         for guild_id, guild_data in all_guilds.items():
             guild = self.bot.get_guild(guild_id)
@@ -180,6 +178,9 @@ class EventPolling(commands.Cog):
             polls = guild_data.get("polls", {})
             for poll_id, poll_data in polls.items():
                 await self._restore_poll_view(guild, poll_data, poll_id)
+                # Add small delay between restores to avoid rate limiting
+                import asyncio
+                await asyncio.sleep(0.5)
 
         self.backup_task.start()
         self.weekly_results_update.start()
@@ -362,6 +363,12 @@ class EventPolling(commands.Cog):
             # Update the message with the new view
             await message.edit(view=view)
 
+        except discord.HTTPException as e:
+            # Handle rate limiting and other HTTP errors gracefully
+            if e.status == 429:  # Rate limited
+                log.warning(f"Rate limited when restoring poll {poll_id}, will retry later")
+            else:
+                log.error(f"HTTP error when restoring poll {poll_id}: {e}")
         except discord.NotFound:
             # Message not found (404) - remove the poll from storage
             print(f"Poll {poll_id} not found (404), removing from storage")
@@ -1928,6 +1935,9 @@ class EventPolling(commands.Cog):
         # Calculate winning times (most votes) for each event and slot
         winning_times = {}
         for event_name, event_info in self.events.items():
+            # Skip locked events - they have fixed times and no voting
+            if event_info.get("type") == "locked":
+                continue
             num_slots = event_info["slots"]
             winning_times[event_name] = {}
 

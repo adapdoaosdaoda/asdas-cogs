@@ -250,7 +250,7 @@ class EventPollView(discord.ui.View):
                         ephemeral=True
                     )
                 elif event_info["type"] == "fixed_days":
-                    # Hero's Realm / Sword Trial - multiple fixed days
+                    # Sword Trial - multiple fixed days
                     view = FixedDaysModal(
                         cog=self.cog,
                         guild_id=self.guild_id,
@@ -266,7 +266,9 @@ class EventPollView(discord.ui.View):
                         ephemeral=True
                     )
                 else:
-                    # Breaking Army / Showdown - 2 slots with day+time
+                    # Breaking Army / Showdown / Hero's Realm (Catch-up) - slots with day+time
+                    # Use event-specific days if available, otherwise use all days
+                    available_days = event_info.get("days", self.days)
                     view = WeeklyEventModal(
                         cog=self.cog,
                         guild_id=self.guild_id,
@@ -275,7 +277,7 @@ class EventPollView(discord.ui.View):
                         event_name=event_name,
                         user_selections=user_selections,
                         events=self.events,
-                        days=self.days
+                        days=available_days
                     )
                     await interaction.response.send_message(
                         f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
@@ -891,7 +893,7 @@ class FixedDaysModal(discord.ui.View):
 
 
 class WeeklyEventModal(discord.ui.View):
-    """Modal for Breaking Army / Showdown - 2 slots with day+time dropdowns each"""
+    """Modal for Breaking Army / Showdown / Hero's Realm (Catch-up) - 1-2 slots with day+time dropdowns each"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
                  event_name: str, user_selections: Dict, events: Dict, days: List[str]):
@@ -904,6 +906,11 @@ class WeeklyEventModal(discord.ui.View):
         self.user_selections = user_selections
         self.events = events
         self.days = days
+
+        # Get event info and number of slots
+        event_info = events[event_name]
+        self.num_slots = event_info.get("slots", 2)
+
         # Get current selections if exist
         current_selections = user_selections.get(event_name)
         current_slot1 = None
@@ -919,7 +926,6 @@ class WeeklyEventModal(discord.ui.View):
         self.selected_slot2_time = current_slot2.get("time") if current_slot2 and isinstance(current_slot2, dict) else None
 
         # Generate time options
-        event_info = events[event_name]
         start_hour, end_hour = event_info["time_range"]
         interval = event_info["interval"]
         duration = event_info["duration"]
@@ -970,54 +976,57 @@ class WeeklyEventModal(discord.ui.View):
         slot1_time_select.callback = self._slot1_time_selected
         self.add_item(slot1_time_select)
 
-        # Slot 2 Day dropdown (row 2)
-        day_options_2 = []
-        for day in days:
-            day_options_2.append(
-                discord.SelectOption(
-                    label=day,
-                    value=day,
-                    emoji="📅",
-                    default=(current_slot2 and current_slot2.get("day") == day)
+        # Only add Slot 2 if event has 2 slots
+        if self.num_slots >= 2:
+            # Slot 2 Day dropdown (row 2)
+            day_options_2 = []
+            for day in days:
+                day_options_2.append(
+                    discord.SelectOption(
+                        label=day,
+                        value=day,
+                        emoji="📅",
+                        default=(current_slot2 and current_slot2.get("day") == day)
+                    )
                 )
+
+            slot2_day_select = discord.ui.Select(
+                placeholder="Slot 2: Choose a day...",
+                options=day_options_2,
+                custom_id="slot2_day_select",
+                row=2
             )
+            slot2_day_select.callback = self._slot2_day_selected
+            self.add_item(slot2_day_select)
 
-        slot2_day_select = discord.ui.Select(
-            placeholder="Slot 2: Choose a day...",
-            options=day_options_2,
-            custom_id="slot2_day_select",
-            row=2
-        )
-        slot2_day_select.callback = self._slot2_day_selected
-        self.add_item(slot2_day_select)
-
-        # Slot 2 Time dropdown (row 3)
-        time_options_2 = []
-        for time_str in times[:25]:  # Limit to 25 options
-            time_options_2.append(
-                discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
-                    emoji="🕐",
-                    default=(current_slot2 and current_slot2.get("time") == time_str)
+            # Slot 2 Time dropdown (row 3)
+            time_options_2 = []
+            for time_str in times[:25]:  # Limit to 25 options
+                time_options_2.append(
+                    discord.SelectOption(
+                        label=time_str,
+                        value=time_str,
+                        emoji="🕐",
+                        default=(current_slot2 and current_slot2.get("time") == time_str)
+                    )
                 )
+
+            slot2_time_select = discord.ui.Select(
+                placeholder=f"Slot 2: Choose a time... {timezone_display}",
+                options=time_options_2,
+                custom_id="slot2_time_select",
+                row=3
             )
+            slot2_time_select.callback = self._slot2_time_selected
+            self.add_item(slot2_time_select)
 
-        slot2_time_select = discord.ui.Select(
-            placeholder=f"Slot 2: Choose a time... {timezone_display}",
-            options=time_options_2,
-            custom_id="slot2_time_select",
-            row=3
-        )
-        slot2_time_select.callback = self._slot2_time_selected
-        self.add_item(slot2_time_select)
-
-        # Add buttons (row 4)
+        # Add buttons (row 4 for 2-slot events, row 2 for 1-slot events)
+        button_row = 4 if self.num_slots >= 2 else 2
         submit_btn = discord.ui.Button(
             label="Save",
             style=discord.ButtonStyle.success,
             emoji="✅",
-            row=4
+            row=button_row
         )
         submit_btn.callback = self._submit
         self.add_item(submit_btn)
@@ -1027,7 +1036,7 @@ class WeeklyEventModal(discord.ui.View):
                 label="Clear",
                 style=discord.ButtonStyle.danger,
                 emoji="🗑️",
-                row=4
+                row=button_row
             )
             clear_btn.callback = self._clear_selection
             self.add_item(clear_btn)
@@ -1036,7 +1045,7 @@ class WeeklyEventModal(discord.ui.View):
             label="Cancel",
             style=discord.ButtonStyle.secondary,
             emoji="❌",
-            row=4
+            row=button_row
         )
         cancel_btn.callback = self._cancel
         self.add_item(cancel_btn)
@@ -1099,15 +1108,21 @@ class WeeklyEventModal(discord.ui.View):
                     polls[self.poll_id]["selections"][user_id_str] = {}
 
                 # Get existing selections to preserve slots we're not updating
-                existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [None, None])
-                if not isinstance(existing, list):
-                    existing = [None, None]
+                if self.num_slots == 1:
+                    # For 1-slot events, store as single-item list
+                    selections_list = [
+                        {"day": self.selected_slot1_day, "time": self.selected_slot1_time} if has_slot1 else None
+                    ]
+                else:
+                    # For 2-slot events, store as two-item list
+                    existing = polls[self.poll_id]["selections"][user_id_str].get(self.event_name, [None, None])
+                    if not isinstance(existing, list):
+                        existing = [None, None]
 
-                # Update slots
-                selections_list = [
-                    {"day": self.selected_slot1_day, "time": self.selected_slot1_time} if has_slot1 else existing[0],
-                    {"day": self.selected_slot2_day, "time": self.selected_slot2_time} if has_slot2 else (existing[1] if len(existing) > 1 else None)
-                ]
+                    selections_list = [
+                        {"day": self.selected_slot1_day, "time": self.selected_slot1_time} if has_slot1 else existing[0],
+                        {"day": self.selected_slot2_day, "time": self.selected_slot2_time} if has_slot2 else (existing[1] if len(existing) > 1 else None)
+                    ]
 
                 polls[self.poll_id]["selections"][user_id_str][self.event_name] = selections_list
                 poll_data = polls[self.poll_id]
