@@ -173,13 +173,13 @@ def _patched_to_dict(self):
 
     return payload
 
-async def _patched_refresh(self, interaction: discord.Interaction):
+async def _patched_refresh(self, interaction: discord.Interaction, components: List[Dict[str, Any]] = None):
     """
     Patched hydration loop to handle new component types.
     """
-    # Get component data from interaction
-    data = interaction.data
-    components = data.get('components', [])
+    # Use provided components list or fallback to interaction data
+    if components is None:
+        components = interaction.data.get('components', [])
     
     # Flatten components from ActionRows/Labels for easier matching
     # Interaction data structure: 
