@@ -94,6 +94,11 @@ class Label(Item):
         if isinstance(self.child, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
             child_payload.pop("disabled", None)
 
+        # Propagate optional state to the Label wrapper (Type 18) AND the child component
+        # This covers different client behaviors for undocumented Rich Modals
+        if is_optional:
+            child_payload["required"] = False
+
         payload = {
             "type": 18,
             "label": self.label or " ", 
@@ -101,8 +106,6 @@ class Label(Item):
             "component": child_payload
         }
         
-        # Propagate optional state to the Label wrapper (Type 18)
-        # This fixes the UI showing "Required" asterisk even when min_values=0
         if is_optional:
             payload["required"] = False
         
