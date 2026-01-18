@@ -1922,8 +1922,10 @@ class EventPolling(commands.Cog):
         embed.add_field(
             name="📋 Events",
             value=(
-                "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min)\n"
-                "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min)\n"
+                "🛡️ **Hero's Realm (Catch-up)** - Mon-Sat (30 min, 1 slot)\n"
+                "🛡️ **Hero's Realm (Reset)** - Sun 22:00 (locked)\n"
+                "⚔️ **Sword Trial** - Wed/Fri (30 min, 2 slots)\n"
+                "⚔️ **Sword Trial (Echo)** - Sun 22:30 (locked)\n"
                 "🎉 **Party** - Daily (10 min)\n"
                 "⚡ **Breaking Army** - Weekly (60 min, 2 slots)\n"
                 "🏆 **Showdown** - Weekly (60 min, 2 slots)\n\n"
