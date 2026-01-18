@@ -386,6 +386,32 @@ class EventPolling(commands.Cog):
             # Silently fail if we can't restore the view
             print(f"Could not restore poll view for poll {poll_id}: {e}")
 
+    async def _update_poll_message(self, guild_id: int, poll_id: str, poll_data: Dict):
+        """Update the poll message embed and related calendar messages"""
+        try:
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                return
+
+            channel = guild.get_channel(poll_data["channel_id"])
+            if channel:
+                message = await channel.fetch_message(poll_data["message_id"])
+                updated_embed = await self._create_poll_embed(
+                    poll_data["title"],
+                    guild_id,
+                    poll_id
+                )
+                updated_embed.set_footer(text="Click the buttons below to set your preferences")
+                await message.edit(embed=updated_embed)
+
+            # Update any live calendar messages for this poll
+            await self._update_calendar_messages(guild, poll_data, poll_id)
+
+            # Check if we need to create initial weekly snapshot (for first vote)
+            await self._check_and_create_initial_snapshot(guild, poll_id)
+        except Exception as e:
+            log.error(f"Error updating poll message: {e}")
+
     async def _update_poll_votes(self, ctx: commands.Context, target_poll_id: str, imported_votes: Dict, merge: bool) -> bool:
         """Update votes on an existing poll without recreating the message
 

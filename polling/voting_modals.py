@@ -71,7 +71,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             ]
 
             party_select = StringSelect(
-                placeholder=f"Choose a time... {timezone_display}",
+                placeholder="Choose a time...",
                 options=time_options,
                 custom_id="party_time_select"
             )
@@ -144,7 +144,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             ]
 
             hero_time_select = StringSelect(
-                placeholder=f"Choose a time... {timezone_display}",
+                placeholder="Choose a time...",
                 options=time_options,
                 custom_id="hero_time_select"
             )
@@ -191,7 +191,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             ]
 
             wed_select = StringSelect(
-                placeholder=f"Choose a time... {timezone_display}",
+                placeholder="Choose a time...",
                 options=wed_options,
                 custom_id="sword_wed_select"
             )
@@ -217,7 +217,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             ]
 
             fri_select = StringSelect(
-                placeholder=f"Choose a time... {timezone_display}",
+                placeholder="Choose a time...",
                 options=fri_options,
                 custom_id="sword_fri_select"
             )
@@ -352,7 +352,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             ]
 
             self.time_select = StringSelect(
-                placeholder=f"Choose a time... {timezone_display}",
+                placeholder="Choose a time...",
                 options=time_options,
                 custom_id="party_time_select"
             )
@@ -413,7 +413,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             ]
 
             self.time_select = StringSelect(
-                placeholder=f"Choose a time... {timezone_display}",
+                placeholder="Choose a time...",
                 options=time_options,
                 custom_id="hero_time_select"
             )
@@ -448,7 +448,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 ]
 
                 day_select = StringSelect(
-                    placeholder=f"{day[:3]} - Choose a time... {timezone_display}",
+                    placeholder="Choose a time...",
                     options=time_options,
                     custom_id=f"sword_day_{idx}_select"
                 )
@@ -613,7 +613,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         ]
 
         self.slot1_time_select = StringSelect(
-            placeholder=f"Slot 1: Choose a time... {cog.timezone_display}",
+            placeholder="Choose a time...",
             options=time_options_1,
             custom_id="ba_slot1_time_select"
         )
@@ -663,7 +663,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         ]
 
         self.slot2_time_select = StringSelect(
-            placeholder=f"Slot 2: Choose a time... {cog.timezone_display}",
+            placeholder="Choose a time...",
             options=time_options_2,
             custom_id="ba_slot2_time_select"
         )
@@ -809,7 +809,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         ]
 
         self.slot1_time_select = StringSelect(
-            placeholder=f"Slot 1: Choose a time... {cog.timezone_display}",
+            placeholder="Choose a time...",
             options=time_options_1,
             custom_id="sd_slot1_time_select"
         )
@@ -859,7 +859,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         ]
 
         self.slot2_time_select = StringSelect(
-            placeholder=f"Slot 2: Choose a time... {cog.timezone_display}",
+            placeholder="Choose a time...",
             options=time_options_2,
             custom_id="sd_slot2_time_select"
         )

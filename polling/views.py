@@ -382,7 +382,7 @@ class PartyModal(discord.ui.View):
                 )
 
             time_select = discord.ui.Select(
-                placeholder=f"Choose a time ({time_chunk[0]} - {time_chunk[-1]}) {timezone_display}",
+                placeholder="Choose a time...",
                 options=time_options,
                 custom_id=f"time_select:{chunk_idx}",
                 row=chunk_idx
@@ -678,7 +678,7 @@ class FixedDaysModal(discord.ui.View):
                 )
 
             day_select = discord.ui.Select(
-                placeholder=f"{day[:3]} - Choose a time... {timezone_display}",
+                placeholder="Choose a time...",
                 options=time_options,
                 custom_id=f"day_select:{day}",
                 row=row_idx
