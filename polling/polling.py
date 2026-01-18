@@ -2016,9 +2016,77 @@ class EventPolling(commands.Cog):
             "• After bonus, higher points wins the time slot",
             "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
             "",
-            "**Click a button below to see that event's votes:**",
         ]
         return "\n".join(summary_lines)
+
+    def format_all_results_inline(self, winning_times: Dict, selections: Dict) -> str:
+        """Format all event results inline without buttons
+
+        Args:
+            winning_times: Dict from _calculate_winning_times_weighted
+            selections: Dict of user selections
+
+        Returns:
+            Formatted string with all event results displayed inline
+        """
+        # Start with header
+        result_lines = [self.format_results_intro(selections)]
+
+        # Add results for each event
+        for event_name, event_info in self.events.items():
+            # Skip locked events in results display
+            if event_info.get("type") == "locked":
+                continue
+
+            emoji = event_info["emoji"]
+            event_slots = winning_times.get(event_name, {})
+
+            if event_slots:
+                for slot_index in range(event_info["slots"]):
+                    if slot_index not in event_slots:
+                        continue
+
+                    winner_key, winner_points, all_entries = event_slots[slot_index]
+
+                    # Format header based on event type
+                    if event_info["slots"] > 1:
+                        if event_info["type"] == "fixed_days":
+                            day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
+                            result_lines.append(f"{emoji} **{event_name} ({day_name[:3]})**:")
+                        else:
+                            result_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**:")
+                    else:
+                        result_lines.append(f"{emoji} **{event_name}**:")
+
+                    # Show top 3 entries on a single line
+                    top_entries = []
+                    for rank, (key, points) in enumerate(all_entries[:3], 1):
+                        day, time = key
+                        if event_info["type"] == "daily":
+                            top_entries.append(f"**{rank}.** {time} ({points} pts)")
+                        elif event_info["type"] == "fixed_days":
+                            if event_info["slots"] > 1:
+                                top_entries.append(f"**{rank}.** {time} ({points} pts)")
+                            else:
+                                top_entries.append(f"**{rank}.** {time} ({points} pts)")
+                        else:
+                            top_entries.append(f"**{rank}.** {day[:3]} {time} ({points} pts)")
+
+                    result_lines.append(" - ".join(top_entries))
+                    result_lines.append("")
+            else:
+                if event_info["slots"] > 1:
+                    for slot_index in range(event_info["slots"]):
+                        if event_info["type"] == "fixed_days":
+                            day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
+                            result_lines.append(f"{emoji} **{event_name} ({day_name[:3]})**: No votes yet")
+                        else:
+                            result_lines.append(f"{emoji} **{event_name} Slot {slot_index + 1}**: No votes yet")
+                else:
+                    result_lines.append(f"{emoji} **{event_name}**: No votes yet")
+                result_lines.append("")
+
+        return "\n".join(result_lines)
 
     def format_event_results(self, event_name: str, winning_times: Dict, selections: Dict) -> str:
         """Format results for a single event category

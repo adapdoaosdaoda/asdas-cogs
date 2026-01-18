@@ -441,6 +441,36 @@ class CalendarRenderer:
                     schedule[slot_time_str][short_day].append((0, "Guild War", 0, start_time_str, duration))
                     current_dt += timedelta(minutes=30)
 
+        # Add locked events (Hero's Realm Reset, Sword Trial Echo) - these always show
+        from datetime import datetime, timedelta
+        for event_name, event_info in events.items():
+            if event_info.get("type") == "locked":
+                fixed_time_str = event_info.get("fixed_time")
+                event_days = event_info.get("days", [])
+                duration = event_info.get("duration", 30)
+                priority = event_info.get("priority", 3)
+
+                if not fixed_time_str or not event_days:
+                    continue
+
+                # Parse time
+                start_dt = datetime.strptime(fixed_time_str, "%H:%M")
+                time_slots_spanned = max(1, duration // 30)
+
+                # Generate all time slots for this locked event
+                for i in range(time_slots_spanned):
+                    slot_time = start_dt + timedelta(minutes=i * 30)
+                    slot_time_str = slot_time.strftime("%H:%M")
+
+                    # Create time slot if it doesn't exist
+                    if slot_time_str not in schedule:
+                        schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+
+                    # Add locked event to all configured days
+                    for day_full in event_days:
+                        short_day = day_map.get(day_full, day_full[:3])
+                        schedule[slot_time_str][short_day].append((priority, event_name, 0, fixed_time_str, duration))
+
         # Note: Events will be sorted dynamically at draw time based on position rules
 
         return schedule

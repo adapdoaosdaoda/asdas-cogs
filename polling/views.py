@@ -205,16 +205,12 @@ class EventPollView(discord.ui.View):
             # Calculate winning times using weighted point system
             winning_times = self.cog._calculate_winning_times_weighted(selections)
 
-            # Format intro text with rules
-            intro_text = self.cog.format_results_intro(selections)
+            # Format all results inline (no buttons needed)
+            results_text = self.cog.format_all_results_inline(winning_times, selections)
 
-            # Create view with event category buttons
-            results_view = ResultsCategoryView(self.cog, self.guild_id, poll_id, winning_times, selections, self.events)
-
-            # Send intro with category buttons as ephemeral message
+            # Send results as ephemeral message with no view
             await interaction.response.send_message(
-                intro_text,
-                view=results_view,
+                results_text,
                 ephemeral=True
             )
         except discord.HTTPException as e:
