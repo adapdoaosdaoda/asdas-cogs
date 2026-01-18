@@ -412,13 +412,15 @@ class MonkeyModal(commands.Cog):
         }
 
         # Send raw API request to bypass discord.py's component validation
-        route = f"/interactions/{interaction.id}/{interaction.token}/callback"
+        from discord.http import Route
+
+        route = Route(
+            "POST",
+            f"/interactions/{interaction.id}/{interaction.token}/callback"
+        )
 
         try:
-            await self.bot.http.request(
-                discord.http.Route("POST", route),
-                json=payload
-            )
+            await self.bot.http.request(route, json=payload)
             log.debug(f"Modal sent successfully: {modal_builder.custom_id}")
         except discord.HTTPException as e:
             log.error(f"Failed to send modal {modal_builder.custom_id}: {e}", exc_info=True)
