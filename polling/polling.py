@@ -11,8 +11,6 @@ import json
 from pathlib import Path
 import importlib
 import logging
-import asyncio
-import time
 
 from .views import EventPollView
 from . import calendar_renderer
@@ -32,13 +30,6 @@ class EventPolling(commands.Cog):
             force_registration=True,
         )
 
-        # Check if ModalPatch cog is loaded
-        self.modalpatch_available = bot.get_cog("ModalPatch") is not None
-        if self.modalpatch_available:
-            log.info("ModalPatch cog detected - rich modal features enabled")
-        else:
-            log.info("ModalPatch cog not found - using standard modals")
-
         # Store polls per guild
         self.config.register_guild(
             polls={},  # poll_id -> poll data
@@ -47,23 +38,24 @@ class EventPolling(commands.Cog):
         # Event definitions (ordered: Hero's Realm, Sword Trial, Party, Breaking Army, Showdown)
         # Priority order for calendar display (higher number = higher priority)
         self.events = {
-            "Catch Up Hero's Realm": {
-                "type": "daily",  # Changed to daily for Monday-Saturday single time
+            "Hero's Realm": {
+                "type": "fixed_days",
+                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
                 "time_range": (17, 26),  # 17:00 to 02:00 (26 = 02:00 next day)
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 1,  # Single time slot
+                "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
                 "color": discord.Color.greyple(),
                 "emoji": "🛡️",
                 "priority": 4  # Highest priority
             },
             "Sword Trial": {
                 "type": "fixed_days",
-                "days": ["Wednesday", "Friday"],  # Changed to Wednesday and Friday
+                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
                 "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 2,  # 2 slots: Wednesday and Friday only
+                "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
                 "color": discord.Color.greyple(),
                 "emoji": "⚔️",
                 "priority": 3
@@ -100,44 +92,17 @@ class EventPolling(commands.Cog):
             }
         }
 
-        # Guild Wars - blocked time event (Sat 20:30-23:00)
+        # Guild Wars - blocked time event (Sat & Sun 20:30-22:00)
         self.guild_wars_emoji = "🏰"
 
         self.days_of_week = [
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Locked/Fixed time events (non-voteable, always appear in calendar)
-        self.locked_events = [
-            {
-                "name": "Guild War",
-                "emoji": "🏰",
-                "day": "Saturday",
-                "start": "20:30",
-                "end": "23:00",
-                "priority": 5  # High priority for display
-            },
-            {
-                "name": "Sword Trial",
-                "emoji": "⚔️",
-                "day": "Sunday",
-                "start": "22:30",
-                "end": "23:00",  # 30 min duration
-                "priority": 3
-            },
-            {
-                "name": "Catch Up Hero's Realm",
-                "emoji": "🛡️",
-                "day": "Sunday",
-                "start": "22:00",
-                "end": "22:30",  # 30 min duration
-                "priority": 4
-            }
-        ]
-
-        # Blocked time slots (for conflict detection, derived from locked events)
+        # Blocked time slots: Saturday and Sunday 20:30 - 22:00
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "23:00"}
+            {"day": "Saturday", "start": "20:30", "end": "22:00"},
+            {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
         # Event-specific blocked time periods (applies to all days for these events)
@@ -154,11 +119,6 @@ class EventPolling(commands.Cog):
 
         # Initialize calendar renderer
         self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
-
-        # Rate limit optimization: debouncing and caching
-        self.update_queue = {}  # {poll_id: (timestamp, task)}
-        self.poll_message_cache = {}  # {message_id: discord.Message}
-        self.debounce_delay = 2.0  # seconds to wait before updating
 
         # Backup directory path
         self.backups_dir = Path.cwd() / "data" / "eventpolling" / "backups"
@@ -1714,72 +1674,11 @@ class EventPolling(commands.Cog):
 
         return embed, calendar_file, view, winning_times
 
-    async def _queue_poll_update(self, guild_id: int, poll_id: str):
-        """Queue a poll display update with debouncing to reduce rate limits"""
-        current_time = time.time()
-
-        # Cancel existing task if within debounce window
-        if poll_id in self.update_queue:
-            old_time, old_task = self.update_queue[poll_id]
-            if current_time - old_time < self.debounce_delay:
-                old_task.cancel()
-
-        # Schedule new update
-        task = asyncio.create_task(self._delayed_poll_update(guild_id, poll_id))
-        self.update_queue[poll_id] = (current_time, task)
-
-    async def _delayed_poll_update(self, guild_id: int, poll_id: str):
-        """Execute poll update after debounce delay"""
-        try:
-            await asyncio.sleep(self.debounce_delay)
-
-            # Get guild
-            guild = self.bot.get_guild(guild_id)
-            if not guild:
-                return
-
-            # Get poll data
-            polls = await self.config.guild_from_id(guild_id).polls()
-            if poll_id not in polls:
-                return
-
-            poll_data = polls[poll_id]
-
-            # Update only the poll embed (skip calendars/results for performance)
-            try:
-                channel = guild.get_channel(poll_data["channel_id"])
-                if channel:
-                    message_id = poll_data["message_id"]
-
-                    # Try to get from cache first
-                    message = self.poll_message_cache.get(message_id)
-                    if not message:
-                        message = await channel.fetch_message(message_id)
-                        self.poll_message_cache[message_id] = message
-
-                    updated_embed = await self._create_poll_embed(
-                        poll_data["title"],
-                        guild_id,
-                        poll_id
-                    )
-                    updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                    await message.edit(embed=updated_embed)
-            except Exception as e:
-                log.error(f"Failed to update poll {poll_id} in debounced update: {e}")
-            finally:
-                # Clean up queue entry
-                if poll_id in self.update_queue:
-                    del self.update_queue[poll_id]
-        except asyncio.CancelledError:
-            # Task was cancelled due to new vote, which is expected
-            pass
-
     async def _update_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
-        """Update all live calendar messages associated with this poll (batched with asyncio.gather)"""
+        """Update all live calendar messages associated with this poll"""
         calendar_messages = poll_data.get("calendar_messages", [])
 
-        async def update_one_calendar(cal_msg_data):
-            """Update a single calendar message"""
+        for cal_msg_data in calendar_messages:
             try:
                 channel = guild.get_channel(cal_msg_data["channel_id"])
                 if channel:
@@ -1789,10 +1688,6 @@ class EventPolling(commands.Cog):
             except Exception:
                 # Silently fail if we can't update a calendar message
                 pass
-
-        # Update all calendar messages in parallel
-        if calendar_messages:
-            await asyncio.gather(*[update_one_calendar(msg) for msg in calendar_messages], return_exceptions=True)
 
     async def _check_and_create_initial_snapshot(self, guild: discord.Guild, poll_id: str):
         """Check if this is the first vote and create initial weekly snapshot if needed"""
@@ -1830,7 +1725,7 @@ class EventPolling(commands.Cog):
             pass
 
     async def _update_weekly_calendar_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
-        """Update all weekly calendar messages associated with this poll (batched with asyncio.gather)"""
+        """Update all weekly calendar messages associated with this poll"""
         weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
 
         if not weekly_calendar_messages:
@@ -1844,8 +1739,8 @@ class EventPolling(commands.Cog):
             if poll_id in polls:
                 polls[poll_id]["weekly_snapshot_winning_times"] = winning_times
 
-        async def update_one_weekly_calendar(idx, cal_msg_data):
-            """Update a single weekly calendar message"""
+        # Update all weekly calendar messages
+        for idx, cal_msg_data in enumerate(weekly_calendar_messages):
             try:
                 channel = guild.get_channel(cal_msg_data["channel_id"])
                 if channel:
@@ -1861,9 +1756,6 @@ class EventPolling(commands.Cog):
             except Exception:
                 # Silently fail if we can't update a weekly calendar message
                 pass
-
-        # Update all weekly calendar messages in parallel
-        await asyncio.gather(*[update_one_weekly_calendar(idx, msg) for idx, msg in enumerate(weekly_calendar_messages)], return_exceptions=True)
 
     async def _create_results_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> discord.Embed:
         """Create a results embed showing current poll results
@@ -1952,11 +1844,10 @@ class EventPolling(commands.Cog):
         return embed
 
     async def _update_results_messages(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
-        """Update all results messages associated with this poll (batched with asyncio.gather)"""
+        """Update all results messages associated with this poll"""
         results_messages = poll_data.get("results_messages", [])
 
-        async def update_one_results(res_msg_data):
-            """Update a single results message"""
+        for res_msg_data in results_messages:
             try:
                 channel = guild.get_channel(res_msg_data["channel_id"])
                 if channel:
@@ -1966,10 +1857,6 @@ class EventPolling(commands.Cog):
             except Exception:
                 # Silently fail if we can't update a results message
                 pass
-
-        # Update all results messages in parallel
-        if results_messages:
-            await asyncio.gather(*[update_one_results(msg) for msg in results_messages], return_exceptions=True)
 
     async def _create_poll_embed(self, title: str, guild_id: int, poll_id: str) -> discord.Embed:
         """Create calendar-style embed showing winning times"""
@@ -1989,20 +1876,15 @@ class EventPolling(commands.Cog):
             selections = polls[poll_id].get("selections", {})
 
         # Show event info at the top
-        locked_events_text = "\n".join([
-            f"{evt['emoji']} **{evt['name']}** - {evt['day']} {evt['start']}-{evt['end']} (locked)"
-            for evt in self.locked_events
-        ])
-
         embed.add_field(
             name="📋 Events",
             value=(
-                "🛡️ **Catch Up Hero's Realm** - Mon-Sat single time (30 min)\n"
-                "⚔️ **Sword Trial** - Wed/Fri (30 min)\n"
+                "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min)\n"
+                "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min)\n"
                 "🎉 **Party** - Daily (10 min)\n"
                 "⚡ **Breaking Army** - Weekly (60 min, 2 slots)\n"
                 "🏆 **Showdown** - Weekly (60 min, 2 slots)\n\n"
-                f"**Locked Events:**\n{locked_events_text}"
+                "🏰 **Guild War** - Sat & Sun 20:30-22:00 (blocked)"
             ),
             inline=False
         )

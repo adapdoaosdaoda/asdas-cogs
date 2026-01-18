@@ -26,8 +26,7 @@ class CalendarRenderer:
 
     # Event-specific cell background colors
     EVENT_BG_COLORS = {
-        "Catch Up Hero's Realm": (92, 107, 192),     # #5C6BC0 - Indigo
-        "Hero's Realm": (92, 107, 192),     # #5C6BC0 - Indigo (legacy support)
+        "Hero's Realm": (92, 107, 192),     # #5C6BC0 - Indigo
         "Sword Trial": (255, 202, 40),      # #FFCA28 - Yellow
         "Party": (233, 30, 99),             # #e91e63 - Pink
         "Breaking Army": (52, 152, 219),    # #3498db - Blue
@@ -37,8 +36,7 @@ class CalendarRenderer:
 
     # Event label mapping (text labels instead of emojis since PIL doesn't support emojis well)
     EVENT_LABELS = {
-        "Catch Up Hero's Realm": "HR",
-        "Hero's Realm": "HR",  # Legacy support
+        "Hero's Realm": "HR",
         "Sword Trial": "ST",
         "Party": "P",
         "Breaking Army": "BA",
@@ -48,8 +46,7 @@ class CalendarRenderer:
 
     # Event colors for text
     EVENT_COLORS = {
-        "Catch Up Hero's Realm": (147, 197, 253),  # Light blue
-        "Hero's Realm": (147, 197, 253),  # Light blue (legacy support)
+        "Hero's Realm": (147, 197, 253),  # Light blue
         "Sword Trial": (196, 181, 253),    # Purple
         "Party": (253, 224, 71),           # Yellow
         "Breaking Army": (252, 165, 165),  # Light red
@@ -68,8 +65,7 @@ class CalendarRenderer:
 
     # Event name abbreviations for display
     EVENT_ABBREV = {
-        "Catch Up Hero's Realm": "Catch Up HR",
-        "Hero's Realm": "Hero's Realm",  # Legacy support
+        "Hero's Realm": "Hero's Realm",
         "Sword Trial": "Sword Trial",
         "Party": "Party",
         "Breaking Army": "Breaking Army",
@@ -306,7 +302,7 @@ class CalendarRenderer:
                 # Use text labels instead of emojis
                 label_text = display_text
                 # Try to extract label from text (fallback)
-                for event_name, emoji in [("Catch Up Hero's Realm", "🛡️"), ("Sword Trial", "⚔️"), ("Party", "🎉"), ("Breaking Army", "⚡"), ("Showdown", "🏆"), ("Guild War", "🏰")]:
+                for event_name, emoji in [("Hero's Realm", "🛡️"), ("Sword Trial", "⚔️"), ("Party", "🎉"), ("Breaking Army", "⚡"), ("Showdown", "🏆"), ("Guild War", "🏰")]:
                     if emoji in display_text:
                         label = self.EVENT_LABELS.get(event_name, "?")
                         label_text = display_text.replace(emoji, label)
@@ -795,7 +791,7 @@ class CalendarRenderer:
 
         # Event list with emojis
         event_list = [
-            ("Catch Up Hero's Realm", "🛡️"),
+            ("Hero's Realm", "🛡️"),
             ("Sword Trial", "⚔️"),
             ("Party", "🎉"),
             ("Breaking Army", "⚡"),

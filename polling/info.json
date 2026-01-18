@@ -1,7 +1,7 @@
 {
     "author": ["adapdoaosdaoda"],
-    "description": "Event scheduling polling system with unified modal voting interface, visual calendar images with emoji rendering, and conflict detection. Users vote for all events in a single modal with select menus. Requires ModalPatch cog for select menu support in Discord modals.",
-    "install_msg": "Thank you for installing EventPolling! Use `[p]eventpoll create` to create your first event poll.\n\n⚠️ REQUIRED COG:\n• [p]load modalpatch (MUST be loaded BEFORE polling cog)\n\nREQUIRED DEPENDENCIES:\n• pip install Pillow\n• pip install git+https://github.com/jay3332/pilmoji\n\nNote: ModalPatch enables select menus in Discord modals. Without it, voting will not work.\npilmoji enables emoji rendering in calendar images. If not installed, calendars will use text labels (HR, ST, P, etc.) as fallback.",
+    "description": "Event scheduling polling system with dropdown menus, visual calendar images with emoji rendering, and conflict detection. Allows users to vote for preferred times for various events (Hero's Realm, Sword Trial, Party, Breaking Army, Showdown) while preventing conflicting time selections. Generates beautiful calendar visualizations with emojis.",
+    "install_msg": "Thank you for installing EventPolling! Use `[p]eventpoll create` to create your first event poll.\n\nREQUIRED DEPENDENCIES:\n• pip install Pillow\n• pip install git+https://github.com/jay3332/pilmoji\n\nNote: pilmoji enables emoji rendering in calendar images. If not installed, calendars will use text labels (HR, ST, P, etc.) as fallback.",
     "short": "Event scheduling polls with visual calendars",
     "tags": [
         "polling",
