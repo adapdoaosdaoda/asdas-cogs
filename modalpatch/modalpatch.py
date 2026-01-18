@@ -1,14 +1,33 @@
 import logging
 import discord
-from discord.ui import Modal, Item, TextInput
+from discord.ui import Modal, Item, TextInput, View
+
+# --- Compatibility Shim Start ---
+try:
+    # Attempt to import modern components (discord.py 2.3+)
+    from discord.ui import StringSelect, string_select
+except ImportError:
+    # Fallback for legacy components (discord.py 2.0 - 2.2)
+    # In these versions, 'Select' is the class for String Selects.
+    # We alias it to 'StringSelect' to maintain forward compatibility.
+    from discord.ui import Select as StringSelect
+    from discord.ui import select as string_select
+# --- Compatibility Shim End ---
+
+# Safe access to the component type enum
+try:
+    # Modern naming
+    STRING_SELECT_TYPE = discord.ComponentType.string_select
+except AttributeError:
+    # Legacy naming (Both map to value 3)
+    STRING_SELECT_TYPE = discord.ComponentType.select
+
 # Import all Select types to ensure availability
 from discord.ui import (
-    Select,
     RoleSelect,
     ChannelSelect,
     UserSelect,
     MentionableSelect,
-    StringSelect,
 )
 from redbot.core import commands, app_commands
 from typing import List, Dict, Any, Optional
@@ -70,7 +89,7 @@ class Label(Item):
         child_payload = self.child.to_component_dict()
         
         # Sanitize: Remove disabled fields from Selects inside Modals
-        if isinstance(self.child, (Select, RoleSelect, ChannelSelect, UserSelect, MentionableSelect, StringSelect)):
+        if isinstance(self.child, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
             child_payload.pop("disabled", None)
 
         return {
@@ -123,7 +142,7 @@ def _patched_to_dict(self):
     }
 
     for item in self._children:
-        if isinstance(item, (Select, RoleSelect, ChannelSelect, UserSelect, MentionableSelect, StringSelect)):
+        if isinstance(item, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
             # Auto-Boxing: Wrap Select in Label
             # Using a default label if one isn't clearly associated, or empty string.
             # The prompt implies the Select acts as the body. 
@@ -187,7 +206,7 @@ async def _patched_refresh(self, interaction: discord.Interaction):
             continue
             
         # Handle Selects
-        if isinstance(item, (Select, RoleSelect, ChannelSelect, UserSelect, MentionableSelect, StringSelect)):
+        if isinstance(item, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
             # Selects in Modals return 'values'
             c_data = component_map.get(item.custom_id)
             if c_data and 'values' in c_data:
