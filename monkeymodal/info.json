@@ -1,0 +1,22 @@
+{
+    "$schema": "https://raw.githubusercontent.com/Cog-Creators/Red-DiscordBot/V3/develop/schema/red_cog.schema.json",
+    "author": ["adapdoaosdaoda"],
+    "name": "MonkeyModal",
+    "description": "A robust utility cog for creating 'Modern Modals' with Discord API v10 components. This cog acts as a shared service allowing other cogs to create and await modals containing Select Menus (String, User, Role, Mentionable, Channel) and other components not yet natively supported in discord.py. It bypasses discord.py validation by making raw API calls, providing a clean, Pythonic interface for building complex modals and awaiting user submissions.",
+    "install_msg": "✅ **MonkeyModal Installed**\n\nThis cog provides a shared service for creating modern modals with all Discord API v10 component types.\n\n**Features:**\n• ModalBuilder with fluent API for constructing modals\n• Support for Text Input (Type 4)\n• Support for String Select (Type 3)\n• Support for User Select (Type 5)\n• Support for Role Select (Type 6)\n• Support for Mentionable Select (Type 7)\n• Support for Channel Select with type filters (Type 8)\n• Raw API bypass to avoid discord.py validation\n• Future-based awaiting of modal submissions\n• Clean, Pythonic interface for other cogs\n\n**Usage Example:**\n```python\nmonkey_cog = bot.get_cog(\"MonkeyModal\")\nbuilder = monkey_cog.create_builder(\"my_modal\", \"My Modal Title\")\nbuilder.add_text_input(\"name\", \"Your Name\")\nbuilder.add_role_select(\"role\", placeholder=\"Pick a role\")\nresult = await monkey_cog.prompt(interaction, builder, timeout=300)\n```\n\n**Commands:**\n• `[p]monkeymodaltest` - Test the MonkeyModal system with a comprehensive modal\n\n**For Developers:**\nThis cog is designed to be used as a dependency by other cogs that need to create advanced modals with select components. See the cog docstrings for detailed API documentation.",
+    "short": "Utility cog for creating modern modals with Discord API v10 select components",
+    "tags": [
+        "utility",
+        "modal",
+        "select",
+        "api",
+        "v10",
+        "developer",
+        "service"
+    ],
+    "requirements": [],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 8, 0],
+    "type": "COG",
+    "end_user_data_statement": "This cog does not store any end user data. It only provides utilities for other cogs to create and manage modals."
+}
