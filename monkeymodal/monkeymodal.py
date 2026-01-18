@@ -4,12 +4,20 @@ MonkeyModal - A robust utility cog for creating "Modern Modals" with Discord API
 This cog acts as a shared service allowing other cogs to create and await modals containing
 Select Menus and other Discord API v10 components that are not yet natively supported in discord.py.
 
-The cog bypasses discord.py's validation by making raw API calls, allowing developers to build
-modals with all API v10 component types and await user submissions in a clean, Pythonic way.
+The cog bypasses discord.py's validation by making raw API v10 calls, allowing developers to build
+modals with all API v10 component types (Text Inputs, String/User/Role/Mentionable/Channel Selects)
+and await user submissions in a clean, Pythonic way.
+
+Key features:
+- Explicit API v10 endpoint usage to ensure select menu support
+- All select components require a 'label' field (Discord API v10 requirement for modals)
+- Fluent ModalBuilder interface for constructing complex modals
+- Async/await pattern for handling modal submissions
 
 Requirements:
 - Red-DiscordBot >= 3.5.0
 - discord.py >= 2.0.0
+- aiohttp (for direct API v10 requests)
 """
 
 import discord
@@ -132,6 +140,7 @@ class ModalBuilder:
     def add_string_select(
         self,
         custom_id: str,
+        label: str,
         options: List[Dict[str, Any]],
         placeholder: Optional[str] = None,
         min_values: int = 1,
@@ -143,6 +152,7 @@ class ModalBuilder:
 
         Args:
             custom_id: Unique identifier for this select
+            label: Label displayed above the select menu (required for modals in API v10)
             options: List of option dicts with 'label', 'value', optional 'description', 'emoji'
             placeholder: Placeholder text when nothing selected
             min_values: Minimum number of selections
@@ -161,6 +171,7 @@ class ModalBuilder:
         component = {
             "type": ComponentType.STRING_SELECT,
             "custom_id": custom_id,
+            "label": label,
             "options": options,
             "min_values": min_values,
             "max_values": max_values,
@@ -175,6 +186,7 @@ class ModalBuilder:
     def add_user_select(
         self,
         custom_id: str,
+        label: str,
         placeholder: Optional[str] = None,
         min_values: int = 1,
         max_values: int = 1,
@@ -186,6 +198,7 @@ class ModalBuilder:
 
         Args:
             custom_id: Unique identifier for this select
+            label: Label displayed above the select menu (required for modals in API v10)
             placeholder: Placeholder text when nothing selected
             min_values: Minimum number of selections
             max_values: Maximum number of selections
@@ -198,6 +211,7 @@ class ModalBuilder:
         component = {
             "type": ComponentType.USER_SELECT,
             "custom_id": custom_id,
+            "label": label,
             "min_values": min_values,
             "max_values": max_values,
             "disabled": disabled
@@ -213,6 +227,7 @@ class ModalBuilder:
     def add_role_select(
         self,
         custom_id: str,
+        label: str,
         placeholder: Optional[str] = None,
         min_values: int = 1,
         max_values: int = 1,
@@ -224,6 +239,7 @@ class ModalBuilder:
 
         Args:
             custom_id: Unique identifier for this select
+            label: Label displayed above the select menu (required for modals in API v10)
             placeholder: Placeholder text when nothing selected
             min_values: Minimum number of selections
             max_values: Maximum number of selections
@@ -236,6 +252,7 @@ class ModalBuilder:
         component = {
             "type": ComponentType.ROLE_SELECT,
             "custom_id": custom_id,
+            "label": label,
             "min_values": min_values,
             "max_values": max_values,
             "disabled": disabled
@@ -251,6 +268,7 @@ class ModalBuilder:
     def add_mentionable_select(
         self,
         custom_id: str,
+        label: str,
         placeholder: Optional[str] = None,
         min_values: int = 1,
         max_values: int = 1,
@@ -262,6 +280,7 @@ class ModalBuilder:
 
         Args:
             custom_id: Unique identifier for this select
+            label: Label displayed above the select menu (required for modals in API v10)
             placeholder: Placeholder text when nothing selected
             min_values: Minimum number of selections
             max_values: Maximum number of selections
@@ -274,6 +293,7 @@ class ModalBuilder:
         component = {
             "type": ComponentType.MENTIONABLE_SELECT,
             "custom_id": custom_id,
+            "label": label,
             "min_values": min_values,
             "max_values": max_values,
             "disabled": disabled
@@ -289,6 +309,7 @@ class ModalBuilder:
     def add_channel_select(
         self,
         custom_id: str,
+        label: str,
         placeholder: Optional[str] = None,
         min_values: int = 1,
         max_values: int = 1,
@@ -301,6 +322,7 @@ class ModalBuilder:
 
         Args:
             custom_id: Unique identifier for this select
+            label: Label displayed above the select menu (required for modals in API v10)
             placeholder: Placeholder text when nothing selected
             min_values: Minimum number of selections
             max_values: Maximum number of selections
@@ -319,6 +341,7 @@ class ModalBuilder:
         component = {
             "type": ComponentType.CHANNEL_SELECT,
             "custom_id": custom_id,
+            "label": label,
             "min_values": min_values,
             "max_values": max_values,
             "disabled": disabled
@@ -397,7 +420,7 @@ class MonkeyModal(commands.Cog):
         Send a modal to Discord using raw API calls, bypassing discord.py validation.
 
         This method constructs the INTERACTION_CALLBACK response with type 9 (MODAL)
-        and sends it directly via bot.http.request.
+        and sends it directly via bot.http.request, explicitly forcing Discord API v10.
 
         Args:
             interaction: The interaction to respond to with a modal
@@ -406,25 +429,46 @@ class MonkeyModal(commands.Cog):
         Raises:
             discord.HTTPException: If the API request fails
         """
+        modal_data = modal_builder.build()
+
         payload = {
             "type": 9,  # MODAL callback type
-            "data": modal_builder.build()
+            "data": modal_data
         }
 
-        # Send raw API request to bypass discord.py's component validation
-        from discord.http import Route
-
-        route = Route(
-            "POST",
-            f"/interactions/{interaction.id}/{interaction.token}/callback"
-        )
+        # Force API v10 by making a direct request with the explicit v10 path
+        # This ensures we're using the latest API version that supports select menus in modals
+        url = f"https://discord.com/api/v10/interactions/{interaction.id}/{interaction.token}/callback"
 
         try:
-            await self.bot.http.request(route, json=payload)
+            log.debug(
+                f"Sending modal {modal_builder.custom_id} via explicit API v10 endpoint"
+            )
+
+            # Use aiohttp directly to ensure we're hitting the exact v10 endpoint
+            import aiohttp
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": f"DiscordBot (https://github.com/Cog-Creators/Red-DiscordBot {discord.__version__})"
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers=headers) as resp:
+                    if resp.status not in (200, 204):
+                        error_text = await resp.text()
+                        log.error(
+                            f"Modal API error {resp.status}: {error_text}\n"
+                            f"Payload: {payload}"
+                        )
+                        raise discord.HTTPException(resp, error_text)
+
             log.debug(f"Modal sent successfully: {modal_builder.custom_id}")
-        except discord.HTTPException as e:
-            log.error(f"Failed to send modal {modal_builder.custom_id}: {e}", exc_info=True)
+        except discord.HTTPException:
             raise
+        except Exception as e:
+            log.error(f"Failed to send modal {modal_builder.custom_id}: {e}", exc_info=True)
+            raise discord.HTTPException(None, str(e))
+
 
     async def prompt(
         self,
@@ -585,6 +629,7 @@ class MonkeyModal(commands.Cog):
 
                 builder.add_string_select(
                     "color_select",
+                    label="Favorite Color",
                     options=[
                         {"label": "Red", "value": "red", "emoji": {"name": "🔴"}},
                         {"label": "Blue", "value": "blue", "emoji": {"name": "🔵"}},
@@ -595,12 +640,14 @@ class MonkeyModal(commands.Cog):
 
                 builder.add_role_select(
                     "role_select",
+                    label="Select Roles",
                     placeholder="Pick a role",
                     max_values=3
                 )
 
                 builder.add_channel_select(
                     "channel_select",
+                    label="Text Channel",
                     placeholder="Pick a text channel",
                     channel_types=[ChannelType.text]
                 )

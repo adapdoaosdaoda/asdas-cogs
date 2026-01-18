@@ -58,6 +58,7 @@ async def example(self, ctx):
 
             builder.add_role_select(
                 "role",
+                label="Select Roles",
                 placeholder="Pick a role",
                 max_values=3
             )
@@ -101,6 +102,7 @@ builder.add_text_input(
 ```python
 builder.add_string_select(
     custom_id="color",
+    label="Favorite Color",  # Required for modals in API v10
     options=[
         {"label": "Red", "value": "red", "emoji": {"name": "🔴"}},
         {"label": "Blue", "value": "blue", "description": "The color blue"}
@@ -116,6 +118,7 @@ builder.add_string_select(
 ```python
 builder.add_user_select(
     custom_id="users",
+    label="Select Users",  # Required for modals in API v10
     placeholder="Select users",
     min_values=1,
     max_values=5,
@@ -128,6 +131,7 @@ builder.add_user_select(
 ```python
 builder.add_role_select(
     custom_id="roles",
+    label="Select Roles",  # Required for modals in API v10
     placeholder="Select roles",
     min_values=1,
     max_values=10
@@ -139,6 +143,7 @@ builder.add_role_select(
 ```python
 builder.add_mentionable_select(
     custom_id="mentions",
+    label="Select Users or Roles",  # Required for modals in API v10
     placeholder="Select users or roles",
     min_values=1,
     max_values=5
@@ -152,6 +157,7 @@ from discord import ChannelType
 
 builder.add_channel_select(
     custom_id="channels",
+    label="Select Channels",  # Required for modals in API v10
     placeholder="Select text channels",
     channel_types=[ChannelType.text, ChannelType.voice],  # Filter by type
     min_values=1,
@@ -249,15 +255,20 @@ Requires bot owner permissions.
 ### How It Works
 
 1. **Building**: `ModalBuilder` constructs a JSON payload matching Discord's API v10 specification
-2. **Sending**: `send_modal()` uses `bot.http.request` to POST to `/interactions/{id}/{token}/callback` with type 9 (MODAL)
-3. **Awaiting**: `prompt()` registers an `asyncio.Future` in `pending_modals` dict
-4. **Listening**: `on_interaction` listener catches modal_submit interactions
-5. **Parsing**: `_parse_modal_data()` extracts values based on component type
-6. **Resolving**: Future is resolved with parsed data, completing the await
+2. **Label Requirement**: All select components include a `label` field (required for modals in API v10)
+3. **Sending**: `send_modal()` uses `aiohttp` to POST directly to the explicit `/api/v10/interactions/{id}/{token}/callback` endpoint with type 9 (MODAL)
+4. **Awaiting**: `prompt()` registers an `asyncio.Future` in `pending_modals` dict
+5. **Listening**: `on_interaction` listener catches modal_submit interactions
+6. **Parsing**: `_parse_modal_data()` extracts values based on component type
+7. **Resolving**: Future is resolved with parsed data, completing the await
 
 ### Why Bypass discord.py?
 
-discord.py has built-in validation that prevents using certain component types (like Select menus) in modals, even though Discord's API v10 supports them. By making raw API calls, MonkeyModal bypasses this validation while maintaining a clean, Pythonic interface.
+discord.py has built-in validation that prevents using certain component types (like Select menus) in modals, even though Discord's API v10 supports them. By making raw API v10 calls with the correct schema (including `label` fields for select components), MonkeyModal bypasses this validation while maintaining a clean, Pythonic interface.
+
+### Discord API v10 Modal Requirements
+
+In Discord API v10, select menus used in modals are treated as form inputs and require a `label` field (similar to text inputs). This differs from select menus in messages, which don't need labels. MonkeyModal enforces this requirement by making the `label` parameter mandatory for all select menu methods.
 
 ### Future Compatibility
 

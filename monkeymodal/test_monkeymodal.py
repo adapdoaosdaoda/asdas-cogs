@@ -82,6 +82,7 @@ class TestMonkeyModal:
         builder = ModalBuilder("test", "Test")
         builder.add_string_select(
             "color",
+            label="Favorite Color",
             options=[
                 {"label": "Red", "value": "red"},
                 {"label": "Blue", "value": "blue"}
@@ -97,6 +98,7 @@ class TestMonkeyModal:
         component = payload["components"][0]["components"][0]
         assert component["type"] == ComponentType.STRING_SELECT
         assert component["custom_id"] == "color"
+        assert component["label"] == "Favorite Color"
         assert component["placeholder"] == "Pick a color"
         assert component["min_values"] == 1
         assert component["max_values"] == 2
@@ -107,6 +109,7 @@ class TestMonkeyModal:
         builder = ModalBuilder("test", "Test")
         builder.add_user_select(
             "users",
+            label="Select Users",
             placeholder="Pick users",
             min_values=1,
             max_values=5
@@ -117,6 +120,7 @@ class TestMonkeyModal:
         component = payload["components"][0]["components"][0]
         assert component["type"] == ComponentType.USER_SELECT
         assert component["custom_id"] == "users"
+        assert component["label"] == "Select Users"
         assert component["min_values"] == 1
         assert component["max_values"] == 5
 
@@ -125,6 +129,7 @@ class TestMonkeyModal:
         builder = ModalBuilder("test", "Test")
         builder.add_role_select(
             "roles",
+            label="Select Roles",
             placeholder="Pick roles",
             max_values=3
         )
@@ -134,6 +139,7 @@ class TestMonkeyModal:
         component = payload["components"][0]["components"][0]
         assert component["type"] == ComponentType.ROLE_SELECT
         assert component["custom_id"] == "roles"
+        assert component["label"] == "Select Roles"
         assert component["max_values"] == 3
 
     async def test_modal_builder_mentionable_select(self):
@@ -141,6 +147,7 @@ class TestMonkeyModal:
         builder = ModalBuilder("test", "Test")
         builder.add_mentionable_select(
             "mentions",
+            label="Select Users or Roles",
             placeholder="Pick users or roles"
         )
 
@@ -149,12 +156,14 @@ class TestMonkeyModal:
         component = payload["components"][0]["components"][0]
         assert component["type"] == ComponentType.MENTIONABLE_SELECT
         assert component["custom_id"] == "mentions"
+        assert component["label"] == "Select Users or Roles"
 
     async def test_modal_builder_channel_select(self):
         """Test adding a channel select to a modal"""
         builder = ModalBuilder("test", "Test")
         builder.add_channel_select(
             "channels",
+            label="Select Channels",
             placeholder="Pick channels",
             channel_types=[ChannelType.text, ChannelType.voice]
         )
@@ -164,6 +173,7 @@ class TestMonkeyModal:
         component = payload["components"][0]["components"][0]
         assert component["type"] == ComponentType.CHANNEL_SELECT
         assert component["custom_id"] == "channels"
+        assert component["label"] == "Select Channels"
         assert "channel_types" in component
         # Verify ChannelType objects are converted to integers
         assert all(isinstance(ct, int) for ct in component["channel_types"])
@@ -173,6 +183,7 @@ class TestMonkeyModal:
         builder = ModalBuilder("test", "Test")
         builder.add_channel_select(
             "channels",
+            label="Select Channels",
             channel_types=[0, 2]  # Text and Voice as integers
         )
 
@@ -186,8 +197,8 @@ class TestMonkeyModal:
         builder = (
             ModalBuilder("test", "Test")
             .add_text_input("name", "Name")
-            .add_string_select("color", [{"label": "Red", "value": "red"}])
-            .add_role_select("role")
+            .add_string_select("color", "Color", [{"label": "Red", "value": "red"}])
+            .add_role_select("role", "Role")
         )
 
         payload = builder.build()
