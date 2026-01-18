@@ -87,19 +87,8 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
         
         # Check if user has a selection
         current_time = current_selection.get("time") if current_selection else None
-        has_selection = current_time is not None
-
-        # Add "Clear / No Vote" option (Required because min_values must be 1)
-        options.append(
-            discord.SelectOption(
-                label="Clear / No Vote",
-                value=f"{event_name}|||CLEAR",
-                emoji="🚫",
-                default=(not has_selection) # Default to Clear if no selection
-            )
-        )
-
-        for time_str in times[:24]:  # Limit to 24 options + 1 clear option = 25 max
+        
+        for time_str in times[:25]:  # Limit to 25 max options
             options.append(
                 discord.SelectOption(
                     label=time_str,
@@ -116,7 +105,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             placeholder=short_placeholder,
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=1, # Must be 1 for Modals
+            min_values=0, # Optional select
             max_values=1
         )
         self.add_item(select)
@@ -134,8 +123,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
         # Build options with day+time combinations
         options = []
         current_selections_set = set()
-        has_selection = False
-
+        
         if current_selection and isinstance(current_selection, list):
             for idx, slot in enumerate(current_selection):
                 if slot and idx < len(days):
@@ -143,17 +131,6 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                     time = slot.get("time")
                     if time:
                         current_selections_set.add(f"{day}|||{time}")
-                        has_selection = True
-
-        # Add "Clear / No Vote" option
-        options.append(
-            discord.SelectOption(
-                label="Clear / No Vote",
-                value=f"{event_name}|||CLEAR",
-                emoji="🚫",
-                default=(not has_selection)
-            )
-        )
 
         # Create options for each day
         for day in days:
@@ -181,8 +158,8 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             placeholder=short_placeholder,
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=1, # Must be 1 for Modals
-            max_values=min(len(days) + 1, 5) # Allow selecting multiple days + clear option
+            min_values=0, # Optional select
+            max_values=min(len(days), 5) # Allow selecting multiple days (up to 5 for discord limit)
         )
         self.add_item(select)
 
@@ -199,8 +176,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
         # Build options with day+time combinations
         options = []
         current_selections_set = set()
-        has_selection = False
-
+        
         if current_selection and isinstance(current_selection, list):
             for slot in current_selection:
                 if slot:
@@ -208,17 +184,6 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                     time = slot.get("time")
                     if day and time:
                         current_selections_set.add(f"{day}|||{time}")
-                        has_selection = True
-
-        # Add "Clear / No Vote" option
-        options.append(
-            discord.SelectOption(
-                label="Clear / No Vote",
-                value=f"{event_name}|||CLEAR",
-                emoji="🚫",
-                default=(not has_selection)
-            )
-        )
 
         # Create limited options (max 25)
         for day in available_days:
@@ -246,8 +211,8 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             placeholder=short_placeholder,
             options=options,
             custom_id=f"vote_{event_name}",
-            min_values=1, # Must be 1 for Modals
-            max_values=3 # 2 slots + clear option
+            min_values=0, # Optional select
+            max_values=2 # 2 slots
         )
         self.add_item(select)
 
@@ -263,13 +228,15 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 if not isinstance(child, StringSelect):
                     continue
 
-                if not child.values:
-                    continue  # Skip if no selection
-
                 # Parse the event name from custom_id
                 event_name = child.custom_id.replace("vote_", "")
 
                 if event_name not in self.events:
+                    continue
+
+                if not child.values:
+                    # Explicit clear if no values selected
+                    parsed_selections[event_name] = None
                     continue
 
                 event_info = self.events[event_name]
@@ -279,27 +246,17 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 if event_type == "daily":
                     # Format: "EventName|||Time"
                     value = child.values[0]
-                    
-                    # Handle "Clear" option
-                    if "|||CLEAR" in value:
-                        parsed_selections[event_name] = None
-                    else:
-                        parts = value.split("|||")
-                        if len(parts) == 2:
-                            parsed_selections[event_name] = {"time": parts[1]}
+                    parts = value.split("|||")
+                    if len(parts) == 2:
+                        parsed_selections[event_name] = {"time": parts[1]}
 
                 elif event_type == "fixed_days":
                     # Format: "EventName|||Day|||Time"
                     # Multiple selections allowed
                     days = event_info["days"]
                     selections_list = [None] * len(days)
-                    has_real_selection = False
-
+                    
                     for value in child.values:
-                        # Skip clear option in multi-select processing
-                        if "|||CLEAR" in value:
-                            continue
-                            
                         parts = value.split("|||")
                         if len(parts) == 3:
                             _, day, time = parts
@@ -307,10 +264,12 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                             if day in days:
                                 idx = days.index(day)
                                 selections_list[idx] = {"time": time}
-                                has_real_selection = True
 
-                    # If no real selections were made (only Clear or empty), result is list of Nones
-                    parsed_selections[event_name] = selections_list
+                    # If result is list of Nones, it's effectively None
+                    if all(s is None for s in selections_list):
+                        parsed_selections[event_name] = None
+                    else:
+                        parsed_selections[event_name] = selections_list
 
                 elif event_type == "once":
                     # Format: "EventName|||Day|||Time"
@@ -318,20 +277,18 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                     selections_list = []
 
                     for value in child.values:
-                        # Skip clear option in multi-select processing
-                        if "|||CLEAR" in value:
-                            continue
-
                         parts = value.split("|||")
                         if len(parts) == 3:
                             _, day, time = parts
                             selections_list.append({"day": day, "time": time})
 
-                    # Pad to 2 slots
-                    while len(selections_list) < 2:
-                        selections_list.append(None)
-
-                    parsed_selections[event_name] = selections_list
+                    if not selections_list:
+                        parsed_selections[event_name] = None
+                    else:
+                        # Pad to 2 slots
+                        while len(selections_list) < 2:
+                            selections_list.append(None)
+                        parsed_selections[event_name] = selections_list
 
             # Validate for conflicts
             for event_name, selection in parsed_selections.items():
