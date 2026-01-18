@@ -16,7 +16,7 @@ except ImportError:
     TextDisplay = None
 
 # Import voting modals
-from .voting_modals import SimpleEventVoteModal, BreakingArmyVoteModal, ShowdownVoteModal
+from .voting_modals import CombinedSimpleEventsModal, BreakingArmyVoteModal, ShowdownVoteModal
 
 log = logging.getLogger("red.asdas-cogs.polling")
 
@@ -278,13 +278,12 @@ class EventPollView(discord.ui.View):
                     await interaction.response.send_modal(modal)
 
                 else:
-                    # Party, Hero's Realm (Catch-up), Sword Trial use SimpleEventVoteModal
-                    modal = SimpleEventVoteModal(
+                    # Party, Hero's Realm (Catch-up), Sword Trial use combined modal
+                    modal = CombinedSimpleEventsModal(
                         cog=self.cog,
                         guild_id=self.guild_id,
                         poll_id=poll_id,
                         user_id=interaction.user.id,
-                        event_name=event_name,
                         user_selections=user_selections,
                         events=self.events,
                         days=available_days

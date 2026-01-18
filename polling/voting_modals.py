@@ -19,6 +19,254 @@ except ImportError:
 log = logging.getLogger("red.asdas-cogs.polling")
 
 
+class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword Trial"):
+    """Combined modal for Party, Hero's Realm (Catch-up), and Sword Trial votes
+
+    All three events are voted for in a single modal with 5 dropdowns:
+    - Party time
+    - Hero's Realm day + time
+    - Sword Trial Wed time + Fri time
+    """
+
+    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
+                 user_selections: Dict, events: Dict, days: List[str] = None):
+        super().__init__()
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.user_id = user_id
+        self.user_selections = user_selections
+        self.events = events
+        self.days = days or ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+        timezone_display = cog.timezone_display
+
+        # Add header
+        if TextDisplay:
+            self.add_item(TextDisplay(
+                content=f"Vote for all events\nTimezone: {timezone_display}",
+                style=1
+            ))
+
+        # Track which selects we create
+        self.selects = {}
+
+        # 1. Party - time only (daily event)
+        if "Party" in events:
+            party_info = events["Party"]
+            times = cog.generate_time_options(
+                party_info["time_range"][0],
+                party_info["time_range"][1],
+                party_info["interval"],
+                party_info["duration"],
+                "Party"
+            )
+
+            current_party = user_selections.get("Party")
+            time_options = [
+                discord.SelectOption(
+                    label=f"Party: {time_str}",
+                    value=time_str,
+                    emoji="🎉",
+                    default=(current_party == time_str if current_party else False)
+                )
+                for time_str in times[:25]
+            ]
+
+            party_select = StringSelect(
+                placeholder=f"🎉 Party time...",
+                options=time_options,
+                custom_id="party_time_select"
+            )
+            self.selects["Party"] = {"time": party_select}
+            self.add_item(party_select)
+
+        # 2. Hero's Realm (Catch-up) - day + time
+        if "Hero's Realm (Catch-up)" in events:
+            hero_info = events["Hero's Realm (Catch-up)"]
+            available_days = hero_info.get("days", self.days)
+            times = cog.generate_time_options(
+                hero_info["time_range"][0],
+                hero_info["time_range"][1],
+                hero_info["interval"],
+                hero_info["duration"],
+                "Hero's Realm (Catch-up)"
+            )
+
+            current_hero = user_selections.get("Hero's Realm (Catch-up)")
+            current_day = None
+            current_time = None
+            if current_hero and isinstance(current_hero, list) and len(current_hero) > 0:
+                if isinstance(current_hero[0], dict):
+                    current_day = current_hero[0].get("day")
+                    current_time = current_hero[0].get("time")
+
+            # Day select
+            day_options = [
+                discord.SelectOption(
+                    label=f"HR: {day}",
+                    value=day,
+                    emoji="🛡️",
+                    default=(day == current_day)
+                )
+                for day in available_days
+            ]
+
+            hero_day_select = StringSelect(
+                placeholder="🛡️ Hero's Realm day...",
+                options=day_options,
+                custom_id="hero_day_select"
+            )
+            self.add_item(hero_day_select)
+
+            # Time select
+            time_options = [
+                discord.SelectOption(
+                    label=f"HR: {time_str}",
+                    value=time_str,
+                    emoji="🛡️",
+                    default=(time_str == current_time)
+                )
+                for time_str in times[:25]
+            ]
+
+            hero_time_select = StringSelect(
+                placeholder="🛡️ Hero's Realm time...",
+                options=time_options,
+                custom_id="hero_time_select"
+            )
+            self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
+            self.add_item(hero_time_select)
+
+        # 3. Sword Trial - Wed time + Fri time
+        if "Sword Trial" in events:
+            sword_info = events["Sword Trial"]
+            times = cog.generate_time_options(
+                sword_info["time_range"][0],
+                sword_info["time_range"][1],
+                sword_info["interval"],
+                sword_info["duration"],
+                "Sword Trial"
+            )
+
+            current_sword = user_selections.get("Sword Trial")
+            current_wed = None
+            current_fri = None
+            if current_sword and isinstance(current_sword, list):
+                if len(current_sword) > 0 and current_sword[0]:
+                    current_wed = current_sword[0].get("time")
+                if len(current_sword) > 1 and current_sword[1]:
+                    current_fri = current_sword[1].get("time")
+
+            # Wednesday time
+            wed_options = [
+                discord.SelectOption(
+                    label=f"ST Wed: {time_str}",
+                    value=time_str,
+                    emoji="⚔️",
+                    default=(time_str == current_wed)
+                )
+                for time_str in times[:25]
+            ]
+
+            wed_select = StringSelect(
+                placeholder="⚔️ Sword Trial Wed...",
+                options=wed_options,
+                custom_id="sword_wed_select"
+            )
+            self.add_item(wed_select)
+
+            # Friday time
+            fri_options = [
+                discord.SelectOption(
+                    label=f"ST Fri: {time_str}",
+                    value=time_str,
+                    emoji="⚔️",
+                    default=(time_str == current_fri)
+                )
+                for time_str in times[:25]
+            ]
+
+            fri_select = StringSelect(
+                placeholder="⚔️ Sword Trial Fri...",
+                options=fri_options,
+                custom_id="sword_fri_select"
+            )
+            self.selects["Sword Trial"] = {"wed": wed_select, "fri": fri_select}
+
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle form submission - save all three events"""
+        try:
+            await interaction.response.defer()
+
+            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+                if self.poll_id not in polls:
+                    await interaction.followup.send(
+                        "This poll is no longer active!",
+                        ephemeral=True
+                    )
+                    return
+
+                user_id_str = str(self.user_id)
+                if user_id_str not in polls[self.poll_id]["selections"]:
+                    polls[self.poll_id]["selections"][user_id_str] = {}
+
+                # Save Party vote
+                if "Party" in self.selects:
+                    party_select = self.selects["Party"]["time"]
+                    if party_select.values:
+                        polls[self.poll_id]["selections"][user_id_str]["Party"] = party_select.values[0]
+
+                # Save Hero's Realm vote
+                if "Hero's Realm (Catch-up)" in self.selects:
+                    day_select = self.selects["Hero's Realm (Catch-up)"]["day"]
+                    time_select = self.selects["Hero's Realm (Catch-up)"]["time"]
+                    if day_select.values and time_select.values:
+                        polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-up)"] = [{
+                            "day": day_select.values[0],
+                            "time": time_select.values[0]
+                        }]
+
+                # Save Sword Trial votes
+                if "Sword Trial" in self.selects:
+                    wed_select = self.selects["Sword Trial"]["wed"]
+                    fri_select = self.selects["Sword Trial"]["fri"]
+                    selections = []
+                    # Wednesday (index 0)
+                    if wed_select.values:
+                        selections.append({"time": wed_select.values[0]})
+                    else:
+                        selections.append(None)
+                    # Friday (index 1)
+                    if fri_select.values:
+                        selections.append({"time": fri_select.values[0]})
+                    else:
+                        selections.append(None)
+
+                    polls[self.poll_id]["selections"][user_id_str]["Sword Trial"] = selections
+
+                poll_data = polls[self.poll_id]
+
+            # Update the poll embed
+            await self.cog._update_poll_message(self.guild_id, self.poll_id, poll_data)
+
+            # Send confirmation
+            await interaction.followup.send(
+                "✅ Your votes have been saved!",
+                ephemeral=True
+            )
+
+        except Exception as e:
+            log.error(f"Error in CombinedSimpleEventsModal.on_submit: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "An error occurred while saving your votes. Please try again.",
+                    ephemeral=True
+                )
+            except:
+                pass
+
+
 class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
     """Modal for Party, Hero's Realm (Catch-up), and Sword Trial votes
 

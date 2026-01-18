@@ -434,9 +434,11 @@ class CalendarRenderer:
                 current_dt = start_dt
                 while current_dt < end_dt:
                     slot_time_str = current_dt.strftime("%H:%M")
-                    if slot_time_str in schedule and short_day in schedule[slot_time_str]:
-                        # Add Guild War event (priority 0, will be handled specially)
-                        schedule[slot_time_str][short_day].append((0, "Guild War", 0, start_time_str, duration))
+                    # Create time slot if it doesn't exist (ensures Guild War shows even with no votes)
+                    if slot_time_str not in schedule:
+                        schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+                    # Add Guild War event (priority 0, will be handled specially)
+                    schedule[slot_time_str][short_day].append((0, "Guild War", 0, start_time_str, duration))
                     current_dt += timedelta(minutes=30)
 
         # Note: Events will be sorted dynamically at draw time based on position rules
@@ -916,27 +918,27 @@ class CalendarRenderer:
         if not time_slots:
             return time_slots
 
-        # Find first time slot with any events
+        # Find first time slot with any events (including Guild War)
         first_event_idx = None
         for idx, time_str in enumerate(time_slots):
             has_events = False
             for day in days:
                 if time_str in schedule and day in schedule[time_str]:
-                    if schedule[time_str][day]:  # Check if events list is not empty
+                    if schedule[time_str][day]:  # Check if events list is not empty (includes Guild War)
                         has_events = True
                         break
             if has_events:
                 first_event_idx = idx
                 break
 
-        # Find last time slot with any events
+        # Find last time slot with any events (including Guild War)
         last_event_idx = None
         for idx in range(len(time_slots) - 1, -1, -1):
             time_str = time_slots[idx]
             has_events = False
             for day in days:
                 if time_str in schedule and day in schedule[time_str]:
-                    if schedule[time_str][day]:  # Check if events list is not empty
+                    if schedule[time_str][day]:  # Check if events list is not empty (includes Guild War)
                         has_events = True
                         break
             if has_events:
@@ -947,5 +949,5 @@ class CalendarRenderer:
         if first_event_idx is None or last_event_idx is None:
             return time_slots
 
-        # Return cropped list
+        # Return cropped list (Guild War is already included in the schedule)
         return time_slots[first_event_idx:last_event_idx + 1]
