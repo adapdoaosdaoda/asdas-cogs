@@ -95,6 +95,7 @@ class Label(Item):
         return {
             "type": 10,
             "label": self.label,
+            "content": "",
             "components": [child_payload]
         }
 
