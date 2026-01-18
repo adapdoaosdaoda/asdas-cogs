@@ -2542,6 +2542,10 @@ class EventPolling(commands.Cog):
                         if event_info["type"] == "daily":
                             # Daily events (handle both legacy dict and new list format)
                             actual_selection = selection[0] if isinstance(selection, list) else selection
+                            # Check if actual_selection is valid (could be None in list)
+                            if not actual_selection:
+                                continue
+                                
                             voted_time = actual_selection.get("time")
                             if not voted_time:
                                 continue
