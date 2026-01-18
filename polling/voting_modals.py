@@ -67,13 +67,14 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 discord.SelectOption(
                     label=time_str,
                     value=time_str,
+                    emoji="🕐",
                     default=(current_party == time_str if current_party else False)
                 )
                 for time_str in times[:25]
             ]
 
             party_select = StringSelect(
-                placeholder="Times in Server Time (UTC+1)",
+                placeholder=f"Choose a time... {timezone_display}",
                 options=time_options,
                 custom_id="party_time_select"
             )
@@ -112,13 +113,14 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 discord.SelectOption(
                     label=day,
                     value=day,
+                    emoji="📅",
                     default=(day == current_day)
                 )
                 for day in available_days
             ]
 
             hero_day_select = StringSelect(
-                placeholder="Monday - Saturday",
+                placeholder="Choose a day...",
                 options=day_options,
                 custom_id="hero_day_select"
             )
@@ -136,13 +138,14 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 discord.SelectOption(
                     label=time_str,
                     value=time_str,
+                    emoji="🕐",
                     default=(time_str == current_time)
                 )
                 for time_str in times[:25]
             ]
 
             hero_time_select = StringSelect(
-                placeholder="Times in Server Time (UTC+1)",
+                placeholder=f"Choose a time... {timezone_display}",
                 options=time_options,
                 custom_id="hero_time_select"
             )
@@ -181,13 +184,14 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 discord.SelectOption(
                     label=time_str,
                     value=time_str,
+                    emoji="🕐",
                     default=(time_str == current_wed)
                 )
                 for time_str in times[:25]
             ]
 
             wed_select = StringSelect(
-                placeholder="Times in Server Time (UTC+1)",
+                placeholder=f"Choose a time... {timezone_display}",
                 options=wed_options,
                 custom_id="sword_wed_select"
             )
@@ -205,13 +209,14 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 discord.SelectOption(
                     label=time_str,
                     value=time_str,
+                    emoji="🕐",
                     default=(time_str == current_fri)
                 )
                 for time_str in times[:25]
             ]
 
             fri_select = StringSelect(
-                placeholder="Times in Server Time (UTC+1)",
+                placeholder=f"Choose a time... {timezone_display}",
                 options=fri_options,
                 custom_id="sword_fri_select"
             )
@@ -552,13 +557,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             discord.SelectOption(
                 label=day,
                 value=day,
+                emoji="📅",
                 default=(current_slot1 and current_slot1.get("day") == day)
             )
             for day in days
         ]
 
         self.slot1_day_select = StringSelect(
-            placeholder="Monday - Sunday",
+            placeholder="Slot 1: Choose a day...",
             options=day_options_1,
             custom_id="ba_slot1_day_select"
         )
@@ -576,13 +582,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
+                emoji="🕐",
                 default=(current_slot1 and current_slot1.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot1_time_select = StringSelect(
-            placeholder="Times in Server Time (UTC+1)",
+            placeholder=f"Slot 1: Choose a time... {cog.timezone_display}",
             options=time_options_1,
             custom_id="ba_slot1_time_select"
         )
@@ -600,13 +607,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             discord.SelectOption(
                 label=day,
                 value=day,
+                emoji="📅",
                 default=(current_slot2 and current_slot2.get("day") == day)
             )
             for day in days
         ]
 
         self.slot2_day_select = StringSelect(
-            placeholder="Monday - Sunday",
+            placeholder="Slot 2: Choose a day...",
             options=day_options_2,
             custom_id="ba_slot2_day_select"
         )
@@ -624,13 +632,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
+                emoji="🕐",
                 default=(current_slot2 and current_slot2.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot2_time_select = StringSelect(
-            placeholder="Times in Server Time (UTC+1)",
+            placeholder=f"Slot 2: Choose a time... {cog.timezone_display}",
             options=time_options_2,
             custom_id="ba_slot2_time_select"
         )
@@ -741,13 +750,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             discord.SelectOption(
                 label=day,
                 value=day,
+                emoji="📅",
                 default=(current_slot1 and current_slot1.get("day") == day)
             )
             for day in days
         ]
 
         self.slot1_day_select = StringSelect(
-            placeholder="Monday - Sunday",
+            placeholder="Slot 1: Choose a day...",
             options=day_options_1,
             custom_id="sd_slot1_day_select"
         )
@@ -765,13 +775,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
+                emoji="🕐",
                 default=(current_slot1 and current_slot1.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot1_time_select = StringSelect(
-            placeholder="Times in Server Time (UTC+1)",
+            placeholder=f"Slot 1: Choose a time... {cog.timezone_display}",
             options=time_options_1,
             custom_id="sd_slot1_time_select"
         )
@@ -789,13 +800,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             discord.SelectOption(
                 label=day,
                 value=day,
+                emoji="📅",
                 default=(current_slot2 and current_slot2.get("day") == day)
             )
             for day in days
         ]
 
         self.slot2_day_select = StringSelect(
-            placeholder="Monday - Sunday",
+            placeholder="Slot 2: Choose a day...",
             options=day_options_2,
             custom_id="sd_slot2_day_select"
         )
@@ -813,13 +825,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             discord.SelectOption(
                 label=time_str,
                 value=time_str,
+                emoji="🕐",
                 default=(current_slot2 and current_slot2.get("time") == time_str)
             )
             for time_str in times[:25]
         ]
 
         self.slot2_time_select = StringSelect(
-            placeholder="Times in Server Time (UTC+1)",
+            placeholder=f"Slot 2: Choose a time... {cog.timezone_display}",
             options=time_options_2,
             custom_id="sd_slot2_time_select"
         )
