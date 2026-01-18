@@ -6,7 +6,7 @@ import logging
 
 # Import modalpatch components
 try:
-    from discord.ui import Modal, TextDisplay, StringSelect
+    from discord.ui import Modal, TextDisplay, StringSelect, Label
 except ImportError:
     # Fallback if modalpatch not loaded
     from discord.ui import Modal
@@ -15,6 +15,7 @@ except ImportError:
     except ImportError:
         from discord.ui import Select as StringSelect
     TextDisplay = None
+    Label = None
 
 log = logging.getLogger("red.asdas-cogs.polling")
 
@@ -46,13 +47,6 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
 
         # 1. Party - time only (daily event)
         if "Party" in events:
-            # Add Party header
-            if TextDisplay:
-                self.add_item(TextDisplay(
-                    content="🎉 Party\nTimes in Server Time (UTC+1)",
-                    style=1
-                ))
-
             party_info = events["Party"]
             times = cog.generate_time_options(
                 party_info["time_range"][0],
@@ -79,17 +73,18 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 custom_id="party_time_select"
             )
             self.selects["Party"] = {"time": party_select}
-            self.add_item(party_select)
+            
+            if Label:
+                self.add_item(Label(
+                    label="🎉 Party",
+                    description="times in server time (UTC+1)",
+                    child=party_select
+                ))
+            else:
+                self.add_item(party_select)
 
         # 2. Hero's Realm (Catch-up) - day + time
         if "Hero's Realm (Catch-up)" in events:
-            # Add Hero's Realm Day header
-            if TextDisplay:
-                self.add_item(TextDisplay(
-                    content="🛡️ Hero's Realm (Catch-up) Day\nMonday - Saturday",
-                    style=1
-                ))
-
             hero_info = events["Hero's Realm (Catch-up)"]
             available_days = hero_info.get("days", self.days)
             times = cog.generate_time_options(
@@ -124,14 +119,15 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 options=day_options,
                 custom_id="hero_day_select"
             )
-            self.add_item(hero_day_select)
-
-            # Add Hero's Realm Time header
-            if TextDisplay:
-                self.add_item(TextDisplay(
-                    content="🛡️ Hero's Realm (Catch-up) Time\nTimes in Server Time (UTC+1)",
-                    style=1
+            
+            if Label:
+                self.add_item(Label(
+                    label="🛡️ Hero's Realm (Catch-up) Day",
+                    description="description: Monday - Saturday",
+                    child=hero_day_select
                 ))
+            else:
+                self.add_item(hero_day_select)
 
             # Time select
             time_options = [
@@ -150,17 +146,18 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 custom_id="hero_time_select"
             )
             self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
-            self.add_item(hero_time_select)
+            
+            if Label:
+                self.add_item(Label(
+                    label="🛡️ Hero's Realm (Catch-up) Time",
+                    description="description: times in server time (UTC+1)",
+                    child=hero_time_select
+                ))
+            else:
+                self.add_item(hero_time_select)
 
         # 3. Sword Trial - Wed time + Fri time
         if "Sword Trial" in events:
-            # Add Sword Trial Wednesday header
-            if TextDisplay:
-                self.add_item(TextDisplay(
-                    content="⚔️ Sword Trial Wednesday Time\nTimes in Server Time (UTC+1)",
-                    style=1
-                ))
-
             sword_info = events["Sword Trial"]
             times = cog.generate_time_options(
                 sword_info["time_range"][0],
@@ -195,14 +192,15 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 options=wed_options,
                 custom_id="sword_wed_select"
             )
-            self.add_item(wed_select)
-
-            # Add Sword Trial Friday header
-            if TextDisplay:
-                self.add_item(TextDisplay(
-                    content="⚔️ Sword Trial Friday Time\nTimes in Server Time (UTC+1)",
-                    style=1
+            
+            if Label:
+                self.add_item(Label(
+                    label="⚔️ Sword Trial Wednesday Time",
+                    description="description: times in server time (UTC+1)",
+                    child=wed_select
                 ))
+            else:
+                self.add_item(wed_select)
 
             # Friday time
             fri_options = [
@@ -221,6 +219,15 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 custom_id="sword_fri_select"
             )
             self.selects["Sword Trial"] = {"wed": wed_select, "fri": fri_select}
+            
+            if Label:
+                self.add_item(Label(
+                    label="⚔️ Sword Trial Friday Time",
+                    description="description: times in server time (UTC+1)",
+                    child=fri_select
+                ))
+            else:
+                self.add_item(fri_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission - save all three events"""
@@ -323,19 +330,6 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
         event_info = events[event_name]
         timezone_display = cog.timezone_display
 
-        # Add header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content=f"Select your preferred times\nTimezone: {timezone_display}",
-                style=1
-            ))
-
-        # Generate time options
-        start_hour, end_hour = event_info["time_range"]
-        interval = event_info["interval"]
-        duration = event_info["duration"]
-        times = cog.generate_time_options(start_hour, end_hour, interval, duration, event_name)
-
         # Get current selections
         current_selections = user_selections.get(event_name)
 
@@ -356,7 +350,14 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 options=time_options,
                 custom_id="party_time_select"
             )
-            self.add_item(self.time_select)
+            if Label:
+                self.add_item(Label(
+                    label=f"🎉 {event_name}",
+                    description=f"times in server time (UTC+1)",
+                    child=self.time_select
+                ))
+            else:
+                self.add_item(self.time_select)
 
         elif event_info["type"] == "once":
             # Hero's Realm (Catch-up) - day + time selection
@@ -385,7 +386,14 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 options=day_options,
                 custom_id="hero_day_select"
             )
-            self.add_item(self.day_select)
+            if Label:
+                self.add_item(Label(
+                    label=f"🛡️ {event_name} Day",
+                    description="description: Monday - Saturday",
+                    child=self.day_select
+                ))
+            else:
+                self.add_item(self.day_select)
 
             # Time selection
             time_options = [
@@ -403,7 +411,14 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 options=time_options,
                 custom_id="hero_time_select"
             )
-            self.add_item(self.time_select)
+            if Label:
+                self.add_item(Label(
+                    label=f"🛡️ {event_name} Time",
+                    description="description: times in server time (UTC+1)",
+                    child=self.time_select
+                ))
+            else:
+                self.add_item(self.time_select)
 
         elif event_info["type"] == "fixed_days":
             # Sword Trial - multiple fixed days (Wed, Fri)
@@ -432,7 +447,14 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                     custom_id=f"sword_day_{idx}_select"
                 )
                 self.day_selects[day] = day_select
-                self.add_item(day_select)
+                if Label:
+                    self.add_item(Label(
+                        label=f"⚔️ {event_name} {day} Time",
+                        description="description: times in server time (UTC+1)",
+                        child=day_select
+                    ))
+                else:
+                    self.add_item(day_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission"""
@@ -545,13 +567,6 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         current_slot1 = current_selections[0] if len(current_selections) > 0 else None
         current_slot2 = current_selections[1] if len(current_selections) > 1 else None
 
-        # Slot 1 Day Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="⚡ Breaking Army Slot 1 Day\nMonday - Sunday",
-                style=1
-            ))
-
         # Slot 1 - Day
         day_options_1 = [
             discord.SelectOption(
@@ -568,14 +583,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=day_options_1,
             custom_id="ba_slot1_day_select"
         )
-        self.add_item(self.slot1_day_select)
-
-        # Slot 1 Time Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="⚡ Breaking Army Slot 1 Time\nTimes in Server Time (UTC+1)",
-                style=1
+        if Label:
+            self.add_item(Label(
+                label="⚡ Breaking Army Slot 1 Day",
+                description="Monday - Sunday",
+                child=self.slot1_day_select
             ))
+        else:
+            self.add_item(self.slot1_day_select)
 
         # Slot 1 - Time
         time_options_1 = [
@@ -593,14 +608,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=time_options_1,
             custom_id="ba_slot1_time_select"
         )
-        self.add_item(self.slot1_time_select)
-
-        # Slot 2 Day Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="⚡ Breaking Army Slot 2 Day\nMonday - Sunday",
-                style=1
+        if Label:
+            self.add_item(Label(
+                label="⚡ Breaking Army Slot 1 Time",
+                description="Times in Server Time (UTC+1)",
+                child=self.slot1_time_select
             ))
+        else:
+            self.add_item(self.slot1_time_select)
 
         # Slot 2 - Day
         day_options_2 = [
@@ -618,14 +633,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=day_options_2,
             custom_id="ba_slot2_day_select"
         )
-        self.add_item(self.slot2_day_select)
-
-        # Slot 2 Time Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="⚡ Breaking Army Slot 2 Time\nTimes in Server Time (UTC+1)",
-                style=1
+        if Label:
+            self.add_item(Label(
+                label="⚡ Breaking Army Slot 2 Day",
+                description="Monday - Sunday",
+                child=self.slot2_day_select
             ))
+        else:
+            self.add_item(self.slot2_day_select)
 
         # Slot 2 - Time
         time_options_2 = [
@@ -643,7 +658,14 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=time_options_2,
             custom_id="ba_slot2_time_select"
         )
-        self.add_item(self.slot2_time_select)
+        if Label:
+            self.add_item(Label(
+                label="⚡ Breaking Army Slot 2 Time",
+                description="Times in Server Time (UTC+1)",
+                child=self.slot2_time_select
+            ))
+        else:
+            self.add_item(self.slot2_time_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission"""
@@ -738,13 +760,6 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         current_slot1 = current_selections[0] if len(current_selections) > 0 else None
         current_slot2 = current_selections[1] if len(current_selections) > 1 else None
 
-        # Slot 1 Day Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="🏆 Showdown Slot 1 Day\nMonday - Sunday",
-                style=1
-            ))
-
         # Slot 1 - Day
         day_options_1 = [
             discord.SelectOption(
@@ -761,14 +776,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=day_options_1,
             custom_id="sd_slot1_day_select"
         )
-        self.add_item(self.slot1_day_select)
-
-        # Slot 1 Time Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="🏆 Showdown Slot 1 Time\nTimes in Server Time (UTC+1)",
-                style=1
+        if Label:
+            self.add_item(Label(
+                label="🏆 Showdown Slot 1 Day",
+                description="Monday - Sunday",
+                child=self.slot1_day_select
             ))
+        else:
+            self.add_item(self.slot1_day_select)
 
         # Slot 1 - Time
         time_options_1 = [
@@ -786,14 +801,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=time_options_1,
             custom_id="sd_slot1_time_select"
         )
-        self.add_item(self.slot1_time_select)
-
-        # Slot 2 Day Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="🏆 Showdown Slot 2 Day\nMonday - Sunday",
-                style=1
+        if Label:
+            self.add_item(Label(
+                label="🏆 Showdown Slot 1 Time",
+                description="Times in Server Time (UTC+1)",
+                child=self.slot1_time_select
             ))
+        else:
+            self.add_item(self.slot1_time_select)
 
         # Slot 2 - Day
         day_options_2 = [
@@ -811,14 +826,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=day_options_2,
             custom_id="sd_slot2_day_select"
         )
-        self.add_item(self.slot2_day_select)
-
-        # Slot 2 Time Header
-        if TextDisplay:
-            self.add_item(TextDisplay(
-                content="🏆 Showdown Slot 2 Time\nTimes in Server Time (UTC+1)",
-                style=1
+        if Label:
+            self.add_item(Label(
+                label="🏆 Showdown Slot 2 Day",
+                description="Monday - Sunday",
+                child=self.slot2_day_select
             ))
+        else:
+            self.add_item(self.slot2_day_select)
 
         # Slot 2 - Time
         time_options_2 = [
@@ -836,7 +851,14 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=time_options_2,
             custom_id="sd_slot2_time_select"
         )
-        self.add_item(self.slot2_time_select)
+        if Label:
+            self.add_item(Label(
+                label="🏆 Showdown Slot 2 Time",
+                description="Times in Server Time (UTC+1)",
+                child=self.slot2_time_select
+            ))
+        else:
+            self.add_item(self.slot2_time_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission"""
