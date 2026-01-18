@@ -445,6 +445,10 @@ class CalendarRenderer:
         from datetime import datetime, timedelta
         for event_name, event_info in events.items():
             if event_info.get("type") == "locked":
+                # Skip if already added via winning_times (to avoid duplicates)
+                if event_name in winning_times:
+                    continue
+
                 fixed_time_str = event_info.get("fixed_time")
                 event_days = event_info.get("days", [])
                 duration = event_info.get("duration", 30)
