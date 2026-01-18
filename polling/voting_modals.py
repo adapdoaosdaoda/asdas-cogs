@@ -41,6 +41,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
         self.days = days or ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
         timezone_display = cog.timezone_display
+        
+        # Dynamically resolve Label class to handle load order issues
+        Label_cls = Label or getattr(discord.ui, "Label", None)
 
         # Track which selects we create
         self.selects = {}
@@ -74,8 +77,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             )
             self.selects["Party"] = {"time": party_select}
             
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label="🎉 Party",
                     description="times in server time (UTC+1)",
                     child=party_select
@@ -120,8 +123,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 custom_id="hero_day_select"
             )
             
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label="🛡️ Hero's Realm (Catch-up) Day",
                     description="description: Monday - Saturday",
                     child=hero_day_select
@@ -147,8 +150,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             )
             self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
             
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label="🛡️ Hero's Realm (Catch-up) Time",
                     description="description: times in server time (UTC+1)",
                     child=hero_time_select
@@ -193,8 +196,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
                 custom_id="sword_wed_select"
             )
             
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label="⚔️ Sword Trial Wednesday Time",
                     description="description: times in server time (UTC+1)",
                     child=wed_select
@@ -220,8 +223,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
             )
             self.selects["Sword Trial"] = {"wed": wed_select, "fri": fri_select}
             
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label="⚔️ Sword Trial Friday Time",
                     description="description: times in server time (UTC+1)",
                     child=fri_select
@@ -332,6 +335,9 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
         # Get current selections
         current_selections = user_selections.get(event_name)
+        
+        # Dynamically resolve Label class to handle load order issues
+        Label_cls = Label or getattr(discord.ui, "Label", None)
 
         if event_info["type"] == "daily":
             # Party - single time selection
@@ -350,8 +356,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 options=time_options,
                 custom_id="party_time_select"
             )
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label=f"🎉 {event_name}",
                     description=f"times in server time (UTC+1)",
                     child=self.time_select
@@ -386,8 +392,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 options=day_options,
                 custom_id="hero_day_select"
             )
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label=f"🛡️ {event_name} Day",
                     description="description: Monday - Saturday",
                     child=self.day_select
@@ -411,8 +417,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 options=time_options,
                 custom_id="hero_time_select"
             )
-            if Label:
-                self.add_item(Label(
+            if Label_cls:
+                self.add_item(Label_cls(
                     label=f"🛡️ {event_name} Time",
                     description="description: times in server time (UTC+1)",
                     child=self.time_select
@@ -447,8 +453,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                     custom_id=f"sword_day_{idx}_select"
                 )
                 self.day_selects[day] = day_select
-                if Label:
-                    self.add_item(Label(
+                if Label_cls:
+                    self.add_item(Label_cls(
                         label=f"⚔️ {event_name} {day} Time",
                         description="description: times in server time (UTC+1)",
                         child=day_select
@@ -566,6 +572,9 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         current_selections = user_selections.get(event_name, [None, None])
         current_slot1 = current_selections[0] if len(current_selections) > 0 else None
         current_slot2 = current_selections[1] if len(current_selections) > 1 else None
+        
+        # Dynamically resolve Label class to handle load order issues
+        Label_cls = Label or getattr(discord.ui, "Label", None)
 
         # Slot 1 - Day
         day_options_1 = [
@@ -583,8 +592,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=day_options_1,
             custom_id="ba_slot1_day_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="⚡ Breaking Army Slot 1 Day",
                 description="Monday - Sunday",
                 child=self.slot1_day_select
@@ -608,8 +617,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=time_options_1,
             custom_id="ba_slot1_time_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="⚡ Breaking Army Slot 1 Time",
                 description="Times in Server Time (UTC+1)",
                 child=self.slot1_time_select
@@ -633,8 +642,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=day_options_2,
             custom_id="ba_slot2_day_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="⚡ Breaking Army Slot 2 Day",
                 description="Monday - Sunday",
                 child=self.slot2_day_select
@@ -658,8 +667,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             options=time_options_2,
             custom_id="ba_slot2_time_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="⚡ Breaking Army Slot 2 Time",
                 description="Times in Server Time (UTC+1)",
                 child=self.slot2_time_select
@@ -759,6 +768,9 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         current_selections = user_selections.get(event_name, [None, None])
         current_slot1 = current_selections[0] if len(current_selections) > 0 else None
         current_slot2 = current_selections[1] if len(current_selections) > 1 else None
+        
+        # Dynamically resolve Label class to handle load order issues
+        Label_cls = Label or getattr(discord.ui, "Label", None)
 
         # Slot 1 - Day
         day_options_1 = [
@@ -776,8 +788,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=day_options_1,
             custom_id="sd_slot1_day_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="🏆 Showdown Slot 1 Day",
                 description="Monday - Sunday",
                 child=self.slot1_day_select
@@ -801,8 +813,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=time_options_1,
             custom_id="sd_slot1_time_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="🏆 Showdown Slot 1 Time",
                 description="Times in Server Time (UTC+1)",
                 child=self.slot1_time_select
@@ -826,8 +838,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=day_options_2,
             custom_id="sd_slot2_day_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="🏆 Showdown Slot 2 Day",
                 description="Monday - Sunday",
                 child=self.slot2_day_select
@@ -851,8 +863,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             options=time_options_2,
             custom_id="sd_slot2_time_select"
         )
-        if Label:
-            self.add_item(Label(
+        if Label_cls:
+            self.add_item(Label_cls(
                 label="🏆 Showdown Slot 2 Time",
                 description="Times in Server Time (UTC+1)",
                 child=self.slot2_time_select
