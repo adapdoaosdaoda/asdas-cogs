@@ -5,9 +5,20 @@ Requires ModalPatch cog to be loaded for Select support in Modals.
 """
 
 import discord
-from discord.ui import Modal, Select
+from discord.ui import Modal
 from typing import Dict, List, Optional
 import logging
+
+# --- Compatibility Shim Start ---
+try:
+    # Attempt to import modern components (discord.py 2.3+)
+    from discord.ui import StringSelect
+except ImportError:
+    # Fallback for legacy components (discord.py 2.0 - 2.2)
+    # In these versions, 'Select' is the class for String Selects.
+    # We alias it to 'StringSelect' to maintain forward compatibility.
+    from discord.ui import Select as StringSelect
+# --- Compatibility Shim End ---
 
 log = logging.getLogger("red.asdas-cogs.polling")
 
@@ -85,7 +96,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 )
             )
 
-        select = Select(
+        select = StringSelect(
             placeholder=f"{emoji} {event_name} - Choose time ({tz})",
             options=options,
             custom_id=f"vote_{event_name}",
@@ -136,7 +147,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             if len(options) >= 25:
                 break
 
-        select = Select(
+        select = StringSelect(
             placeholder=f"{emoji} {event_name} - Choose day+time ({tz})",
             options=options,
             custom_id=f"vote_{event_name}",
@@ -187,7 +198,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             if len(options) >= 25:
                 break
 
-        select = Select(
+        select = StringSelect(
             placeholder=f"{emoji} {event_name} - Choose up to 2 slots ({tz})",
             options=options,
             custom_id=f"vote_{event_name}",
@@ -205,7 +216,7 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
             parsed_selections = {}
 
             for child in self.children:
-                if not isinstance(child, Select):
+                if not isinstance(child, StringSelect):
                     continue
 
                 if not child.values:

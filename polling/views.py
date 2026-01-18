@@ -3,6 +3,17 @@ from typing import Optional, Dict, List
 from datetime import datetime
 import logging
 
+# --- Compatibility Shim Start ---
+try:
+    # Attempt to import modern components (discord.py 2.3+)
+    from discord.ui import StringSelect
+except ImportError:
+    # Fallback for legacy components (discord.py 2.0 - 2.2)
+    # In these versions, 'Select' is the class for String Selects.
+    # We alias it to 'StringSelect' to maintain forward compatibility.
+    from discord.ui import Select as StringSelect
+# --- Compatibility Shim End ---
+
 log = logging.getLogger("red.asdas-cogs.polling")
 
 
@@ -247,7 +258,7 @@ class PartyModal(discord.ui.View):
                     )
                 )
 
-            time_select = discord.ui.Select(
+            time_select = StringSelect(
                 placeholder=f"Choose a time ({time_chunk[0]} - {time_chunk[-1]}) {timezone_display}",
                 options=time_options,
                 custom_id=f"time_select:{chunk_idx}",
@@ -493,7 +504,7 @@ class FixedDaysModal(discord.ui.View):
                     )
                 )
 
-            day_select = discord.ui.Select(
+            day_select = StringSelect(
                 placeholder=f"{day[:3]} - Choose a time... {timezone_display}",
                 options=time_options,
                 custom_id=f"day_select:{day}",
@@ -759,7 +770,7 @@ class WeeklyEventModal(discord.ui.View):
                 )
             )
 
-        slot1_day_select = discord.ui.Select(
+        slot1_day_select = StringSelect(
             placeholder="Slot 1: Choose a day...",
             options=day_options_1,
             custom_id="slot1_day_select",
@@ -780,7 +791,7 @@ class WeeklyEventModal(discord.ui.View):
                 )
             )
 
-        slot1_time_select = discord.ui.Select(
+        slot1_time_select = StringSelect(
             placeholder=f"Slot 1: Choose a time... {timezone_display}",
             options=time_options_1,
             custom_id="slot1_time_select",
@@ -801,7 +812,7 @@ class WeeklyEventModal(discord.ui.View):
                 )
             )
 
-        slot2_day_select = discord.ui.Select(
+        slot2_day_select = StringSelect(
             placeholder="Slot 2: Choose a day...",
             options=day_options_2,
             custom_id="slot2_day_select",
@@ -822,7 +833,7 @@ class WeeklyEventModal(discord.ui.View):
                 )
             )
 
-        slot2_time_select = discord.ui.Select(
+        slot2_time_select = StringSelect(
             placeholder=f"Slot 2: Choose a time... {timezone_display}",
             options=time_options_2,
             custom_id="slot2_time_select",
