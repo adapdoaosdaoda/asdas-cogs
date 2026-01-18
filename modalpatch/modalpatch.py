@@ -239,6 +239,60 @@ async def _patched_refresh(self, interaction: discord.Interaction):
 # Cog Implementation
 # ==============================================================================
 
+class RichTestModal(Modal, title="Rich Modal Test"):
+    def __init__(self):
+        super().__init__()
+        
+        # 1. Header: TextDisplay
+        self.header = TextDisplay(
+            content="Please configure your role",
+            style=1 # Primary/Blurple style if supported by client for TextDisplay
+        )
+        self.add_item(self.header)
+
+        # 2. Body: RoleSelect (Auto-boxed)
+        self.role_select = RoleSelect(
+            placeholder="Select a Role",
+            min_values=1,
+            max_values=1,
+            custom_id="test_role_select" # explicit ID
+        )
+        self.add_item(self.role_select)
+
+        # 3. Footer: TextInput
+        self.reason = TextInput(
+            label="Reason",
+            placeholder="Why are you selecting this?",
+            custom_id="test_reason_input"
+        )
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Callback: Echo results
+        selected_role_ids = []
+        if self.role_select.values:
+            # RoleSelect values are typically objects in some contexts or IDs in others depending on hydration
+            # discord.py Selects usually hydrate .values with the selected strings/IDs
+            selected_role_ids = self.role_select.values
+        
+        reason_val = self.reason.value
+
+        await interaction.response.send_message(
+            f"**Success!**\n"
+            f"Selected Role IDs: `{selected_role_ids}`\n"
+            f"Reason: `{reason_val}`",
+            ephemeral=True
+        )
+
+class ModalLauncher(View):
+    def __init__(self):
+        super().__init__(timeout=60)
+
+    @discord.ui.button(label="Open Form", style=discord.ButtonStyle.primary, emoji="📝")
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # The interaction from the button click carries the token needed for the Modal
+        await interaction.response.send_modal(RichTestModal())
+
 class ModalPatch(commands.Cog):
     """
     Cog to enable and manage Rich Modal patches.
@@ -289,54 +343,7 @@ class ModalPatch(commands.Cog):
     @commands.is_owner()
     async def modal_test(self, ctx: commands.Context):
         """
-        Debug command to verify Rich Modal functionality.
+        Launches the modal via a button bridge to ensure API v10 compliance.
         """
-        
-        # Define the Test Modal
-        class RichModal(Modal, title="Rich Modal Test"):
-            def __init__(self):
-                super().__init__()
-                
-                # 1. Header: TextDisplay
-                self.header = TextDisplay(
-                    content="Please configure your role",
-                    style=1 # Primary/Blurple style if supported by client for TextDisplay
-                )
-                self.add_item(self.header)
-
-                # 2. Body: RoleSelect (Auto-boxed)
-                self.role_select = RoleSelect(
-                    placeholder="Select a Role",
-                    min_values=1,
-                    max_values=1,
-                    custom_id="test_role_select" # explicit ID
-                )
-                self.add_item(self.role_select)
-
-                # 3. Footer: TextInput
-                self.reason = TextInput(
-                    label="Reason",
-                    placeholder="Why are you selecting this?",
-                    custom_id="test_reason_input"
-                )
-                self.add_item(self.reason)
-
-            async def on_submit(self, interaction: discord.Interaction):
-                # Callback: Echo results
-                selected_role_ids = []
-                if self.role_select.values:
-                    # RoleSelect values are typically objects in some contexts or IDs in others depending on hydration
-                    # discord.py Selects usually hydrate .values with the selected strings/IDs
-                    selected_role_ids = self.role_select.values
-                
-                reason_val = self.reason.value
-
-                await interaction.response.send_message(
-                    f"**Success!**\n"
-                    f"Selected Role IDs: `{selected_role_ids}`\n"
-                    f"Reason: `{reason_val}`",
-                    ephemeral=True
-                )
-
-        # Send the modal
-        await ctx.send_modal(RichModal())
+        view = ModalLauncher()
+        await ctx.send("To access the modal, please click the button below:", view=view)
