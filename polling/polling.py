@@ -32,6 +32,13 @@ class EventPolling(commands.Cog):
             force_registration=True,
         )
 
+        # Check if ModalPatch cog is loaded
+        self.modalpatch_available = bot.get_cog("ModalPatch") is not None
+        if self.modalpatch_available:
+            log.info("ModalPatch cog detected - rich modal features enabled")
+        else:
+            log.info("ModalPatch cog not found - using standard modals")
+
         # Store polls per guild
         self.config.register_guild(
             polls={},  # poll_id -> poll data
@@ -40,24 +47,23 @@ class EventPolling(commands.Cog):
         # Event definitions (ordered: Hero's Realm, Sword Trial, Party, Breaking Army, Showdown)
         # Priority order for calendar display (higher number = higher priority)
         self.events = {
-            "Hero's Realm": {
-                "type": "fixed_days",
-                "days": ["Friday", "Sunday"],
+            "Catch Up Hero's Realm": {
+                "type": "daily",  # Changed to daily for Monday-Saturday single time
                 "time_range": (17, 26),  # 17:00 to 02:00 (26 = 02:00 next day)
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 2,  # 2 slots: Friday and Sunday only
+                "slots": 1,  # Single time slot
                 "color": discord.Color.greyple(),
                 "emoji": "🛡️",
                 "priority": 4  # Highest priority
             },
             "Sword Trial": {
                 "type": "fixed_days",
-                "days": ["Friday", "Sunday"],
+                "days": ["Wednesday", "Friday"],  # Changed to Wednesday and Friday
                 "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 2,  # 2 slots: Friday and Sunday only
+                "slots": 2,  # 2 slots: Wednesday and Friday only
                 "color": discord.Color.greyple(),
                 "emoji": "⚔️",
                 "priority": 3
@@ -94,17 +100,44 @@ class EventPolling(commands.Cog):
             }
         }
 
-        # Guild Wars - blocked time event (Sat & Sun 20:30-22:00)
+        # Guild Wars - blocked time event (Sat 20:30-23:00)
         self.guild_wars_emoji = "🏰"
 
         self.days_of_week = [
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Saturday 20:30 - 22:30, Sunday 20:30 - 22:00
+        # Locked/Fixed time events (non-voteable, always appear in calendar)
+        self.locked_events = [
+            {
+                "name": "Guild War",
+                "emoji": "🏰",
+                "day": "Saturday",
+                "start": "20:30",
+                "end": "23:00",
+                "priority": 5  # High priority for display
+            },
+            {
+                "name": "Sword Trial",
+                "emoji": "⚔️",
+                "day": "Sunday",
+                "start": "22:30",
+                "end": "23:00",  # 30 min duration
+                "priority": 3
+            },
+            {
+                "name": "Catch Up Hero's Realm",
+                "emoji": "🛡️",
+                "day": "Sunday",
+                "start": "22:00",
+                "end": "22:30",  # 30 min duration
+                "priority": 4
+            }
+        ]
+
+        # Blocked time slots (for conflict detection, derived from locked events)
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "22:30"},
-            {"day": "Sunday", "start": "20:30", "end": "22:00"}
+            {"day": "Saturday", "start": "20:30", "end": "23:00"}
         ]
 
         # Event-specific blocked time periods (applies to all days for these events)
@@ -1956,15 +1989,20 @@ class EventPolling(commands.Cog):
             selections = polls[poll_id].get("selections", {})
 
         # Show event info at the top
+        locked_events_text = "\n".join([
+            f"{evt['emoji']} **{evt['name']}** - {evt['day']} {evt['start']}-{evt['end']} (locked)"
+            for evt in self.locked_events
+        ])
+
         embed.add_field(
             name="📋 Events",
             value=(
-                "🛡️ **Hero's Realm** - Wed/Fri/Sat/Sun (30 min)\n"
-                "⚔️ **Sword Trial** - Wed/Fri/Sat/Sun (30 min)\n"
+                "🛡️ **Catch Up Hero's Realm** - Mon-Sat single time (30 min)\n"
+                "⚔️ **Sword Trial** - Wed/Fri (30 min)\n"
                 "🎉 **Party** - Daily (10 min)\n"
                 "⚡ **Breaking Army** - Weekly (60 min, 2 slots)\n"
                 "🏆 **Showdown** - Weekly (60 min, 2 slots)\n\n"
-                "🏰 **Guild War** - Sat & Sun 20:30-22:00 (blocked)"
+                f"**Locked Events:**\n{locked_events_text}"
             ),
             inline=False
         )
