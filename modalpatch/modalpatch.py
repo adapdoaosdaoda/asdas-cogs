@@ -69,6 +69,42 @@ class TextDisplay(Item):
         pass
 
 
+class Label(Item):
+    """
+    Represents a Label wrapper component (Type 10).
+    Schema: type: 10, content (str), components (list of 1 child).
+    Used for Auto-Boxing Selects.
+    """
+    def __init__(self, label: str, child: Item):
+        super().__init__()
+        self.label = label
+        self.child = child
+        self._row = None
+
+    @property
+    def type(self) -> discord.ComponentType:
+        return discord.ComponentType(10)
+
+    def to_component_dict(self) -> Dict[str, Any]:
+        child_payload = self.child.to_component_dict()
+        
+        # Sanitize: Remove disabled fields from Selects inside Modals
+        if isinstance(self.child, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
+            child_payload.pop("disabled", None)
+
+        return {
+            "type": 10,
+            "content": self.label or " ", # Ensure content is never empty
+            "components": [child_payload]
+        }
+
+    def refresh_component(self, component: Any) -> None:
+        pass
+
+    def refresh_state(self, interaction: discord.Interaction) -> None:
+        pass
+
+
 # ==============================================================================
 # Monkey-Patching Logic
 # ==============================================================================
@@ -97,7 +133,7 @@ def _patched_add_item(self, item: Item):
 
 def _patched_to_dict(self):
     """
-    Patched serialization to handle Selects and strict Schema compliance.
+    Patched serialization to handle Auto-Boxing of Selects and strict Schema compliance.
     """
     payload = {
         'title': self.title,
@@ -107,25 +143,19 @@ def _patched_to_dict(self):
 
     for item in self._children:
         if isinstance(item, (StringSelect, RoleSelect, ChannelSelect, UserSelect, MentionableSelect)):
-            # Direct Select Serialization wrapped in ActionRow (Type 1)
-            # discord.py's Selects return Type 3/5/6/7/8 payload.
-            # Modals require these to be top-level in an ActionRow.
-            item_payload = item.to_component_dict()
+            # Auto-Boxing: Wrap Select in Label
+            # Using a default label if one isn't clearly associated, or empty string.
+            # The prompt implies the Select acts as the body. 
+            # We wrap it in the Label structure as requested.
+            # Using the placeholder as the label if available, else generic.
+            label_text = getattr(item, 'placeholder', None) or "Select Option"
             
-            # Ensure required/disabled are passed if supported/set
-            # (Selects generally default these, but explicit checks help)
-            # Note: 2.6.4 report says 'required' is now supported for Selects.
-            
-            payload['components'].append({
-                'type': 1,
-                'components': [item_payload]
-            })
+            # Create a temporary Label wrapper just for serialization
+            wrapper = Label(label=label_text, child=item)
+            payload['components'].append(wrapper.to_component_dict())
             
         elif isinstance(item, TextDisplay):
-            # Serialize TextDisplay directly (Type 10) - Assuming this is still valid/desired
-            # based on previous context, or if it should also be in ActionRow?
-            # Report didn't explicitly ban Type 10, but TextInputs/Selects are Type 1 wrapped.
-            # We will assume TextDisplay is a valid top-level or row-level item for now.
+            # Serialize TextDisplay directly (Type 10)
             payload['components'].append(item.to_component_dict())
             
         elif isinstance(item, TextInput):
@@ -138,7 +168,7 @@ def _patched_to_dict(self):
                 'components': [item.to_component_dict()]
             })
         else:
-            # Fallback for other items
+            # Fallback for other items (like the Label class if added directly)
             payload['components'].append(item.to_component_dict())
 
     return payload
@@ -280,6 +310,9 @@ class ModalPatch(commands.Cog):
             # Inject Classes into discord.ui if missing
             if not hasattr(discord.ui, 'TextDisplay'):
                 setattr(discord.ui, 'TextDisplay', TextDisplay)
+            
+            if not hasattr(discord.ui, 'Label'):
+                setattr(discord.ui, 'Label', Label)
 
             # Apply Monkey Patches
             Modal.add_item = _patched_add_item
