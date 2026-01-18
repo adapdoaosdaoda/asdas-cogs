@@ -38,27 +38,52 @@ class EventPolling(commands.Cog):
         # Event definitions (ordered: Hero's Realm, Sword Trial, Party, Breaking Army, Showdown)
         # Priority order for calendar display (higher number = higher priority)
         self.events = {
-            "Hero's Realm": {
+            "Hero's Realm (Catch-up)": {
                 "type": "fixed_days",
-                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
+                "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
                 "time_range": (17, 26),  # 17:00 to 02:00 (26 = 02:00 next day)
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
+                "slots": 6,  # 6 slots: one for each day (Mon-Sat)
                 "color": discord.Color.greyple(),
                 "emoji": "🛡️",
-                "priority": 4  # Highest priority
+                "priority": 5,  # Highest priority
+                "default_times": {
+                    "Friday": "22:00"
+                }
+            },
+            "Hero's Realm (Reset)": {
+                "type": "locked",
+                "days": ["Sunday"],
+                "fixed_time": "22:00",
+                "duration": 30,  # 30 minutes
+                "color": discord.Color.greyple(),
+                "emoji": "🛡️",
+                "priority": 5
             },
             "Sword Trial": {
                 "type": "fixed_days",
-                "days": ["Wednesday", "Friday", "Saturday", "Sunday"],
+                "days": ["Wednesday", "Friday"],
                 "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,
                 "duration": 30,  # 30 minutes
-                "slots": 4,  # 4 slots: one for each day (Wed, Fri, Sat, Sun)
+                "slots": 2,  # 2 slots: one for each day (Wed, Fri)
                 "color": discord.Color.greyple(),
                 "emoji": "⚔️",
-                "priority": 3
+                "priority": 4,
+                "default_times": {
+                    "Wednesday": "22:30",
+                    "Friday": "22:30"
+                }
+            },
+            "Sword Trial (Echo)": {
+                "type": "locked",
+                "days": ["Sunday"],
+                "fixed_time": "22:30",
+                "duration": 30,  # 30 minutes
+                "color": discord.Color.greyple(),
+                "emoji": "⚔️",
+                "priority": 4
             },
             "Party": {
                 "type": "daily",
@@ -68,7 +93,10 @@ class EventPolling(commands.Cog):
                 "slots": 1,  # Single time slot
                 "color": discord.Color.green(),
                 "emoji": "🎉",
-                "priority": 0  # Lowest priority
+                "priority": 0,  # Lowest priority
+                "default_times": {
+                    "default": "20:00"
+                }
             },
             "Breaking Army": {
                 "type": "once",
@@ -78,7 +106,11 @@ class EventPolling(commands.Cog):
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.blue(),
                 "emoji": "⚡",
-                "priority": 2
+                "priority": 2,
+                "default_times": {
+                    "Wednesday": "19:30",
+                    "Saturday": "19:30"
+                }
             },
             "Showdown": {
                 "type": "once",
@@ -88,7 +120,11 @@ class EventPolling(commands.Cog):
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color.red(),
                 "emoji": "🏆",
-                "priority": 1
+                "priority": 1,
+                "default_times": {
+                    "Wednesday": "18:30",
+                    "Saturday": "18:30"
+                }
             }
         }
 
@@ -99,9 +135,9 @@ class EventPolling(commands.Cog):
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Saturday and Sunday 20:30 - 22:00
+        # Blocked time slots: Saturday 20:30 - 23:00 and Sunday 20:30 - 22:00
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "22:00"},
+            {"day": "Saturday", "start": "20:30", "end": "23:00"},
             {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
@@ -2278,9 +2314,20 @@ class EventPolling(commands.Cog):
         all_times = self.generate_time_options(17, 26, 30)
 
         for event_name, event_info in self.events.items():
-            num_slots = event_info["slots"]
+            num_slots = event_info.get("slots", 1)
             winning_times[event_name] = {}
             log.info(f"Processing event: {event_name} (type: {event_info['type']}, slots: {num_slots})")
+
+            # Handle locked events - fixed time, no voting
+            if event_info["type"] == "locked":
+                fixed_time = event_info.get("fixed_time")
+                days = event_info.get("days", [])
+                if fixed_time and days:
+                    # Locked events only have one slot (the fixed time on the specified day)
+                    day = days[0]
+                    winning_times[event_name][0] = ((day, fixed_time), 9999, [])  # High points to ensure priority
+                    log.info(f"  Locked event: {day} at {fixed_time}")
+                continue
 
             # Special handling for weekly events with multiple slots (Breaking Army, Showdown)
             # Pool all votes together and select top 2
@@ -2425,6 +2472,54 @@ class EventPolling(commands.Cog):
 
                         winner_key, winner_points = sorted_entries[0]
                         winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
+                    else:
+                        # Auto-populate with default times if no votes
+                        defaults = event_info.get("default_times", {})
+                        if defaults:
+                            default_winner = None
+
+                            if event_info["type"] == "daily":
+                                if "default" in defaults:
+                                    default_winner = (("Daily", defaults["default"]), 0, [])
+
+                            elif event_info["type"] == "fixed_days":
+                                if event_info["slots"] > 1:
+                                    if slot_index < len(event_info.get("days", [])):
+                                        day_name = event_info["days"][slot_index]
+                                        if day_name in defaults:
+                                            default_winner = ((day_name, defaults[day_name]), 0, [])
+                                else:
+                                    if "default" in defaults:
+                                        default_winner = (("Fixed", defaults["default"]), 0, [])
+                                    elif defaults:
+                                        # Use the first available default
+                                        key = list(defaults.keys())[0]
+                                        default_winner = (("Fixed", defaults[key]), 0, [])
+
+                            else:
+                                # For once/weekly types, map slots to sorted defaults
+                                def get_day_index(d):
+                                    try:
+                                        return self.days_of_week.index(d)
+                                    except ValueError:
+                                        return 999
+
+                                sorted_defaults = sorted(
+                                    [(k, v) for k, v in defaults.items() if k != "default"],
+                                    key=lambda x: get_day_index(x[0])
+                                )
+
+                                if num_slots > 1:
+                                    if slot_index < len(sorted_defaults):
+                                        day, time = sorted_defaults[slot_index]
+                                        default_winner = ((day, time), 0, [])
+                                elif sorted_defaults:
+                                    day, time = sorted_defaults[0]
+                                    default_winner = ((day, time), 0, [])
+
+                            if default_winner:
+                                winning_times[event_name][slot_index] = default_winner
+                                log.info(f"  Slot {slot_index}: Auto-populated default {default_winner[0]}")
 
         # Resolve conflicts between events based on priority
         winning_times = self._resolve_event_conflicts(winning_times)

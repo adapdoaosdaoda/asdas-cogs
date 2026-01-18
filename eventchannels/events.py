@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import discord
 from redbot.core import commands
 
+from .timing import calculate_extended_delete_time, format_extension_message, EXTENSION_HOURS
+
 log = logging.getLogger("red.eventchannels")
 
 
@@ -293,15 +295,14 @@ class EventsMixin:
                 tz=timezone.utc
             )
 
-            # Extend by 4 hours
-            from datetime import timedelta
-            new_delete_time = current_delete_time + timedelta(hours=4)
+            # Extend deletion time
+            new_delete_time = calculate_extended_delete_time(current_delete_time)
 
             # Update the stored deletion time
             deletion_extensions[event_id_str]["delete_time"] = new_delete_time.timestamp()
             await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
 
-            log.info(f"Extended deletion time for event {event_id_str} by 4 hours to {new_delete_time}")
+            log.info(f"Extended deletion time for event {event_id_str} by {EXTENSION_HOURS} hours to {new_delete_time}")
 
         # Get the channel and update the warning message
         text_channel_id = deletion_extensions[event_id_str].get("text_channel_id")
@@ -319,7 +320,7 @@ class EventsMixin:
                     hours = int(time_until_deletion.total_seconds() // 3600)
                     minutes = int((time_until_deletion.total_seconds() % 3600) // 60)
 
-                    extension_msg = f"\n\n⏰ **Extended by {user_mention}**: Deletion postponed by 4 hours. Channels will now be deleted in approximately {hours}h {minutes}m."
+                    extension_msg = format_extension_message(user_mention, hours, minutes)
 
                     # Check if message already has an extension notification
                     if "⏰ **Extended by" in warning_message.content:
