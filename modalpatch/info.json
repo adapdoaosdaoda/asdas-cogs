@@ -1,19 +1,21 @@
 {
     "$schema": "https://raw.githubusercontent.com/Cog-Creators/Red-DiscordBot/V3/develop/schema/red_cog.schema.json",
     "author": ["adapdoaosdaoda"],
-    "description": "Experimental monkey-patch to enable Select components in discord.py Modals. This patches discord.py's Modal class to allow select menus, which is supported in discord.js but not yet officially supported in discord.py. Use at your own risk - this may break if Discord's API rejects select components in modals.",
-    "install_msg": "⚠️ **WARNING: EXPERIMENTAL COG** ⚠️\n\nThis cog monkey-patches discord.py to enable Select components in Modals.\n\n**IMPORTANT:**\n• This is experimental and may not work if Discord's API rejects select components\n• discord.js supports this feature, but discord.py does not officially\n• May break with discord.py updates\n• Load this cog BEFORE any cogs that use Modals with Selects\n\nUse `[p]load modalpatch` to activate the patch.",
-    "short": "Enable Select components in discord.py Modals (experimental)",
+    "name": "ModalPatch",
+    "description": "Demonstrates and enables Select components in discord.py Modals using the Label component introduced in discord.py 2.6. Shows how to properly wrap TextInput and Select components in Labels for use in modals, following Discord's official API specification.",
+    "install_msg": "✅ **ModalPatch Installed**\n\nThis cog demonstrates Select components in Modals using discord.py 2.6+ features.\n\n**Requirements:**\n• discord.py >= 2.6.0 (for discord.ui.Label support)\n• Red-DiscordBot >= 3.5.0\n\n**Features:**\n• Demonstrates Label-wrapped TextInput components\n• Demonstrates Label-wrapped Select components\n• Version compatibility checking\n\n**Commands:**\n• `[p]modalpatchstatus` - Check discord.py version compatibility\n• `[p]modalpatchtest` - Test modal with Label and Select components\n\n**Note:** As of discord.py 2.6, Select components must be wrapped in Label components to work in modals. This follows Discord's official API specification.",
+    "short": "Demonstrates Select components in discord.py 2.6+ Modals using Labels",
     "tags": [
         "utility",
         "modal",
-        "patch",
-        "experimental",
-        "discord.py"
+        "select",
+        "label",
+        "discord.py",
+        "demo"
     ],
     "requirements": [],
     "min_bot_version": "3.5.0",
     "min_python_version": [3, 8, 0],
     "type": "COG",
-    "end_user_data_statement": "This cog does not store any user data. It only patches discord.py's Modal class."
+    "end_user_data_statement": "This cog does not store any user data. It only demonstrates modal component usage."
 }

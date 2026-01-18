@@ -1,17 +1,20 @@
 """
-ModalPatch - Experimental monkey-patch for discord.py Modal Select support
+ModalPatch - Demonstrates discord.py 2.6+ Modal Select and Label support
 
-This cog patches discord.py's Modal class to enable Select components,
-which are supported in discord.js but not officially in discord.py.
+This cog demonstrates the proper use of discord.ui.Label and discord.ui.Select
+in modals, which is officially supported as of discord.py 2.6.0.
 
-WARNING: This is experimental and may break if:
-1. Discord's API rejects select components in modals
-2. discord.py updates change Modal implementation
-3. Other cogs depend on original Modal behavior
+Note: As of discord.py 2.6, Select components can be used in modals when
+wrapped in Label components. TextInput.label is deprecated in favor of
+using discord.ui.Label.
+
+Requirements:
+- discord.py >= 2.6.0
+- Red-DiscordBot >= 3.5.0
 """
 
 import discord
-from discord.ui import Modal, Select
+from discord.ui import Modal, Select, Label, TextInput
 from redbot.core import commands
 import logging
 from typing import Any, Optional
@@ -20,128 +23,83 @@ log = logging.getLogger("red.asdas-cogs.modalpatch")
 
 
 class ModalPatch(commands.Cog):
-    """Experimental patch to enable Select components in discord.py Modals"""
+    """Demonstrates Select components in discord.py Modals using Labels"""
 
     def __init__(self, bot):
         self.bot = bot
-        self._original_modal_refresh = None
-        self._patched = False
-        self._apply_patch()
-
-    def _apply_patch(self):
-        """Apply monkey-patch to discord.ui.Modal"""
-        if self._patched:
-            log.warning("Modal patch already applied, skipping")
-            return
-
-        try:
-            # Store original _refresh method
-            self._original_modal_refresh = Modal._refresh
-
-            # Create patched _refresh method
-            def patched_refresh(modal_self, components):
-                """
-                Patched _refresh to handle both TextInput (type 4) and Select components (types 3, 5-8)
-
-                Component types:
-                - 4: TextInput (officially supported)
-                - 3: String Select
-                - 5: User Select
-                - 6: Role Select
-                - 7: Mentionable Select
-                - 8: Channel Select
-                """
-                for component in components:
-                    if component['type'] == 1:  # Action Row
-                        for child in component.get('components', []):
-                            custom_id = child.get('custom_id')
-                            component_type = child.get('type')
-
-                            if custom_id is None:
-                                continue
-
-                            # Find the matching child in the modal
-                            for item in modal_self.children:
-                                if item.custom_id != custom_id:
-                                    continue
-
-                                # Handle TextInput (type 4) - original behavior
-                                if component_type == 4:
-                                    item.value = child.get('value')
-
-                                # Handle Select components (types 3, 5-8) - NEW
-                                elif component_type in (3, 5, 6, 7, 8) and isinstance(item, discord.ui.Select):
-                                    # Select components return 'values' array instead of 'value' string
-                                    selected_values = child.get('values', [])
-                                    if selected_values:
-                                        # Update the select's values
-                                        item.values = selected_values
-                                        # Also set a 'value' attribute for easier access (first selected value)
-                                        item.value = selected_values[0] if len(selected_values) == 1 else selected_values
-
-                                break
-
-            # Apply the patch
-            Modal._refresh = patched_refresh
-            self._patched = True
-            log.info("Successfully patched discord.ui.Modal to support Select components")
-
-        except Exception as e:
-            log.error(f"Failed to apply Modal patch: {e}", exc_info=True)
-            raise
-
-    def _remove_patch(self):
-        """Remove monkey-patch and restore original Modal behavior"""
-        if not self._patched:
-            return
-
-        try:
-            if self._original_modal_refresh:
-                Modal._refresh = self._original_modal_refresh
-                self._patched = False
-                log.info("Successfully removed Modal patch, restored original behavior")
-        except Exception as e:
-            log.error(f"Failed to remove Modal patch: {e}", exc_info=True)
+        log.info("ModalPatch cog initialized - discord.py 2.6+ Label/Select support")
 
     @commands.command()
     @commands.is_owner()
     async def modalpatchstatus(self, ctx):
-        """Check if the Modal patch is active"""
-        if self._patched:
-            await ctx.send(
-                "✅ Modal patch is **ACTIVE**\n"
-                "Select components should work in Modals.\n\n"
-                "**Note:** This is experimental. Discord's API may still reject select components."
-            )
-        else:
-            await ctx.send(
-                "❌ Modal patch is **NOT ACTIVE**\n"
-                "Select components will not work in Modals."
-            )
+        """Check discord.py version and Label/Select modal support"""
+        version = discord.__version__
+        version_parts = version.split('.')
+
+        try:
+            major = int(version_parts[0])
+            minor = int(version_parts[1]) if len(version_parts) > 1 else 0
+
+            has_label = hasattr(discord.ui, 'Label')
+
+            if major > 2 or (major == 2 and minor >= 6):
+                status = "✅ **Compatible**"
+                message = (
+                    f"{status}\n"
+                    f"discord.py version: `{version}`\n"
+                    f"Label support: {'✅ Available' if has_label else '⚠️ Not detected'}\n\n"
+                    f"Select components can be used in modals when wrapped in Label components."
+                )
+            else:
+                status = "❌ **Incompatible**"
+                message = (
+                    f"{status}\n"
+                    f"discord.py version: `{version}`\n"
+                    f"Required version: `2.6.0` or higher\n\n"
+                    f"Please update discord.py to use Select components in modals."
+                )
+        except (ValueError, IndexError):
+            message = f"⚠️ Could not parse discord.py version: `{version}`"
+
+        await ctx.send(message)
 
     @commands.command()
     @commands.is_owner()
     async def modalpatchtest(self, ctx):
-        """Test the Modal patch with a sample modal containing a select menu"""
+        """Test modal with Label-wrapped Select and TextInput components"""
 
-        class TestModal(discord.ui.Modal, title="Modal Select Test"):
-            """Test modal with a select component"""
-
-            # Regular text input (always supported)
-            name = discord.ui.TextInput(
-                label="Your Name",
-                placeholder="Enter your name...",
-                required=False,
-                max_length=50
+        # Check if Label is available
+        if not hasattr(discord.ui, 'Label'):
+            await ctx.send(
+                "❌ **Error**: discord.ui.Label not available.\n"
+                "This feature requires discord.py 2.6.0 or higher.\n"
+                f"Current version: `{discord.__version__}`"
             )
+            return
 
-            # Select menu (requires patch)
-            # Note: We create this in __init__ because Select needs to be added via add_item
+        class TestModal(Modal, title="Modal Select Test (discord.py 2.6+)"):
+            """Test modal with Label-wrapped components"""
+
             def __init__(self):
                 super().__init__()
 
-                # Add a string select menu
-                self.color_select = discord.ui.Select(
+                # Create a TextInput (no label parameter, using Label wrapper)
+                name_input = TextInput(
+                    placeholder="Enter your name...",
+                    required=False,
+                    max_length=50,
+                    custom_id="name_input"
+                )
+
+                # Wrap TextInput in Label
+                name_label = Label(
+                    label="Your Name",
+                    component=name_input
+                )
+                self.add_item(name_label)
+
+                # Create a Select menu
+                color_select = Select(
                     placeholder="Choose your favorite color",
                     options=[
                         discord.SelectOption(label="Red", value="red", emoji="🔴"),
@@ -151,29 +109,53 @@ class ModalPatch(commands.Cog):
                     ],
                     custom_id="color_select"
                 )
-                self.add_item(self.color_select)
+
+                # Wrap Select in Label (required for modals)
+                color_label = Label(
+                    label="Favorite Color",
+                    description="Select your favorite color from the dropdown",
+                    component=color_select
+                )
+                self.add_item(color_label)
+
+                # Store references for callback access
+                self.name_input = name_input
+                self.color_select = color_select
 
             async def on_submit(self, interaction: discord.Interaction):
                 """Handle modal submission"""
-                name_value = self.name.value or "Anonymous"
+                name_value = self.name_input.value or "Anonymous"
 
-                # Try to get the selected color
+                # Get selected color
                 try:
                     if hasattr(self.color_select, 'values') and self.color_select.values:
                         color_value = self.color_select.values[0]
-                        message = f"✅ **Patch Working!**\n\nName: {name_value}\nColor: {color_value}"
-                    elif hasattr(self.color_select, 'value') and self.color_select.value:
-                        color_value = self.color_select.value
-                        message = f"✅ **Patch Working!**\n\nName: {name_value}\nColor: {color_value}"
+                        emoji_map = {"red": "🔴", "blue": "🔵", "green": "🟢", "yellow": "🟡"}
+                        emoji = emoji_map.get(color_value, "")
+
+                        message = (
+                            f"✅ **Success!**\n\n"
+                            f"**Name:** {name_value}\n"
+                            f"**Color:** {emoji} {color_value.capitalize()}\n\n"
+                            f"_Select components work in modals with discord.py 2.6+_"
+                        )
                     else:
-                        message = f"⚠️ **Partial Success**\n\nName: {name_value}\nColor: No selection received (API may have rejected select component)"
+                        message = (
+                            f"⚠️ **Partial Success**\n\n"
+                            f"**Name:** {name_value}\n"
+                            f"**Color:** No selection detected\n\n"
+                            f"The select component may not have been properly submitted."
+                        )
                 except Exception as e:
-                    message = f"❌ **Patch Failed**\n\nName: {name_value}\nError: {str(e)}"
+                    message = (
+                        f"❌ **Error**\n\n"
+                        f"**Name:** {name_value}\n"
+                        f"**Error:** {str(e)}\n\n"
+                        f"Something went wrong processing the select component."
+                    )
+                    log.error(f"Modal submission error: {e}", exc_info=True)
 
                 await interaction.response.send_message(message, ephemeral=True)
-
-        # Send the modal
-        await ctx.send("Opening test modal... Check your DMs or look for the modal popup!")
 
         # Create a view with a button that opens the modal
         class ModalButton(discord.ui.View):
@@ -186,9 +168,15 @@ class ModalPatch(commands.Cog):
                 await interaction.response.send_modal(modal)
 
         view = ModalButton()
-        await ctx.send("Click the button below to open the test modal:", view=view)
+        await ctx.send(
+            "**Modal Select Test** (discord.py 2.6+)\n\n"
+            "This modal demonstrates:\n"
+            "• TextInput wrapped in Label\n"
+            "• Select menu wrapped in Label\n\n"
+            "Click the button below to open the test modal:",
+            view=view
+        )
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
-        self._remove_patch()
         log.info("ModalPatch cog unloaded")
