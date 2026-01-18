@@ -71,8 +71,8 @@ class TextDisplay(Item):
 
 class Label(Item):
     """
-    Represents a Label wrapper component (Type 10).
-    Schema: type: 10, content (str), components (list of 1 child).
+    Represents a Label wrapper component (Type 18).
+    Schema: type: 18, label (str), components (list of 1 child).
     Used for Auto-Boxing Selects.
     """
     def __init__(self, label: str, child: Item):
@@ -83,7 +83,7 @@ class Label(Item):
 
     @property
     def type(self) -> discord.ComponentType:
-        return discord.ComponentType(10)
+        return discord.ComponentType(18) # Type 18 is the V2 Container for Selects
 
     def to_component_dict(self) -> Dict[str, Any]:
         child_payload = self.child.to_component_dict()
@@ -93,8 +93,8 @@ class Label(Item):
             child_payload.pop("disabled", None)
 
         return {
-            "type": 10,
-            "content": self.label or "\u200b", # Ensure content is never empty (use ZWS)
+            "type": 18,
+            "label": self.label or " ", 
             "components": [child_payload]
         }
 
@@ -151,10 +151,9 @@ def _patched_to_dict(self):
             label_text = getattr(item, 'placeholder', None) or "Select Option"
             
             # Create a temporary Label wrapper just for serialization
-            # IMPORTANT: The 'label' argument to Label() becomes the 'content' field.
-            # Setting this to a Zero Width Space (\u200b) prevents it from rendering as a text block
-            # while satisfying the API's minimum length requirement (whitespace is often trimmed).
-            wrapper = Label(label="\u200b", child=item)
+            # Type 18 (Label/Container) uses the 'label' field for the text.
+            # We use the placeholder or a default string.
+            wrapper = Label(label=label_text, child=item)
             payload['components'].append(wrapper.to_component_dict())
             
         elif isinstance(item, TextDisplay):
