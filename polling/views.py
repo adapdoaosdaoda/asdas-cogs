@@ -3,6 +3,21 @@ from typing import Optional, Dict, List
 from datetime import datetime
 import logging
 
+# Import modalpatch components
+try:
+    from discord.ui import Modal, TextDisplay, StringSelect
+except ImportError:
+    # Fallback if modalpatch not loaded
+    from discord.ui import Modal
+    try:
+        from discord.ui import StringSelect
+    except ImportError:
+        from discord.ui import Select as StringSelect
+    TextDisplay = None
+
+# Import voting modals
+from .voting_modals import SimpleEventVoteModal, BreakingArmyVoteModal, ShowdownVoteModal
+
 log = logging.getLogger("red.asdas-cogs.polling")
 
 
@@ -231,45 +246,12 @@ class EventPollView(discord.ui.View):
 
                 # Check event type and show appropriate modal
                 event_info = self.events[event_name]
-                timezone_display = self.cog.timezone_display
+                available_days = event_info.get("days", self.days)
 
-                if event_info["type"] == "daily":
-                    # Party event - single time selection
-                    view = PartyModal(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select your preferred time\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
-                elif event_info["type"] == "fixed_days":
-                    # Sword Trial - multiple fixed days
-                    view = FixedDaysModal(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        event_name=event_name,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
-                    )
-                else:
-                    # Breaking Army / Showdown / Hero's Realm (Catch-up) - slots with day+time
-                    # Use event-specific days if available, otherwise use all days
-                    available_days = event_info.get("days", self.days)
-                    view = WeeklyEventModal(
+                # Determine which modal to use
+                if event_name == "Breaking Army":
+                    # Breaking Army gets its own modal
+                    modal = BreakingArmyVoteModal(
                         cog=self.cog,
                         guild_id=self.guild_id,
                         poll_id=poll_id,
@@ -279,11 +261,36 @@ class EventPollView(discord.ui.View):
                         events=self.events,
                         days=available_days
                     )
-                    await interaction.response.send_message(
-                        f"**{event_name}** - Select your preferred times\nTimezone: {timezone_display}",
-                        view=view,
-                        ephemeral=True
+                    await interaction.response.send_modal(modal)
+
+                elif event_name == "Showdown":
+                    # Showdown gets its own modal
+                    modal = ShowdownVoteModal(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        user_selections=user_selections,
+                        events=self.events,
+                        days=available_days
                     )
+                    await interaction.response.send_modal(modal)
+
+                else:
+                    # Party, Hero's Realm (Catch-up), Sword Trial use SimpleEventVoteModal
+                    modal = SimpleEventVoteModal(
+                        cog=self.cog,
+                        guild_id=self.guild_id,
+                        poll_id=poll_id,
+                        user_id=interaction.user.id,
+                        event_name=event_name,
+                        user_selections=user_selections,
+                        events=self.events,
+                        days=available_days
+                    )
+                    await interaction.response.send_modal(modal)
+
             except discord.HTTPException as e:
                 log.error(f"Failed to respond to {event_name} vote interaction for user {interaction.user.id}: {e}")
             except discord.Forbidden as e:
@@ -1290,10 +1297,10 @@ class WeeklyEventModal(discord.ui.View):
         pass
 
 class EventResultsView(discord.ui.View):
-    """View with Return and Close buttons for individual event results"""
+    """View with Return button for individual event results"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, winning_times: Dict, selections: Dict, events: Dict):
-        super().__init__(timeout=180)
+        super().__init__(timeout=None)  # No timeout - don't auto-close
         self.cog = cog
         self.guild_id = guild_id
         self.poll_id = poll_id
@@ -1310,21 +1317,8 @@ class EventResultsView(discord.ui.View):
         return_btn.callback = self._return_to_results
         self.add_item(return_btn)
 
-        # Close button
-        close_btn = discord.ui.Button(
-            label="Close",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌"
-        )
-        close_btn.callback = self._close
-        self.add_item(close_btn)
-
     async def _return_to_results(self, interaction: discord.Interaction):
         """Return to main results view"""
-        # Dismiss current event results message
-        await interaction.response.edit_message(view=None)
-        await interaction.delete_original_response()
-
         # Recreate the results view
         intro_text = self.cog.format_results_intro(self.selections)
         results_view = ResultsCategoryView(
@@ -1332,24 +1326,18 @@ class EventResultsView(discord.ui.View):
             self.winning_times, self.selections, self.events
         )
 
-        # Send new results message
-        await interaction.followup.send(
-            intro_text,
-            view=results_view,
-            ephemeral=True
+        # Edit the message with the new results view
+        await interaction.response.edit_message(
+            content=intro_text,
+            view=results_view
         )
-
-    async def _close(self, interaction: discord.Interaction):
-        """Close the event results"""
-        await interaction.response.edit_message(view=None)
-        await interaction.delete_original_response()
 
 
 class ResultsCategoryView(discord.ui.View):
     """View with buttons for each event category to show results"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, winning_times: Dict, selections: Dict, events: Dict):
-        super().__init__(timeout=180)
+        super().__init__(timeout=None)  # No timeout - don't auto-close
         self.cog = cog
         self.guild_id = guild_id
         self.poll_id = poll_id
@@ -1357,18 +1345,8 @@ class ResultsCategoryView(discord.ui.View):
         self.selections = selections
         self.events = events
 
-        # Row 0: Close, Hero's Realm, Sword Trial
+        # Row 0: Hero's Realm, Sword Trial
         # Row 1: Party, Breaking Army, Showdown
-
-        # Add close button first (row 0)
-        close_btn = discord.ui.Button(
-            label="Close",
-            style=discord.ButtonStyle.secondary,
-            emoji="❌",
-            row=0
-        )
-        close_btn.callback = self._close
-        self.add_item(close_btn)
 
         # Add buttons for each event in specific rows
         for event_name, event_info in events.items():
@@ -1408,36 +1386,22 @@ class ResultsCategoryView(discord.ui.View):
 
     def _create_results_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):
-            # Dismiss the results overview message
-            await interaction.response.edit_message(view=None)
-            await interaction.delete_original_response()
-
             # Format results for this event
             event_results = self.cog.format_event_results(event_name, self.winning_times, self.selections)
 
-            # Create view with Return and Close buttons
+            # Create view with Return button
             event_results_view = EventResultsView(
                 self.cog, self.guild_id, self.poll_id,
                 self.winning_times, self.selections, self.events
             )
 
-            # Send event results as new ephemeral message
-            await interaction.followup.send(
+            # Edit the message to show event results
+            await interaction.response.edit_message(
                 content=event_results,
-                view=event_results_view,
-                ephemeral=True
+                view=event_results_view
             )
 
         return callback
-
-    async def _close(self, interaction: discord.Interaction):
-        """Close the results view"""
-        await interaction.response.edit_message(view=None)
-        await interaction.delete_original_response()
-
-    async def on_timeout(self):
-        """Handle timeout"""
-        pass
 
 
 
