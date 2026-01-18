@@ -73,7 +73,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             party_select = StringSelect(
                 placeholder="Choose a time...",
                 options=time_options,
-                custom_id="party_time_select"
+                custom_id="party_time_select",
+                min_values=0
             )
             self.selects["Party"] = {"time": party_select}
             
@@ -120,7 +121,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             wed_select = StringSelect(
                 placeholder="Choose a time...",
                 options=wed_options,
-                custom_id="sword_wed_select"
+                custom_id="sword_wed_select",
+                min_values=0
             )
             
             if Label_cls:
@@ -146,7 +148,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             fri_select = StringSelect(
                 placeholder="Choose a time...",
                 options=fri_options,
-                custom_id="sword_fri_select"
+                custom_id="sword_fri_select",
+                min_values=0
             )
             self.selects["Sword Trial"] = {"wed": wed_select, "fri": fri_select}
             
@@ -193,7 +196,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             hero_day_select = StringSelect(
                 placeholder="Choose a day...",
                 options=day_options,
-                custom_id="hero_day_select"
+                custom_id="hero_day_select",
+                min_values=0
             )
             
             if Label_cls:
@@ -219,7 +223,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             hero_time_select = StringSelect(
                 placeholder="Choose a time...",
                 options=time_options,
-                custom_id="hero_time_select"
+                custom_id="hero_time_select",
+                min_values=0
             )
             self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
             
@@ -249,6 +254,8 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                 if user_id_str not in polls[self.poll_id]["selections"]:
                     polls[self.poll_id]["selections"][user_id_str] = {}
 
+                current_user_selections = polls[self.poll_id]["selections"][user_id_str]
+
                 # Save Party vote
                 if "Party" in self.selects:
                     party_select = self.selects["Party"]["time"]
@@ -259,29 +266,49 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                 if "Hero's Realm (Catch-up)" in self.selects:
                     day_select = self.selects["Hero's Realm (Catch-up)"]["day"]
                     time_select = self.selects["Hero's Realm (Catch-up)"]["time"]
-                    if day_select.values and time_select.values:
-                        polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-up)"] = [{
-                            "day": day_select.values[0],
-                            "time": time_select.values[0]
-                        }]
+                    
+                    if day_select.values or time_select.values:
+                        existing = current_user_selections.get("Hero's Realm (Catch-up)", [None])
+                        if not isinstance(existing, list) or len(existing) == 0:
+                            existing = [{"day": None, "time": None}]
+                        elif not isinstance(existing[0], dict):
+                             existing = [{"day": None, "time": None}]
+                        
+                        # Use existing value if not provided, otherwise use new value
+                        new_day = day_select.values[0] if day_select.values else existing[0].get("day")
+                        new_time = time_select.values[0] if time_select.values else existing[0].get("time")
+                        
+                        if new_day and new_time:
+                            polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-up)"] = [{
+                                "day": new_day,
+                                "time": new_time
+                            }]
 
                 # Save Sword Trial votes
                 if "Sword Trial" in self.selects:
                     wed_select = self.selects["Sword Trial"]["wed"]
                     fri_select = self.selects["Sword Trial"]["fri"]
-                    selections = []
-                    # Wednesday (index 0)
-                    if wed_select.values:
-                        selections.append({"time": wed_select.values[0]})
-                    else:
-                        selections.append(None)
-                    # Friday (index 1)
-                    if fri_select.values:
-                        selections.append({"time": fri_select.values[0]})
-                    else:
-                        selections.append(None)
+                    
+                    if wed_select.values or fri_select.values:
+                        existing = current_user_selections.get("Sword Trial", [None, None])
+                        if not isinstance(existing, list):
+                            existing = [None, None]
+                        while len(existing) < 2:
+                            existing.append(None)
 
-                    polls[self.poll_id]["selections"][user_id_str]["Sword Trial"] = selections
+                        selections = []
+                        # Wednesday (index 0)
+                        if wed_select.values:
+                            selections.append({"time": wed_select.values[0]})
+                        else:
+                            selections.append(existing[0])
+                        # Friday (index 1)
+                        if fri_select.values:
+                            selections.append({"time": fri_select.values[0]})
+                        else:
+                            selections.append(existing[1])
+
+                        polls[self.poll_id]["selections"][user_id_str]["Sword Trial"] = selections
 
                 poll_data = polls[self.poll_id]
 
@@ -354,7 +381,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             self.time_select = StringSelect(
                 placeholder="Choose a time...",
                 options=time_options,
-                custom_id="party_time_select"
+                custom_id="party_time_select",
+                min_values=0
             )
             if Label_cls:
                 self.add_item(Label_cls(
@@ -390,7 +418,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             self.day_select = StringSelect(
                 placeholder="Choose a day...",
                 options=day_options,
-                custom_id="hero_day_select"
+                custom_id="hero_day_select",
+                min_values=0
             )
             if Label_cls:
                 self.add_item(Label_cls(
@@ -415,7 +444,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             self.time_select = StringSelect(
                 placeholder="Choose a time...",
                 options=time_options,
-                custom_id="hero_time_select"
+                custom_id="hero_time_select",
+                min_values=0
             )
             if Label_cls:
                 self.add_item(Label_cls(
@@ -450,7 +480,8 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 day_select = StringSelect(
                     placeholder="Choose a time...",
                     options=time_options,
-                    custom_id=f"sword_day_{idx}_select"
+                    custom_id=f"sword_day_{idx}_select",
+                    min_values=0
                 )
                 self.day_selects[day] = day_select
                 if Label_cls:
@@ -470,38 +501,6 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             # Defer the response
             await interaction.response.defer()
 
-            # Build selections based on event type
-            if event_info["type"] == "daily":
-                # Party - single time string
-                if self.time_select.values:
-                    selection = {"time": self.time_select.values[0]}
-                else:
-                    selection = None
-
-            elif event_info["type"] == "once":
-                # Hero's Realm (Catch-up) - single day+time dict in list
-                if self.day_select.values and self.time_select.values:
-                    selection = [{
-                        "day": self.day_select.values[0],
-                        "time": self.time_select.values[0]
-                    }]
-                else:
-                    selection = None
-
-            elif event_info["type"] == "fixed_days":
-                # Sword Trial - list of day+time dicts
-                fixed_days = event_info.get("days", [])
-                selection = []
-                for day in fixed_days:
-                    if day in self.day_selects:
-                        day_select = self.day_selects[day]
-                        if day_select.values:
-                            selection.append({"time": day_select.values[0]})
-                        else:
-                            selection.append(None)
-                    else:
-                        selection.append(None)
-
             # Save to config
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
@@ -515,6 +514,53 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 if user_id_str not in polls[self.poll_id]["selections"]:
                     polls[self.poll_id]["selections"][user_id_str] = {}
 
+                current_user_selections = polls[self.poll_id]["selections"][user_id_str]
+                selection = current_user_selections.get(self.event_name)
+
+                # Build selections based on event type
+                if event_info["type"] == "daily":
+                    # Party - single time string
+                    if self.time_select.values:
+                        selection = {"time": self.time_select.values[0]}
+                    # Else keep existing 'selection'
+
+                elif event_info["type"] == "once":
+                    # Hero's Realm (Catch-up) - single day+time dict in list
+                    if not selection or not isinstance(selection, list):
+                        selection = [{}]
+                    if not selection[0] or not isinstance(selection[0], dict):
+                        selection[0] = {}
+                    
+                    new_sel = selection[0].copy()
+                    
+                    if self.day_select.values:
+                        new_sel["day"] = self.day_select.values[0]
+                    if self.time_select.values:
+                        new_sel["time"] = self.time_select.values[0]
+                        
+                    if new_sel.get("day") and new_sel.get("time"):
+                         selection = [new_sel]
+
+                elif event_info["type"] == "fixed_days":
+                    # Sword Trial - list of day+time dicts
+                    fixed_days = event_info.get("days", [])
+                    
+                    if not selection or not isinstance(selection, list):
+                        selection = [None] * len(fixed_days)
+                    while len(selection) < len(fixed_days):
+                        selection.append(None)
+                    
+                    # Create a new list to update
+                    new_list = list(selection)
+                    
+                    for idx, day in enumerate(fixed_days):
+                        if day in self.day_selects:
+                            day_select = self.day_selects[day]
+                            if day_select.values:
+                                new_list[idx] = {"time": day_select.values[0]}
+                    
+                    selection = new_list
+
                 polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection
                 poll_data = polls[self.poll_id]
 
@@ -522,16 +568,10 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             await self.cog._update_poll_message(self.guild_id, self.poll_id, poll_data)
 
             # Send confirmation
-            if selection:
-                await interaction.followup.send(
-                    f"✅ Your vote for **{self.event_name}** has been saved!",
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    f"❌ Please select all required options.",
-                    ephemeral=True
-                )
+            await interaction.followup.send(
+                f"✅ Your vote for **{self.event_name}** has been saved!",
+                ephemeral=True
+            )
 
         except Exception as e:
             log.error(f"Error in SimpleEventVoteModal.on_submit: {e}", exc_info=True)
@@ -590,7 +630,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         self.slot1_day_select = StringSelect(
             placeholder="Slot 1: Choose a day...",
             options=day_options_1,
-            custom_id="ba_slot1_day_select"
+            custom_id="ba_slot1_day_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -615,7 +656,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         self.slot1_time_select = StringSelect(
             placeholder="Choose a time...",
             options=time_options_1,
-            custom_id="ba_slot1_time_select"
+            custom_id="ba_slot1_time_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -640,7 +682,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         self.slot2_day_select = StringSelect(
             placeholder="Slot 2: Choose a day...",
             options=day_options_2,
-            custom_id="ba_slot2_day_select"
+            custom_id="ba_slot2_day_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -665,7 +708,8 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         self.slot2_time_select = StringSelect(
             placeholder="Choose a time...",
             options=time_options_2,
-            custom_id="ba_slot2_time_select"
+            custom_id="ba_slot2_time_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -682,29 +726,6 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             # Defer the response
             await interaction.response.defer()
 
-            # Build selections
-            has_slot1 = self.slot1_day_select.values and self.slot1_time_select.values
-            has_slot2 = self.slot2_day_select.values and self.slot2_time_select.values
-
-            if not (has_slot1 or has_slot2):
-                await interaction.followup.send(
-                    "❌ Please select at least one complete slot (day + time).",
-                    ephemeral=True
-                )
-                return
-
-            selection = [
-                {
-                    "day": self.slot1_day_select.values[0],
-                    "time": self.slot1_time_select.values[0]
-                } if has_slot1 else None,
-                {
-                    "day": self.slot2_day_select.values[0],
-                    "time": self.slot2_time_select.values[0]
-                } if has_slot2 else None
-            ]
-
-            # Save to config
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
@@ -717,7 +738,36 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
                 if user_id_str not in polls[self.poll_id]["selections"]:
                     polls[self.poll_id]["selections"][user_id_str] = {}
 
-                polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection
+                current_user_selections = polls[self.poll_id]["selections"][user_id_str]
+                existing = current_user_selections.get(self.event_name, [None, None])
+                
+                # Ensure existing is a list of 2
+                if not isinstance(existing, list):
+                    existing = [None, None]
+                while len(existing) < 2:
+                    existing.append(None)
+                
+                new_selection = list(existing)
+
+                # Slot 1
+                s1_day = self.slot1_day_select.values
+                s1_time = self.slot1_time_select.values
+                if s1_day and s1_time:
+                    new_selection[0] = {
+                        "day": s1_day[0],
+                        "time": s1_time[0]
+                    }
+                
+                # Slot 2
+                s2_day = self.slot2_day_select.values
+                s2_time = self.slot2_time_select.values
+                if s2_day and s2_time:
+                    new_selection[1] = {
+                        "day": s2_day[0],
+                        "time": s2_time[0]
+                    }
+
+                polls[self.poll_id]["selections"][user_id_str][self.event_name] = new_selection
                 poll_data = polls[self.poll_id]
 
             # Update the poll embed
@@ -786,7 +836,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         self.slot1_day_select = StringSelect(
             placeholder="Slot 1: Choose a day...",
             options=day_options_1,
-            custom_id="sd_slot1_day_select"
+            custom_id="sd_slot1_day_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -811,7 +862,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         self.slot1_time_select = StringSelect(
             placeholder="Choose a time...",
             options=time_options_1,
-            custom_id="sd_slot1_time_select"
+            custom_id="sd_slot1_time_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -836,7 +888,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         self.slot2_day_select = StringSelect(
             placeholder="Slot 2: Choose a day...",
             options=day_options_2,
-            custom_id="sd_slot2_day_select"
+            custom_id="sd_slot2_day_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -861,7 +914,8 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         self.slot2_time_select = StringSelect(
             placeholder="Choose a time...",
             options=time_options_2,
-            custom_id="sd_slot2_time_select"
+            custom_id="sd_slot2_time_select",
+            min_values=0
         )
         if Label_cls:
             self.add_item(Label_cls(
@@ -878,29 +932,6 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             # Defer the response
             await interaction.response.defer()
 
-            # Build selections
-            has_slot1 = self.slot1_day_select.values and self.slot1_time_select.values
-            has_slot2 = self.slot2_day_select.values and self.slot2_time_select.values
-
-            if not (has_slot1 or has_slot2):
-                await interaction.followup.send(
-                    "❌ Please select at least one complete slot (day + time).",
-                    ephemeral=True
-                )
-                return
-
-            selection = [
-                {
-                    "day": self.slot1_day_select.values[0],
-                    "time": self.slot1_time_select.values[0]
-                } if has_slot1 else None,
-                {
-                    "day": self.slot2_day_select.values[0],
-                    "time": self.slot2_time_select.values[0]
-                } if has_slot2 else None
-            ]
-
-            # Save to config
             async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
                 if self.poll_id not in polls:
                     await interaction.followup.send(
@@ -913,7 +944,36 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
                 if user_id_str not in polls[self.poll_id]["selections"]:
                     polls[self.poll_id]["selections"][user_id_str] = {}
 
-                polls[self.poll_id]["selections"][user_id_str][self.event_name] = selection
+                current_user_selections = polls[self.poll_id]["selections"][user_id_str]
+                existing = current_user_selections.get(self.event_name, [None, None])
+
+                # Ensure existing is a list of 2
+                if not isinstance(existing, list):
+                    existing = [None, None]
+                while len(existing) < 2:
+                    existing.append(None)
+                
+                new_selection = list(existing)
+
+                # Slot 1
+                s1_day = self.slot1_day_select.values
+                s1_time = self.slot1_time_select.values
+                if s1_day and s1_time:
+                    new_selection[0] = {
+                        "day": s1_day[0],
+                        "time": s1_time[0]
+                    }
+                
+                # Slot 2
+                s2_day = self.slot2_day_select.values
+                s2_time = self.slot2_time_select.values
+                if s2_day and s2_time:
+                    new_selection[1] = {
+                        "day": s2_day[0],
+                        "time": s2_time[0]
+                    }
+
+                polls[self.poll_id]["selections"][user_id_str][self.event_name] = new_selection
                 poll_data = polls[self.poll_id]
 
             # Update the poll embed
