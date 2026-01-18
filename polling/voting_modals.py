@@ -20,8 +20,8 @@ except ImportError:
 log = logging.getLogger("red.asdas-cogs.polling")
 
 
-class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword Trial"):
-    """Combined modal for Party, Hero's Realm (Catch-up), and Sword Trial votes
+class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
+    """Combined modal for Events (Party, Hero's Realm, and Sword Trial) votes
 
     All three events are voted for in a single modal with 5 dropdowns:
     - Party time
@@ -306,7 +306,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Party / Hero's Realm / Sword
 
 
 class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
-    """Modal for Party, Hero's Realm (Catch-up), and Sword Trial votes
+    """Modal for Events (Party, Hero's Realm, and Sword Trial) votes
 
     This modal handles:
     - Party: Daily time vote

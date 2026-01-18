@@ -126,9 +126,9 @@ class EventPollView(discord.ui.View):
         self.poll_id: Optional[str] = None
 
         # Add voting buttons first (row 0)
-        # Add combined button for Party, Hero's Realm, and Sword Trial (row 0, green)
+        # Add combined button for Events (row 0, green)
         simple_events_button = discord.ui.Button(
-            label="Party / Hero's Realm / Sword Trial",
+            label="Events",
             style=discord.ButtonStyle.success,
             emoji="🎯",
             custom_id="event_poll:simple_events",
@@ -192,7 +192,7 @@ class EventPollView(discord.ui.View):
                 user_id_str = str(interaction.user.id)
                 user_selections = poll_data["selections"].get(user_id_str, {})
 
-                # Open combined modal for Party, Hero's Realm, and Sword Trial
+                # Open combined modal for Events
                 modal = CombinedSimpleEventsModal(
                     cog=self.cog,
                     guild_id=self.guild_id,
@@ -304,7 +304,7 @@ class EventPollView(discord.ui.View):
                     await interaction.response.send_modal(modal)
 
                 else:
-                    # Party, Hero's Realm (Catch-up), Sword Trial use combined modal
+                    # Events use combined modal
                     modal = CombinedSimpleEventsModal(
                         cog=self.cog,
                         guild_id=self.guild_id,

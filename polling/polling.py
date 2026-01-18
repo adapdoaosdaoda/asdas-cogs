@@ -1971,7 +1971,7 @@ class EventPolling(commands.Cog):
                 "Weekly (60 min, 2 slots)\n"
                 "🎉 **Party**\n"
                 "Daily (10 min)\n\n"
-                "**Blocked times**\n"
+                "**📋 Locked**\n"
                 "🏰 **Guild War**\n"
                 "Sat 20:30-23:00 / Sun 20:30-22:00\n"
                 "🛡️ **Hero's Realm (Reset)**\n"
