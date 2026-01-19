@@ -35,9 +35,36 @@ class EventPolling(commands.Cog):
             polls={},  # poll_id -> poll data
         )
 
-        # Event definitions (ordered: Hero's Realm, Sword Trial, Party, Breaking Army, Showdown)
+        # Event definitions (ordered: Party, Guild War, Hero's Realm, Sword Trial, Breaking Army, Showdown)
         # Priority order for calendar display (higher number = higher priority)
         self.events = {
+            "Party": {
+                "type": "daily",
+                "time_range": (17, 26),  # 17:00 to 02:00
+                "interval": 30,  # 30 minute intervals
+                "duration": 10,  # 10 minutes
+                "slots": 1,  # Single time slot
+                "color": discord.Color(0xe1e7ec),
+                "emoji": "🎉",
+                "priority": 3,  # Priority 3 (matches results intro)
+                "default_times": {
+                    "default": "20:00"
+                }
+            },
+            "Guild War": {
+                "type": "once",
+                "days": ["Saturday"],
+                "time_range": (20.5, 23),  # 20:30 to 23:00 (latest start 21:30)
+                "fixed_time": "20:30",
+                "duration": 90,  # 1.5 hours (e.g., 20:30-22:00 or 21:30-23:00)
+                "color": discord.Color(0xe1e7ec),
+                "emoji": "🏰",
+                "priority": 6,
+                "slots": 1,
+                "default_times": {
+                    "Saturday": "20:30"
+                }
+            },
             "Hero's Realm (Catch-up)": {
                 "type": "once",
                 "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],  # Available voting days (Mon-Sat only)
@@ -87,20 +114,7 @@ class EventPolling(commands.Cog):
                 "emoji": "⚔️",
                 "priority": 4,
                 "default_times": {
-                    "Monday": "22:30"
-                }
-            },
-            "Party": {
-                "type": "daily",
-                "time_range": (17, 26),  # 17:00 to 02:00
-                "interval": 30,  # 30 minute intervals
-                "duration": 10,  # 10 minutes
-                "slots": 1,  # Single time slot
-                "color": discord.Color(0xe1e7ec),
-                "emoji": "🎉",
-                "priority": 0,  # Lowest priority
-                "default_times": {
-                    "default": "20:00"
+                    "Monday": "21:30"
                 }
             },
             "Breaking Army": {
@@ -114,7 +128,7 @@ class EventPolling(commands.Cog):
                 "priority": 2,
                 "default_times": {
                     "Wednesday": "19:30",
-                    "Saturday": "19:30"
+                    "Friday": "19:30"
                 }
             },
             "Showdown": {
@@ -128,7 +142,7 @@ class EventPolling(commands.Cog):
                 "priority": 1,
                 "default_times": {
                     "Wednesday": "18:30",
-                    "Saturday": "18:30"
+                    "Friday": "18:30"
                 }
             }
         }
@@ -140,9 +154,8 @@ class EventPolling(commands.Cog):
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Saturday & Sunday 20:30 - 22:00
+        # Blocked time slots: Sunday 20:30 - 22:00 (Saturday handled as event)
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "22:00"},
             {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
@@ -949,10 +962,15 @@ class EventPolling(commands.Cog):
                         event_results[key].append(f"<@{user_id}>")
 
             # Add to embed
-            if event_results:
-                field_value = ""
-                for selection, users in sorted(event_results.items()):
-                    field_value += f"**{selection}**: {', '.join(users)}\n"
+            if event_results or event_info["type"] == "locked":
+                if event_info["type"] == "locked":
+                    day_val = event_info["days"][0]
+                    time_val = event_info["fixed_time"]
+                    field_value = f"**{day_val[:3]} {time_val}**: *Fixed time*\n"
+                else:
+                    field_value = ""
+                    for selection, users in sorted(event_results.items()):
+                        field_value += f"**{selection}**: {', '.join(users)}\n"
 
                 emoji = self.events[event_name]["emoji"]
                 embed.add_field(
@@ -2007,26 +2025,28 @@ class EventPolling(commands.Cog):
         embed.add_field(
             name="🔓 Unlocked",
             value=(
-                "🎉 **Party**\n"
-                "Daily (10 min)\n"
                 "🛡️ **Hero's Realm (Catch-up)**\n"
                 "Weekly (30 min, 1 slot)\n"
-                "⚔️ **Sword Trial**\n"
+                "⚔️ **Sword Trial / (Echo)**\n"
                 "Mon(Echo)/Wed/Fri (30 min)\n"
                 "⚡ **Breaking Army**\n"
                 "Weekly (60 min, 2 slots)\n"
                 "🏆 **Showdown**\n"
-                "Weekly (60 min, 2 slots)"
+                "Weekly (60 min, 2 slots)\n"
+                "🏰 **Guild War**\n"
+                "Sat 20:30-22:00\n"
+                "🎉 **Party**\n"
+                "Daily (10 min)"
             ),
             inline=True
         )
         embed.add_field(
             name="🔒 Locked",
             value=(
-                "🏰 **Guild War**\n"
-                "Sun 20:30-22:00\n"
                 "🛡️ **Hero's Realm (Reset)**\n"
-                "Sun 22:00"
+                "Sun 22:00\n"
+                "🏰 **Guild War**\n"
+                "Sun 20:30-22:00"
             ),
             inline=True
         )
@@ -2106,7 +2126,7 @@ class EventPolling(commands.Cog):
             "• 1 point: 1 hour before/after your voted time",
             "",
             "**Event priority and tiebreak rules:**",
-            "• Priority order: Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
+            "• Priority order: Guild War (6) > Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
@@ -2129,10 +2149,6 @@ class EventPolling(commands.Cog):
 
         # Add results for each event
         for event_name, event_info in self.events.items():
-            # Skip locked events in results display
-            if event_info.get("type") == "locked":
-                continue
-
             emoji = event_info["emoji"]
             event_slots = winning_times.get(event_name, {})
 
@@ -3080,14 +3096,20 @@ class EventPolling(commands.Cog):
             List of time strings in HH:MM format (handles times past midnight as 00:00, 00:30, etc.)
         """
         times = []
-        current_hour = start_hour
-        current_minute = 0
+        
+        # Handle float start_hour (e.g., 20.5 for 20:30)
+        current_hour = int(start_hour)
+        current_minute = int((start_hour - current_hour) * 60)
 
-        while current_hour < end_hour:
+        while current_hour < end_hour or (current_hour == end_hour and current_minute == 0):
             # Convert hours >= 24 to next-day format (24 -> 00, 25 -> 01, etc.)
             display_hour = current_hour if current_hour < 24 else current_hour - 24
             time_str = f"{display_hour:02d}:{current_minute:02d}"
 
+            # If we've reached the end hour exactly, stop unless it's the very first entry
+            if current_hour == end_hour and current_minute > 0:
+                break
+            
             # If duration is specified, check if event would complete before end_hour
             if duration > 0:
                 # Calculate end time

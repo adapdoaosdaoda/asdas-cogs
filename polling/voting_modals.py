@@ -167,6 +167,51 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             else:
                 self.add_item(hero_time_select)
 
+        # 3. Guild War (Saturday) - time only
+        if "Guild War" in events:
+            gw_info = events["Guild War"]
+            times = cog.generate_time_options(
+                gw_info["time_range"][0] if "time_range" in gw_info else 17,
+                gw_info["time_range"][1] if "time_range" in gw_info else 26,
+                gw_info.get("interval", 30),
+                gw_info["duration"],
+                "Guild War"
+            )
+
+            current_gw = user_selections.get("Guild War")
+            current_gw_time = None
+            if current_gw:
+                if isinstance(current_gw, list) and len(current_gw) > 0:
+                    current_gw_time = current_gw[0].get("time")
+                elif isinstance(current_gw, dict):
+                    current_gw_time = current_gw.get("time")
+
+            time_options = [
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🏰",
+                    default=(current_gw_time == time_str)
+                )
+                for time_str in times[:25]
+            ]
+
+            gw_select = StringSelect(
+                placeholder="Choose a time...",
+                options=time_options,
+                custom_id="gw_time_select"
+            )
+            self.selects["Guild War"] = {"time": gw_select}
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "🏰 Guild War (Saturday)",
+                    gw_select,
+                    description="description: Saturday only"
+                ))
+            else:
+                self.add_item(gw_select)
+
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission - save all three events"""
         try:
@@ -198,6 +243,15 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                         polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-up)"] = [{
                             "day": day_select.values[0],
                             "time": time_select.values[0]
+                        }]
+
+                # Save Guild War vote
+                if "Guild War" in self.selects:
+                    gw_select = self.selects["Guild War"]["time"]
+                    if gw_select.values:
+                        polls[self.poll_id]["selections"][user_id_str]["Guild War"] = [{
+                            "day": "Saturday",
+                            "time": gw_select.values[0]
                         }]
 
                 poll_data = polls[self.poll_id]
