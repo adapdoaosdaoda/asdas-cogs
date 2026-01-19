@@ -132,7 +132,7 @@ class EventPollView(discord.ui.View):
         general_button = discord.ui.Button(
             label="General",
             style=discord.ButtonStyle.secondary,
-            emoji="🗒️",
+            emoji="📋",
             custom_id="event_poll:simple_events",
             row=0
         )

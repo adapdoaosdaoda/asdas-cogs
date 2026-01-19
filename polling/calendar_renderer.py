@@ -815,19 +815,19 @@ class CalendarRenderer:
                                 # Single event: center vertically, except Party which goes to top
                                 if event_name == "Party":
                                     # Party takes top half even when alone (short duration event)
-                                    # Center in top half
-                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2
+                                    # Center in top half, moved up 2px
+                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2 - 2
                                 else:
                                     # Other events center vertically in full cell
                                     base_y = y + (self.CELL_HEIGHT - total_height) // 2
                             else:
                                 # Multiple events: split cell
                                 if event_idx == 0:
-                                    # First event (Party) centered in top half
-                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2
+                                    # First event (Party) centered in top half, moved up 2px
+                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2 - 2
                                 else:
-                                    # Second event centered in bottom half
-                                    base_y = y + (self.CELL_HEIGHT // 2) + (self.CELL_HEIGHT // 2 - total_height) // 2
+                                    # Second event centered in bottom half, moved up 2px
+                                    base_y = y + (self.CELL_HEIGHT // 2) + (self.CELL_HEIGHT // 2 - total_height) // 2 - 2
 
                             # Draw each line
                             if not hasattr(self, '_emoji_positions'):
@@ -867,15 +867,15 @@ class CalendarRenderer:
             # Draw text centered along the strip
             txt_x = (height - txt_w) // 2
             txt_y = (txt_img_height - txt_h) // 2
-            # Use 70% opacity (alpha 178) for the text
-            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=(*self.HEADER_TEXT, 178))
+            # Use 40% opacity (alpha 102) for the text
+            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=(*self.HEADER_TEXT, 102))
             
             # Rotate 90 degrees (vertical reading up)
             rotated_txt = txt_img.rotate(90, expand=True)
             
             # Paste onto main image at left edge of block
             # x + padding, y (start of block)
-            paste_x = x - 1
+            paste_x = x - 3
             paste_y = y
             
             img.paste(rotated_txt, (paste_x, paste_y), rotated_txt)
