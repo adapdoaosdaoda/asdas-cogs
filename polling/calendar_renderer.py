@@ -867,7 +867,8 @@ class CalendarRenderer:
             # Draw text centered along the strip
             txt_x = (height - txt_w) // 2
             txt_y = (txt_img_height - txt_h) // 2
-            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=self.HEADER_TEXT)
+            # Use 70% opacity (alpha 178) for the text
+            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=(*self.HEADER_TEXT, 178))
             
             # Rotate 90 degrees (vertical reading up)
             rotated_txt = txt_img.rotate(90, expand=True)
