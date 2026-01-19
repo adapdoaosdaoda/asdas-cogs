@@ -849,7 +849,15 @@ class CalendarRenderer:
                                 # Calculate total height based on duration
                                 num_slots = max(1, duration // 30)
                                 total_height = num_slots * self.CELL_HEIGHT
-                                overlays.append((x, y, total_height, "2 Games"))
+                                overlay_text = "2 Games / Locked" if day == "Sun" else "2 Games"
+                                overlays.append((x, y, total_height, overlay_text))
+
+                            # Collect Hero's Realm (Reset) overlay
+                            if event_name == "Hero's Realm (Reset)" and start_time == time_str:
+                                # Calculate total height based on duration
+                                num_slots = max(1, duration // 30)
+                                total_height = num_slots * self.CELL_HEIGHT
+                                overlays.append((x, y, total_height, "Locked"))
 
         # Draw overlays for multi-slot events
         for x, y, height, text in overlays:
@@ -867,8 +875,8 @@ class CalendarRenderer:
             # Draw text centered along the strip
             txt_x = (height - txt_w) // 2
             txt_y = (txt_img_height - txt_h) // 2
-            # Use 40% opacity (alpha 102) for the text
-            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=(*self.HEADER_TEXT, 102))
+            # Use 20% opacity (alpha 51) for the text
+            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=(*self.HEADER_TEXT, 51))
             
             # Rotate 90 degrees (vertical reading up)
             rotated_txt = txt_img.rotate(90, expand=True)
