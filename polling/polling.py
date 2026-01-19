@@ -45,7 +45,7 @@ class EventPolling(commands.Cog):
                 "interval": 30,
                 "duration": 30,  # 30 minutes
                 "slots": 1,  # Single slot - users vote for ONE preferred day+time from Mon-Sat
-                "color": discord.Color.greyple(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "🛡️",
                 "priority": 5,  # Highest priority
                 "default_times": {
@@ -57,7 +57,7 @@ class EventPolling(commands.Cog):
                 "days": ["Sunday"],
                 "fixed_time": "22:00",
                 "duration": 30,  # 30 minutes
-                "color": discord.Color.greyple(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "🛡️",
                 "priority": 5
             },
@@ -68,7 +68,7 @@ class EventPolling(commands.Cog):
                 "interval": 30,
                 "duration": 30,  # 30 minutes
                 "slots": 2,  # 2 slots: one for each day (Wed, Fri)
-                "color": discord.Color.greyple(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "⚔️",
                 "priority": 4,
                 "default_times": {
@@ -83,7 +83,7 @@ class EventPolling(commands.Cog):
                 "interval": 30,
                 "duration": 30,  # 30 minutes
                 "slots": 1,
-                "color": discord.Color.greyple(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "⚔️",
                 "priority": 4,
                 "default_times": {
@@ -96,7 +96,7 @@ class EventPolling(commands.Cog):
                 "interval": 30,  # 30 minute intervals
                 "duration": 10,  # 10 minutes
                 "slots": 1,  # Single time slot
-                "color": discord.Color.green(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "🎉",
                 "priority": 0,  # Lowest priority
                 "default_times": {
@@ -109,7 +109,7 @@ class EventPolling(commands.Cog):
                 "interval": 30,
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
-                "color": discord.Color.blue(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "⚡",
                 "priority": 2,
                 "default_times": {
@@ -123,7 +123,7 @@ class EventPolling(commands.Cog):
                 "interval": 30,
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
-                "color": discord.Color.red(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "🏆",
                 "priority": 1,
                 "default_times": {
@@ -138,7 +138,7 @@ class EventPolling(commands.Cog):
                 "interval": 30,
                 "duration": 90,  # 90 minutes
                 "slots": 1,
-                "color": discord.Color.dark_red(),
+                "color": discord.Color(0xe1e7ec),
                 "emoji": "🏰",
                 "priority": 6,  # Highest priority
                 "default_times": {
@@ -1990,8 +1990,13 @@ class EventPolling(commands.Cog):
                 "🏆 **Showdown**\n"
                 "Weekly (60 min, 2 slots)\n"
                 "🎉 **Party**\n"
-                "Daily (10 min)\n\n"
-                "**📋 Locked**\n"
+                "Daily (10 min)"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🔒 Locked",
+            value=(
                 "🏰 **Guild War**\n"
                 "Sun 20:30-22:00\n"
                 "🛡️ **Hero's Realm (Reset)**\n"

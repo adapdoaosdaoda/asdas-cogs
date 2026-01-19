@@ -567,6 +567,7 @@ class CalendarRenderer:
 
         # Build a grid of cell contents for border optimization
         cell_contents = {}  # (row, col) -> sorted event names tuple
+        overlays = []  # List of (x, y, height) for Guild War text
         for row, time_str in enumerate(time_slots):
             for col, day in enumerate(days):
                 events_in_cell = []
@@ -822,20 +823,39 @@ class CalendarRenderer:
 
                                 self._emoji_positions.append((text_x, text_y, line_text, self.font_bold))
 
-                            # Draw "2 games" vertical text for Guild War
-                            if event_name == "Guild War":
-                                txt = "2 games"
-                                bbox = draw.textbbox((0, 0), txt, font=self.font_small)
-                                w = bbox[2] - bbox[0] + 4
-                                h = bbox[3] - bbox[1] + 4
-                                txt_img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-                                txt_draw = ImageDraw.Draw(txt_img)
-                                txt_draw.text((2, 2), txt, font=self.font_small, fill=self.HEADER_TEXT)
-                                rotated_txt = txt_img.rotate(90, expand=True)
-                                rw, rh = rotated_txt.size
-                                paste_x = x + self.CELL_WIDTH - rw - 5
-                                paste_y = y + (self.CELL_HEIGHT - rh) // 2
-                                img.paste(rotated_txt, (paste_x, paste_y), rotated_txt)
+                            # Collect Guild War overlay if start of event (draw later to span cells)
+                            if event_name == "Guild War" and start_time == time_str:
+                                # Calculate total height based on duration
+                                num_slots = max(1, duration // 30)
+                                total_height = num_slots * self.CELL_HEIGHT
+                                overlays.append((x, y, total_height, "2 games"))
+
+        # Draw overlays for multi-slot events
+        for x, y, height, text in overlays:
+            # Create text image - width is height because we rotate
+            # Use a reasonable width for the text strip (e.g. 20px)
+            txt_img = Image.new('RGBA', (height, 20), (0, 0, 0, 0))
+            txt_draw = ImageDraw.Draw(txt_img)
+            
+            # Calculate text size to center it
+            bbox = txt_draw.textbbox((0, 0), text, font=self.font_bold)
+            txt_w = bbox[2] - bbox[0]
+            txt_h = bbox[3] - bbox[1]
+            
+            # Draw text centered along the strip
+            txt_x = (height - txt_w) // 2
+            txt_y = (20 - txt_h) // 2
+            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=self.HEADER_TEXT)
+            
+            # Rotate 90 degrees (vertical reading up)
+            rotated_txt = txt_img.rotate(90, expand=True)
+            
+            # Paste onto main image at left edge of block
+            # x + padding, y (start of block)
+            paste_x = x + 5
+            paste_y = y
+            
+            img.paste(rotated_txt, (paste_x, paste_y), rotated_txt)
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""

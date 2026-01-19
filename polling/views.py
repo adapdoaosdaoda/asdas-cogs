@@ -510,10 +510,6 @@ class PartyModal(discord.ui.View):
 
             # Auto-dismiss the ephemeral message
             try:
-                await interaction.edit_original_response(
-                    content=f"✅ Selection saved for **{self.event_name}**!",
-                    view=None
-                )
                 await interaction.delete_original_response()
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
@@ -815,12 +811,7 @@ class FixedDaysModal(discord.ui.View):
                 await self._update_poll_display(interaction, poll_data)
 
             # Auto-dismiss the ephemeral message
-            selected_text = ", ".join([f"{day[:3]} at {time}" for day, time in self.selected_times.items()])
             try:
-                await interaction.edit_original_response(
-                    content=f"✅ Selection saved for **{self.event_name}**: {selected_text}",
-                    view=None
-                )
                 await interaction.delete_original_response()
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
@@ -1208,17 +1199,7 @@ class WeeklyEventModal(discord.ui.View):
                 await self._update_poll_display(interaction, poll_data)
 
             # Auto-dismiss the ephemeral message
-            selection_parts = []
-            if has_slot1:
-                selection_parts.append(f"Slot 1: {self.selected_slot1_day} at {self.selected_slot1_time}")
-            if has_slot2:
-                selection_parts.append(f"Slot 2: {self.selected_slot2_day} at {self.selected_slot2_time}")
-
             try:
-                await interaction.edit_original_response(
-                    content=f"✅ Selection saved for **{self.event_name}**!\n{chr(10).join(selection_parts)}",
-                    view=None
-                )
                 await interaction.delete_original_response()
             except discord.errors.NotFound:
                 # Message was already deleted or interaction expired, which is fine
