@@ -337,20 +337,6 @@ class EventVotingModal(Modal, title="Vote for Event Times"):
                 await self.cog._queue_poll_update(self.guild_id, self.poll_id)
                 await self.cog._check_and_create_initial_snapshot(interaction.guild, self.poll_id)
 
-            # Send success message
-            selected_count = 0
-            for sel in parsed_selections.values():
-                if isinstance(sel, list):
-                    if any(s is not None for s in sel):
-                        selected_count += 1
-                elif sel is not None:
-                    selected_count += 1
-
-            await interaction.followup.send(
-                f"✅ **Votes Saved!**\n\nYou voted for {selected_count} event(s).",
-                ephemeral=True
-            )
-
         except Exception as e:
             log.error(f"Error in modal submission: {e}", exc_info=True)
             try:

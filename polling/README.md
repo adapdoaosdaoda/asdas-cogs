@@ -232,12 +232,12 @@ Creating a poll:
 ```
 User: [p]eventpoll create This Week's Events
 Bot: *Creates interactive poll with color-coded buttons and calendar view*
-     [🎯 Events] [⚡ Breaking Army] [🏆 Showdown]
+     [🎯 General] [⚔️ Sword Trial] [⚡ Breaking Army] [🏆 Showdown]
 ```
 
-**User voting example 1 - Events (Party, Hero's Realm, Sword Trial):**
-1. Click "🎯 Events" (Green) button
-2. A combined modal opens allowing you to vote for Party, Hero's Realm, and Sword Trial
+**User voting example 1 - General (Party, Hero's Realm):**
+1. Click "🎯 General" (Grey) button
+2. A combined modal opens allowing you to vote for Party and Hero's Realm (Catch-up)
 3. ✅ Selection saved!
 4. Poll calendar updates automatically
 

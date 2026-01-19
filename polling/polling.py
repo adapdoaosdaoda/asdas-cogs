@@ -827,6 +827,36 @@ class EventPolling(commands.Cog):
 
         await ctx.send(f"✅ Successfully updated poll embed: {message.jump_url}")
 
+    @eventpoll.command(name="updateall")
+    @commands.is_owner()
+    async def update_all_polls(self, ctx: commands.Context):
+        """Force update all active poll embeds across all guilds
+
+        This refreshes the embed text and appearance for every poll in the database.
+        Useful after deploying code changes that affect embed formatting.
+        """
+        await ctx.send("🔄 Starting global poll update... This may take a while.")
+        
+        all_guilds = await self.config.all_guilds()
+        total_polls = 0
+        updated_polls = 0
+        
+        for guild_id, guild_data in all_guilds.items():
+            polls = guild_data.get("polls", {})
+            total_polls += len(polls)
+            
+            for poll_id, poll_data in polls.items():
+                try:
+                    await self._update_poll_message(int(guild_id), poll_id, poll_data)
+                    updated_polls += 1
+                    # Add small delay to avoid rate limiting
+                    import asyncio
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    log.error(f"Failed to update poll {poll_id} in guild {guild_id}: {e}")
+        
+        await ctx.send(f"✅ Global update complete! Updated {updated_polls}/{total_polls} polls.")
+
     @eventpoll.command(name="results")
     async def show_results(self, ctx: commands.Context, message_id: str):
         """Show the results of a poll
@@ -1964,18 +1994,18 @@ class EventPolling(commands.Cog):
 
         # Show event info at the top
         embed.add_field(
-            name="📋 General",
+            name="📋 Events",
             value=(
+                "🎉 **Party**\n"
+                "Daily (10 min)\n"
                 "🛡️ **Hero's Realm (Catch-up)**\n"
                 "Weekly (30 min, 1 slot)\n"
                 "⚔️ **Sword Trial**\n"
-                "Wed/Fri/Mon(Echo) (30 min)\n"
+                "Mon(Echo)/Wed/Fri (30 min)\n"
                 "⚡ **Breaking Army**\n"
                 "Weekly (60 min, 2 slots)\n"
                 "🏆 **Showdown**\n"
-                "Weekly (60 min, 2 slots)\n"
-                "🎉 **Party**\n"
-                "Daily (10 min)"
+                "Weekly (60 min, 2 slots)"
             ),
             inline=False
         )

@@ -872,7 +872,7 @@ class CalendarRenderer:
             
             # Paste onto main image at left edge of block
             # x + padding, y (start of block)
-            paste_x = x + 5
+            paste_x = x + 3
             paste_y = y
             
             img.paste(rotated_txt, (paste_x, paste_y), rotated_txt)
