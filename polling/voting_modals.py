@@ -167,43 +167,6 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             else:
                 self.add_item(hero_time_select)
 
-        # 3. Guild War (Saturday)
-        if "Guild War" in events:
-            # Manually define allowed times for 90min duration ending by 23:00
-            allowed_times = ["20:30", "21:00", "21:30"]
-
-            current_gw = user_selections.get("Guild War")
-            current_time = None
-            if current_gw and isinstance(current_gw, list) and len(current_gw) > 0:
-                if current_gw[0]:
-                    current_time = current_gw[0].get("time")
-
-            options = [
-                discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
-                    emoji="🕐",
-                    default=(time_str == current_time)
-                )
-                for time_str in allowed_times
-            ]
-
-            gw_select = StringSelect(
-                placeholder="Choose a time...",
-                options=options,
-                custom_id="gw_select"
-            )
-            self.selects["Guild War"] = {"time": gw_select}
-            
-            if Label_cls:
-                self.add_item(Label_cls(
-                    "🏰 Guild War Saturday",
-                    gw_select,
-                    description="90 min duration (Ends by 23:00)"
-                ))
-            else:
-                self.add_item(gw_select)
-
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission - save all three events"""
         try:
@@ -236,14 +199,6 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                             "day": day_select.values[0],
                             "time": time_select.values[0]
                         }]
-
-                # Save Guild War vote
-                if "Guild War" in self.selects:
-                    gw_select = self.selects["Guild War"]["time"]
-                    if gw_select.values:
-                        polls[self.poll_id]["selections"][user_id_str]["Guild War"] = [{"time": gw_select.values[0]}]
-                    else:
-                        polls[self.poll_id]["selections"][user_id_str]["Guild War"] = [None]
 
                 poll_data = polls[self.poll_id]
 
@@ -1069,85 +1024,6 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 pass
 
 
-class GuildWarVoteModal(Modal, title="Vote: Guild War"):
-    """Modal for Guild War votes"""
-
-    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
-                 user_selections: Dict, events: Dict):
-        super().__init__()
-        self.cog = cog
-        self.guild_id = guild_id
-        self.poll_id = poll_id
-        self.user_id = user_id
-        self.user_selections = user_selections
-        self.events = events
-
-        # Dynamically resolve Label class to handle load order issues
-        Label_cls = Label or getattr(discord.ui, "Label", None)
-
-        if "Guild War" in events:
-            # Manually define allowed times for 90min duration ending by 23:00
-            allowed_times = ["20:30", "21:00", "21:30"]
-
-            current_gw = user_selections.get("Guild War")
-            current_time = None
-            if current_gw and isinstance(current_gw, list) and len(current_gw) > 0:
-                if current_gw[0]:
-                    current_time = current_gw[0].get("time")
-
-            options = [
-                discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
-                    emoji="🕐",
-                    default=(time_str == current_time)
-                )
-                for time_str in allowed_times
-            ]
-
-            self.gw_select = StringSelect(
-                placeholder="Choose a time...",
-                options=options,
-                custom_id="gw_select"
-            )
-            
-            if Label_cls:
-                self.add_item(Label_cls(
-                    "🏰 Guild War Saturday",
-                    self.gw_select,
-                    description="90 min duration (Ends by 23:00)"
-                ))
-            else:
-                self.add_item(self.gw_select)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer()
-
-            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
-                if self.poll_id not in polls:
-                    await interaction.followup.send("This poll is no longer active!", ephemeral=True)
-                    return
-
-                user_id_str = str(self.user_id)
-                if user_id_str not in polls[self.poll_id]["selections"]:
-                    polls[self.poll_id]["selections"][user_id_str] = {}
-
-                # Save Guild War vote
-                if hasattr(self, 'gw_select'):
-                    selections = []
-                    if self.gw_select.values:
-                        selections.append({"time": self.gw_select.values[0]})
-                    else:
-                        selections.append(None)
-                    polls[self.poll_id]["selections"][user_id_str]["Guild War"] = selections
-
-                poll_data = polls[self.poll_id]
-
-            await self.cog._update_poll_message(self.guild_id, self.poll_id, poll_data)
-
-        except Exception as e:
-            log.error(f"Error in GuildWarVoteModal.on_submit: {e}", exc_info=True)
             try:
                 await interaction.followup.send("An error occurred. Please try again.", ephemeral=True)
             except:

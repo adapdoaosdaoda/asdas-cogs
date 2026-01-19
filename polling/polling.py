@@ -130,20 +130,6 @@ class EventPolling(commands.Cog):
                     "Wednesday": "18:30",
                     "Saturday": "18:30"
                 }
-            },
-            "Guild War": {
-                "type": "fixed_days",
-                "days": ["Saturday"],
-                "time_range": (20, 24),  # 20:00 to 24:00 (for 20:30-23:00 validity)
-                "interval": 30,
-                "duration": 90,  # 90 minutes
-                "slots": 1,
-                "color": discord.Color(0xe1e7ec),
-                "emoji": "🏰",
-                "priority": 6,  # Highest priority
-                "default_times": {
-                    "Saturday": "21:00"
-                }
             }
         }
 
@@ -154,8 +140,9 @@ class EventPolling(commands.Cog):
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Sunday 20:30 - 22:00 (Saturday is now a voteable event)
+        # Blocked time slots: Saturday & Sunday 20:30 - 22:00
         self.blocked_times = [
+            {"day": "Saturday", "start": "20:30", "end": "22:00"},
             {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
@@ -1977,14 +1964,12 @@ class EventPolling(commands.Cog):
 
         # Show event info at the top
         embed.add_field(
-            name="📋 Events",
+            name="📋 General",
             value=(
                 "🛡️ **Hero's Realm (Catch-up)**\n"
                 "Weekly (30 min, 1 slot)\n"
                 "⚔️ **Sword Trial**\n"
                 "Wed/Fri/Mon(Echo) (30 min)\n"
-                "🏰 **Guild War**\n"
-                "Sat (90 min, 20:30-23:00)\n"
                 "⚡ **Breaking Army**\n"
                 "Weekly (60 min, 2 slots)\n"
                 "🏆 **Showdown**\n"

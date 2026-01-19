@@ -16,7 +16,7 @@ except ImportError:
     TextDisplay = None
 
 # Import voting modals
-from .voting_modals import CombinedSimpleEventsModal, BreakingArmyVoteModal, ShowdownVoteModal, SwordTrialVoteModal, GuildWarVoteModal
+from .voting_modals import CombinedSimpleEventsModal, BreakingArmyVoteModal, ShowdownVoteModal, SwordTrialVoteModal
 
 log = logging.getLogger("red.asdas-cogs.polling")
 
@@ -125,23 +125,24 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Add voting buttons first (row 0)
-        # Add combined button for Events (row 0, green)
-        simple_events_button = discord.ui.Button(
-            label="Events",
-            style=discord.ButtonStyle.success,
+        # Row 0: General (Grey), Sword Trial (Green), Breaking Army (Blue), Showdown (Red)
+        
+        # General button (Grey)
+        general_button = discord.ui.Button(
+            label="General",
+            style=discord.ButtonStyle.secondary,
             emoji="🎯",
             custom_id="event_poll:simple_events",
             row=0
         )
-        simple_events_button.callback = self._create_simple_events_callback()
-        self.add_item(simple_events_button)
+        general_button.callback = self._create_simple_events_callback()
+        self.add_item(general_button)
 
-        # Add Sword Trial button (row 0)
+        # Sword Trial button (Green)
         if "Sword Trial" in events:
             st_button = discord.ui.Button(
                 label="Sword Trial",
-                style=discord.ButtonStyle.secondary,
+                style=discord.ButtonStyle.success,
                 emoji=events["Sword Trial"]["emoji"],
                 custom_id="event_poll:Sword Trial",
                 row=0
@@ -149,48 +150,37 @@ class EventPollView(discord.ui.View):
             st_button.callback = self._create_event_callback("Sword Trial")
             self.add_item(st_button)
 
-        # Add Guild War button (row 0)
-        if "Guild War" in events:
-            gw_button = discord.ui.Button(
-                label="Guild War",
-                style=discord.ButtonStyle.danger,
-                emoji=events["Guild War"]["emoji"],
-                custom_id="event_poll:Guild War",
-                row=0
-            )
-            gw_button.callback = self._create_event_callback("Guild War")
-            self.add_item(gw_button)
-
-        # Add separate buttons for Breaking Army and Showdown (row 1)
+        # Breaking Army button (Blue)
         if "Breaking Army" in events:
             ba_button = discord.ui.Button(
                 label="Breaking Army",
                 style=discord.ButtonStyle.primary,
                 emoji=events["Breaking Army"]["emoji"],
                 custom_id="event_poll:Breaking Army",
-                row=1
+                row=0
             )
             ba_button.callback = self._create_event_callback("Breaking Army")
             self.add_item(ba_button)
 
+        # Showdown button (Red)
         if "Showdown" in events:
             sd_button = discord.ui.Button(
                 label="Showdown",
                 style=discord.ButtonStyle.danger,
                 emoji=events["Showdown"]["emoji"],
                 custom_id="event_poll:Showdown",
-                row=1
+                row=0
             )
             sd_button.callback = self._create_event_callback("Showdown")
             self.add_item(sd_button)
 
-        # Add Results button last (grey, row 2)
+        # Row 1: Results button (Grey)
         results_button = discord.ui.Button(
             label="Results",
             style=discord.ButtonStyle.secondary,
             emoji="🏆",
             custom_id="event_poll:results",
-            row=2
+            row=1
         )
         results_button.callback = self._show_results
         self.add_item(results_button)
@@ -335,20 +325,9 @@ class EventPollView(discord.ui.View):
                         events=self.events
                     )
                     await interaction.response.send_modal(modal)
-                
-                elif event_name == "Guild War":
-                    modal = GuildWarVoteModal(
-                        cog=self.cog,
-                        guild_id=self.guild_id,
-                        poll_id=poll_id,
-                        user_id=interaction.user.id,
-                        user_selections=user_selections,
-                        events=self.events
-                    )
-                    await interaction.response.send_modal(modal)
 
                 else:
-                    # Fallback
+                    # Fallback (General)
                     modal = CombinedSimpleEventsModal(
                         cog=self.cog,
                         guild_id=self.guild_id,

@@ -19,11 +19,11 @@ pip install git+https://github.com/jay3332/pilmoji
 - **Multi-Slot Selection**: Select multiple day/time combinations for Breaking Army, Showdown, Hero's Realm, and Sword Trial
 - **Fixed-Day Events**: Hero's Realm and Sword Trial allow 4 separate slots (one for each day: Wed/Fri/Sat/Sun)
 - **Visual Calendar Images**: Professional PNG calendar images with emoji rendering
-- **Interactive Buttons**: Color-coded buttons for events, Results button for viewing current winners
+- **Interactive Buttons**: Color-coded buttons for events (General, Sword Trial, Breaking Army, Showdown), Results button for viewing current winners
 - **Duration-Aware Conflict Detection**: Prevents users from selecting overlapping event times based on event durations
 - **Locked Time Slots**: Saturday & Sunday 20:30-22:00 are locked from selection
 - **Calendar View**: Beautiful visual calendar images showing schedule with colored labels and emojis
-- **Color-Coded Buttons**: Green for Events (Party/Hero's Realm/Sword Trial), Blue for Breaking Army, Red for Showdown
+- **Color-Coded Buttons**: Row 1: General (Grey), Sword Trial (Green), Breaking Army (Blue), Showdown (Red); Row 2: Results (Grey)
 - **Editable Selections**: Users can freely change or clear their choices
 - **Live Updates**: Calendar images update automatically when users vote
 
