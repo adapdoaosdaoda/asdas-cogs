@@ -127,6 +127,7 @@ class CalendarRenderer:
         for font_bold_path in font_bold_paths:
             try:
                 self.font_bold = ImageFont.truetype(font_bold_path, 17)
+                self.font_medium_bold = ImageFont.truetype(font_bold_path, 15)
                 self.font_large = ImageFont.truetype(font_bold_path, 19)
                 print(f"Successfully loaded bold font from: {font_bold_path}")
                 loaded_bold = True
@@ -853,26 +854,26 @@ class CalendarRenderer:
         for x, y, height, text in overlays:
             # Create text image - width is height because we rotate
             # Use a reasonable width for the text strip (e.g. 30px to fit descenders)
-            txt_img_height = 30
+            txt_img_height = 25
             txt_img = Image.new('RGBA', (height, txt_img_height), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_img)
             
             # Calculate text size to center it
-            bbox = txt_draw.textbbox((0, 0), text, font=self.font_bold)
+            bbox = txt_draw.textbbox((0, 0), text, font=self.font_medium_bold)
             txt_w = bbox[2] - bbox[0]
             txt_h = bbox[3] - bbox[1]
             
             # Draw text centered along the strip
             txt_x = (height - txt_w) // 2
             txt_y = (txt_img_height - txt_h) // 2
-            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=self.HEADER_TEXT)
+            txt_draw.text((txt_x, txt_y), text, font=self.font_medium_bold, fill=self.HEADER_TEXT)
             
             # Rotate 90 degrees (vertical reading up)
             rotated_txt = txt_img.rotate(90, expand=True)
             
             # Paste onto main image at left edge of block
             # x + padding, y (start of block)
-            paste_x = x + 3
+            paste_x = x - 1
             paste_y = y
             
             img.paste(rotated_txt, (paste_x, paste_y), rotated_txt)
