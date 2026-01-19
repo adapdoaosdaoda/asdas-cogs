@@ -268,6 +268,25 @@ class CalendarRenderer:
         # Crop empty hours from extremities - find first and last slots with events
         time_slots = self._crop_empty_hours(time_slots, schedule, days)
 
+        # Fill in gaps between start and end time to show continuous schedule
+        if time_slots:
+            start_minutes = sort_time_key(time_slots[0])
+            end_minutes = sort_time_key(time_slots[-1])
+            
+            full_time_slots = []
+            for minutes in range(start_minutes, end_minutes + 30, 30):
+                # Convert back to HH:MM
+                h = (minutes // 60) % 24
+                m = minutes % 60
+                time_str = f"{h:02d}:{m:02d}"
+                full_time_slots.append(time_str)
+                
+                # Ensure slot exists in schedule (init with empty days if missing)
+                if time_str not in schedule:
+                    schedule[time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+            
+            time_slots = full_time_slots
+
         width = self.TIME_COL_WIDTH + (len(days) * self.CELL_WIDTH) + (2 * self.PADDING)
         height = self.HEADER_HEIGHT + (len(time_slots) * self.CELL_HEIGHT) + self.FOOTER_HEIGHT + (2 * self.PADDING)
 
@@ -828,13 +847,14 @@ class CalendarRenderer:
                                 # Calculate total height based on duration
                                 num_slots = max(1, duration // 30)
                                 total_height = num_slots * self.CELL_HEIGHT
-                                overlays.append((x, y, total_height, "2 games"))
+                                overlays.append((x, y, total_height, "2 Games"))
 
         # Draw overlays for multi-slot events
         for x, y, height, text in overlays:
             # Create text image - width is height because we rotate
-            # Use a reasonable width for the text strip (e.g. 20px)
-            txt_img = Image.new('RGBA', (height, 20), (0, 0, 0, 0))
+            # Use a reasonable width for the text strip (e.g. 30px to fit descenders)
+            txt_img_height = 30
+            txt_img = Image.new('RGBA', (height, txt_img_height), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_img)
             
             # Calculate text size to center it
@@ -844,7 +864,7 @@ class CalendarRenderer:
             
             # Draw text centered along the strip
             txt_x = (height - txt_w) // 2
-            txt_y = (20 - txt_h) // 2
+            txt_y = (txt_img_height - txt_h) // 2
             txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=self.HEADER_TEXT)
             
             # Rotate 90 degrees (vertical reading up)
