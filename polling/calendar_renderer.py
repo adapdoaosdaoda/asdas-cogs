@@ -815,17 +815,19 @@ class CalendarRenderer:
                                 # Single event: center vertically, except Party which goes to top
                                 if event_name == "Party":
                                     # Party takes top half even when alone (short duration event)
-                                    base_y = y + 10
+                                    # Center in top half
+                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2
                                 else:
-                                    # Other events center vertically
+                                    # Other events center vertically in full cell
                                     base_y = y + (self.CELL_HEIGHT - total_height) // 2
                             else:
-                                # Multiple events: stack vertically with line breaks, center each
+                                # Multiple events: split cell
                                 if event_idx == 0:
-                                    # First event (Party in combo cells) moved up slightly
-                                    base_y = y + 5  # Adjusted for multi-line
+                                    # First event (Party) centered in top half
+                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2
                                 else:
-                                    base_y = y + 45  # Adjusted for second event
+                                    # Second event centered in bottom half
+                                    base_y = y + (self.CELL_HEIGHT // 2) + (self.CELL_HEIGHT // 2 - total_height) // 2
 
                             # Draw each line
                             if not hasattr(self, '_emoji_positions'):

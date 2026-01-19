@@ -1982,7 +1982,6 @@ class EventPolling(commands.Cog):
 
         embed = discord.Embed(
             title=f"📅 {title}",
-            description="Click an event button below to vote for your preferred times.",
             color=self._get_embed_color(guild)
         )
 
@@ -1994,7 +1993,7 @@ class EventPolling(commands.Cog):
 
         # Show event info at the top
         embed.add_field(
-            name="📋 Events",
+            name="🔓 Unlocked",
             value=(
                 "🎉 **Party**\n"
                 "Daily (10 min)\n"
