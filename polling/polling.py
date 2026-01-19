@@ -407,7 +407,19 @@ class EventPolling(commands.Cog):
                     poll_id
                 )
                 updated_embed.set_footer(text="Click the buttons below to set your preferences")
-                await message.edit(embed=updated_embed)
+                
+                # Recreate the view to update buttons
+                view = EventPollView(
+                    self,
+                    guild_id,
+                    poll_data.get("creator_id"),
+                    self.events,
+                    self.days_of_week,
+                    self.blocked_times
+                )
+                view.poll_id = poll_id
+                
+                await message.edit(embed=updated_embed, view=view)
 
             # Update any live calendar messages for this poll
             await self._update_calendar_messages(guild, poll_data, poll_id)
