@@ -297,6 +297,14 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
         if event_info["type"] == "daily":
             # Party - single time selection
+            times = cog.generate_time_options(
+                event_info["time_range"][0],
+                event_info["time_range"][1],
+                event_info["interval"],
+                event_info["duration"],
+                event_name
+            )
+
             time_options = [
                 discord.SelectOption(
                     label=time_str,
@@ -323,6 +331,13 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
         elif event_info["type"] == "once":
             # Hero's Realm (Catch-up) - day + time selection
+            times = cog.generate_time_options(
+                event_info["time_range"][0],
+                event_info["time_range"][1],
+                event_info["interval"],
+                event_info["duration"],
+                event_name
+            )
             available_days = event_info.get("days", self.days)
             current_day = None
             current_time = None
@@ -384,6 +399,13 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
         elif event_info["type"] == "fixed_days":
             # Sword Trial - multiple fixed days (Wed, Fri)
+            times = cog.generate_time_options(
+                event_info["time_range"][0],
+                event_info["time_range"][1],
+                event_info["interval"],
+                event_info["duration"],
+                event_name
+            )
             fixed_days = event_info.get("days", [])
             self.day_selects = {}
 
@@ -1047,4 +1069,86 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 pass
 
 
+class GuildWarVoteModal(Modal, title="Vote: Guild War"):
+    """Modal for Guild War votes"""
 
+    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
+                 user_selections: Dict, events: Dict):
+        super().__init__()
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.user_id = user_id
+        self.user_selections = user_selections
+        self.events = events
+
+        # Dynamically resolve Label class to handle load order issues
+        Label_cls = Label or getattr(discord.ui, "Label", None)
+
+        if "Guild War" in events:
+            # Manually define allowed times for 90min duration ending by 23:00
+            allowed_times = ["20:30", "21:00", "21:30"]
+
+            current_gw = user_selections.get("Guild War")
+            current_time = None
+            if current_gw and isinstance(current_gw, list) and len(current_gw) > 0:
+                if current_gw[0]:
+                    current_time = current_gw[0].get("time")
+
+            options = [
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(time_str == current_time)
+                )
+                for time_str in allowed_times
+            ]
+
+            self.gw_select = StringSelect(
+                placeholder="Choose a time...",
+                options=options,
+                custom_id="gw_select"
+            )
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "🏰 Guild War Saturday",
+                    self.gw_select,
+                    description="90 min duration (Ends by 23:00)"
+                ))
+            else:
+                self.add_item(self.gw_select)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+
+            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+                if self.poll_id not in polls:
+                    await interaction.followup.send("This poll is no longer active!", ephemeral=True)
+                    return
+
+                user_id_str = str(self.user_id)
+                if user_id_str not in polls[self.poll_id]["selections"]:
+                    polls[self.poll_id]["selections"][user_id_str] = {}
+
+                # Save Guild War vote
+                if hasattr(self, 'gw_select'):
+                    selections = []
+                    if self.gw_select.values:
+                        selections.append({"time": self.gw_select.values[0]})
+                    else:
+                        selections.append(None)
+                    polls[self.poll_id]["selections"][user_id_str]["Guild War"] = selections
+
+                poll_data = polls[self.poll_id]
+
+            await self.cog._update_poll_message(self.guild_id, self.poll_id, poll_data)
+
+        except Exception as e:
+            log.error(f"Error in GuildWarVoteModal.on_submit: {e}", exc_info=True)
+            try:
+                await interaction.followup.send("An error occurred. Please try again.", ephemeral=True)
+            except:
+                pass
