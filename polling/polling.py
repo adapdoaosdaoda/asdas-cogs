@@ -2018,7 +2018,7 @@ class EventPolling(commands.Cog):
                 "🏆 **Showdown**\n"
                 "Weekly (60 min, 2 slots)"
             ),
-            inline=False
+            inline=True
         )
         embed.add_field(
             name="🔒 Locked",
@@ -2028,7 +2028,7 @@ class EventPolling(commands.Cog):
                 "🛡️ **Hero's Realm (Reset)**\n"
                 "Sun 22:00"
             ),
-            inline=False
+            inline=True
         )
 
         # Calculate winning times (most votes) for each event and slot

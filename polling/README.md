@@ -23,7 +23,7 @@ pip install git+https://github.com/jay3332/pilmoji
 - **Duration-Aware Conflict Detection**: Prevents users from selecting overlapping event times based on event durations
 - **Locked Time Slots**: Saturday & Sunday 20:30-22:00 are locked from selection
 - **Calendar View**: Beautiful visual calendar images showing schedule with colored labels and emojis
-- **Color-Coded Buttons**: Row 1: General (Grey), Sword Trial (Green), Breaking Army (Blue), Showdown (Red); Row 2: Results (Grey)
+- **Color-Coded Buttons**: Row 1: General (Grey), Sword Trial (Green); Row 2: Breaking Army (Blue), Showdown (Red); Row 3: Results (Grey)
 - **Editable Selections**: Users can freely change or clear their choices
 - **Live Updates**: Calendar images update automatically when users vote
 

@@ -125,20 +125,22 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Row 0: General (Grey), Sword Trial (Green), Breaking Army (Blue), Showdown (Red)
+        # Row 0: General (Grey), Sword Trial (Green)
+        # Row 1: Breaking Army (Blue), Showdown (Red)
+        # Row 2: Results (Grey)
         
-        # General button (Grey)
+        # General button (Grey) - Row 0
         general_button = discord.ui.Button(
             label="General",
             style=discord.ButtonStyle.secondary,
-            emoji="🎯",
+            emoji="🛡️",
             custom_id="event_poll:simple_events",
             row=0
         )
         general_button.callback = self._create_simple_events_callback()
         self.add_item(general_button)
 
-        # Sword Trial button (Green)
+        # Sword Trial button (Green) - Row 0
         if "Sword Trial" in events:
             st_button = discord.ui.Button(
                 label="Sword Trial",
@@ -150,37 +152,37 @@ class EventPollView(discord.ui.View):
             st_button.callback = self._create_event_callback("Sword Trial")
             self.add_item(st_button)
 
-        # Breaking Army button (Blue)
+        # Breaking Army button (Blue) - Row 1
         if "Breaking Army" in events:
             ba_button = discord.ui.Button(
                 label="Breaking Army",
                 style=discord.ButtonStyle.primary,
                 emoji=events["Breaking Army"]["emoji"],
                 custom_id="event_poll:Breaking Army",
-                row=0
+                row=1
             )
             ba_button.callback = self._create_event_callback("Breaking Army")
             self.add_item(ba_button)
 
-        # Showdown button (Red)
+        # Showdown button (Red) - Row 1
         if "Showdown" in events:
             sd_button = discord.ui.Button(
                 label="Showdown",
                 style=discord.ButtonStyle.danger,
                 emoji=events["Showdown"]["emoji"],
                 custom_id="event_poll:Showdown",
-                row=0
+                row=1
             )
             sd_button.callback = self._create_event_callback("Showdown")
             self.add_item(sd_button)
 
-        # Row 1: Results button (Grey)
+        # Row 2: Results button (Grey)
         results_button = discord.ui.Button(
             label="Results",
             style=discord.ButtonStyle.secondary,
             emoji="🏆",
             custom_id="event_poll:results",
-            row=1
+            row=2
         )
         results_button.callback = self._show_results
         self.add_item(results_button)
