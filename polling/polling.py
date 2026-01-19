@@ -77,13 +77,18 @@ class EventPolling(commands.Cog):
                 }
             },
             "Sword Trial (Echo)": {
-                "type": "locked",
-                "days": ["Sunday"],
-                "fixed_time": "22:30",
+                "type": "fixed_days",
+                "days": ["Monday"],
+                "time_range": (17, 26),  # 17:00 to 02:00
+                "interval": 30,
                 "duration": 30,  # 30 minutes
+                "slots": 1,
                 "color": discord.Color.greyple(),
                 "emoji": "⚔️",
-                "priority": 4
+                "priority": 4,
+                "default_times": {
+                    "Monday": "22:30"
+                }
             },
             "Party": {
                 "type": "daily",
@@ -125,6 +130,20 @@ class EventPolling(commands.Cog):
                     "Wednesday": "18:30",
                     "Saturday": "18:30"
                 }
+            },
+            "Guild War": {
+                "type": "fixed_days",
+                "days": ["Saturday"],
+                "time_range": (20, 24),  # 20:00 to 24:00 (for 20:30-23:00 validity)
+                "interval": 30,
+                "duration": 90,  # 90 minutes
+                "slots": 1,
+                "color": discord.Color.dark_red(),
+                "emoji": "🏰",
+                "priority": 6,  # Highest priority
+                "default_times": {
+                    "Saturday": "21:00"
+                }
             }
         }
 
@@ -135,9 +154,8 @@ class EventPolling(commands.Cog):
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Saturday 20:30 - 23:00 and Sunday 20:30 - 22:00
+        # Blocked time slots: Sunday 20:30 - 22:00 (Saturday is now a voteable event)
         self.blocked_times = [
-            {"day": "Saturday", "start": "20:30", "end": "23:00"},
             {"day": "Sunday", "start": "20:30", "end": "22:00"}
         ]
 
@@ -1964,7 +1982,9 @@ class EventPolling(commands.Cog):
                 "🛡️ **Hero's Realm (Catch-up)**\n"
                 "Weekly (30 min, 1 slot)\n"
                 "⚔️ **Sword Trial**\n"
-                "Wed/Fri (30 min, 2 slots)\n"
+                "Wed/Fri/Mon(Echo) (30 min)\n"
+                "🏰 **Guild War**\n"
+                "Sat (90 min, 20:30-23:00)\n"
                 "⚡ **Breaking Army**\n"
                 "Weekly (60 min, 2 slots)\n"
                 "🏆 **Showdown**\n"
@@ -1973,11 +1993,9 @@ class EventPolling(commands.Cog):
                 "Daily (10 min)\n\n"
                 "**📋 Locked**\n"
                 "🏰 **Guild War**\n"
-                "Sat 20:30-23:00 / Sun 20:30-22:00\n"
+                "Sun 20:30-22:00\n"
                 "🛡️ **Hero's Realm (Reset)**\n"
-                "Sun 22:00\n"
-                "⚔️ **Sword Trial (Echo)**\n"
-                "Sun 22:30"
+                "Sun 22:00"
             ),
             inline=False
         )

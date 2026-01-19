@@ -21,12 +21,11 @@ log = logging.getLogger("red.asdas-cogs.polling")
 
 
 class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
-    """Combined modal for Events (Party, Hero's Realm, and Sword Trial) votes
+    """Combined modal for Events (Party and Hero's Realm) votes
 
-    All three events are voted for in a single modal with 5 dropdowns:
+    Both events are voted for in a single modal:
     - Party time
     - Hero's Realm day + time
-    - Sword Trial Wed time + Fri time
     """
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
@@ -86,82 +85,10 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             else:
                 self.add_item(party_select)
 
-        # 2. Sword Trial - Wed time + Fri time
-        if "Sword Trial" in events:
-            sword_info = events["Sword Trial"]
-            times = cog.generate_time_options(
-                sword_info["time_range"][0],
-                sword_info["time_range"][1],
-                sword_info["interval"],
-                sword_info["duration"],
-                "Sword Trial"
-            )
-
-            current_sword = user_selections.get("Sword Trial")
-            current_wed = None
-            current_fri = None
-            if current_sword and isinstance(current_sword, list):
-                if len(current_sword) > 0 and current_sword[0]:
-                    current_wed = current_sword[0].get("time")
-                if len(current_sword) > 1 and current_sword[1]:
-                    current_fri = current_sword[1].get("time")
-
-            # Wednesday time
-            wed_options = [
-                discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
-                    emoji="🕐",
-                    default=(time_str == current_wed)
-                )
-                for time_str in times[:25]
-            ]
-
-            wed_select = StringSelect(
-                placeholder="Choose a time...",
-                options=wed_options,
-                custom_id="sword_wed_select"
-            )
-            
-            if Label_cls:
-                self.add_item(Label_cls(
-                    "⚔️ Sword Trial Wednesday Time",
-                    wed_select,
-                    description="description: times in server time (UTC+1)"
-                ))
-            else:
-                self.add_item(wed_select)
-
-            # Friday time
-            fri_options = [
-                discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
-                    emoji="🕐",
-                    default=(time_str == current_fri)
-                )
-                for time_str in times[:25]
-            ]
-
-            fri_select = StringSelect(
-                placeholder="Choose a time...",
-                options=fri_options,
-                custom_id="sword_fri_select"
-            )
-            self.selects["Sword Trial"] = {"wed": wed_select, "fri": fri_select}
-            
-            if Label_cls:
-                self.add_item(Label_cls(
-                    "⚔️ Sword Trial Friday Time",
-                    fri_select,
-                    description="description: times in server time (UTC+1)"
-                ))
-            else:
-                self.add_item(fri_select)
-
-        # 3. Hero's Realm (Catch-up) - day + time
+        # 2. Hero's Realm (Catch-up) - day + time
         if "Hero's Realm (Catch-up)" in events:
             hero_info = events["Hero's Realm (Catch-up)"]
+
             available_days = hero_info.get("days", self.days)
             times = cog.generate_time_options(
                 hero_info["time_range"][0],
@@ -264,24 +191,6 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                             "day": day_select.values[0],
                             "time": time_select.values[0]
                         }]
-
-                # Save Sword Trial votes
-                if "Sword Trial" in self.selects:
-                    wed_select = self.selects["Sword Trial"]["wed"]
-                    fri_select = self.selects["Sword Trial"]["fri"]
-                    selections = []
-                    # Wednesday (index 0)
-                    if wed_select.values:
-                        selections.append({"time": wed_select.values[0]})
-                    else:
-                        selections.append(None)
-                    # Friday (index 1)
-                    if fri_select.values:
-                        selections.append({"time": fri_select.values[0]})
-                    else:
-                        selections.append(None)
-
-                    polls[self.poll_id]["selections"][user_id_str]["Sword Trial"] = selections
 
                 poll_data = polls[self.poll_id]
 
@@ -932,5 +841,270 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
                     "An error occurred while saving your vote. Please try again.",
                     ephemeral=True
                 )
+            except:
+                pass
+
+
+class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
+    """Modal for Sword Trial (Wed/Fri) and Sword Trial Echo (Mon) votes"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
+                 user_selections: Dict, events: Dict):
+        super().__init__()
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.user_id = user_id
+        self.user_selections = user_selections
+        self.events = events
+
+        # Dynamically resolve Label class to handle load order issues
+        Label_cls = Label or getattr(discord.ui, "Label", None)
+        
+        self.selects = {}
+
+        # 1. Sword Trial (Wed/Fri)
+        if "Sword Trial" in events:
+            sword_info = events["Sword Trial"]
+            times = cog.generate_time_options(
+                sword_info["time_range"][0],
+                sword_info["time_range"][1],
+                sword_info["interval"],
+                sword_info["duration"],
+                "Sword Trial"
+            )
+
+            current_sword = user_selections.get("Sword Trial")
+            current_wed = None
+            current_fri = None
+            if current_sword and isinstance(current_sword, list):
+                if len(current_sword) > 0 and current_sword[0]:
+                    current_wed = current_sword[0].get("time")
+                if len(current_sword) > 1 and current_sword[1]:
+                    current_fri = current_sword[1].get("time")
+
+            # Wednesday time
+            wed_options = [
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(time_str == current_wed)
+                )
+                for time_str in times[:25]
+            ]
+
+            self.wed_select = StringSelect(
+                placeholder="Choose a time...",
+                options=wed_options,
+                custom_id="sword_wed_select"
+            )
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "⚔️ Sword Trial Wednesday",
+                    self.wed_select,
+                    description="Times in Server Time (UTC+1)"
+                ))
+            else:
+                self.add_item(self.wed_select)
+
+            # Friday time
+            fri_options = [
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(time_str == current_fri)
+                )
+                for time_str in times[:25]
+            ]
+
+            self.fri_select = StringSelect(
+                placeholder="Choose a time...",
+                options=fri_options,
+                custom_id="sword_fri_select"
+            )
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "⚔️ Sword Trial Friday",
+                    self.fri_select,
+                    description="Times in Server Time (UTC+1)"
+                ))
+            else:
+                self.add_item(self.fri_select)
+
+        # 2. Sword Trial Echo (Mon)
+        if "Sword Trial (Echo)" in events:
+            echo_info = events["Sword Trial (Echo)"]
+            times = cog.generate_time_options(
+                echo_info["time_range"][0],
+                echo_info["time_range"][1],
+                echo_info["interval"],
+                echo_info["duration"],
+                "Sword Trial (Echo)"
+            )
+
+            current_echo = user_selections.get("Sword Trial (Echo)")
+            current_mon = None
+            if current_echo and isinstance(current_echo, list) and len(current_echo) > 0:
+                if current_echo[0]:
+                    current_mon = current_echo[0].get("time")
+
+            mon_options = [
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(time_str == current_mon)
+                )
+                for time_str in times[:25]
+            ]
+
+            self.mon_select = StringSelect(
+                placeholder="Choose a time...",
+                options=mon_options,
+                custom_id="sword_mon_select"
+            )
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "⚔️ Sword Trial (Echo) Monday",
+                    self.mon_select,
+                    description="Times in Server Time (UTC+1)"
+                ))
+            else:
+                self.add_item(self.mon_select)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+
+            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+                if self.poll_id not in polls:
+                    await interaction.followup.send("This poll is no longer active!", ephemeral=True)
+                    return
+
+                user_id_str = str(self.user_id)
+                if user_id_str not in polls[self.poll_id]["selections"]:
+                    polls[self.poll_id]["selections"][user_id_str] = {}
+
+                # Save Sword Trial (Wed/Fri)
+                if hasattr(self, 'wed_select') and hasattr(self, 'fri_select'):
+                    selections = []
+                    if self.wed_select.values:
+                        selections.append({"time": self.wed_select.values[0]})
+                    else:
+                        selections.append(None)
+                    if self.fri_select.values:
+                        selections.append({"time": self.fri_select.values[0]})
+                    else:
+                        selections.append(None)
+                    polls[self.poll_id]["selections"][user_id_str]["Sword Trial"] = selections
+
+                # Save Sword Trial Echo (Mon)
+                if hasattr(self, 'mon_select'):
+                    selections = []
+                    if self.mon_select.values:
+                        selections.append({"time": self.mon_select.values[0]})
+                    else:
+                        selections.append(None)
+                    polls[self.poll_id]["selections"][user_id_str]["Sword Trial (Echo)"] = selections
+
+                poll_data = polls[self.poll_id]
+
+            await self.cog._update_poll_message(self.guild_id, self.poll_id, poll_data)
+            await interaction.followup.send("✅ Your Sword Trial votes have been saved!", ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Error in SwordTrialVoteModal.on_submit: {e}", exc_info=True)
+            try:
+                await interaction.followup.send("An error occurred. Please try again.", ephemeral=True)
+            except:
+                pass
+
+
+class GuildWarVoteModal(Modal, title="Vote: Guild War"):
+    """Modal for Guild War (Sat) votes with restricted times"""
+
+    def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
+                 user_selections: Dict, events: Dict):
+        super().__init__()
+        self.cog = cog
+        self.guild_id = guild_id
+        self.poll_id = poll_id
+        self.user_id = user_id
+        self.user_selections = user_selections
+        self.events = events
+
+        Label_cls = Label or getattr(discord.ui, "Label", None)
+
+        if "Guild War" in events:
+            # Manually define allowed times for 90min duration ending by 23:00
+            allowed_times = ["20:30", "21:00", "21:30"]
+
+            current_gw = user_selections.get("Guild War")
+            current_time = None
+            if current_gw and isinstance(current_gw, list) and len(current_gw) > 0:
+                if current_gw[0]:
+                    current_time = current_gw[0].get("time")
+
+            options = [
+                discord.SelectOption(
+                    label=time_str,
+                    value=time_str,
+                    emoji="🕐",
+                    default=(time_str == current_time)
+                )
+                for time_str in allowed_times
+            ]
+
+            self.gw_select = StringSelect(
+                placeholder="Choose a time...",
+                options=options,
+                custom_id="gw_select"
+            )
+            
+            if Label_cls:
+                self.add_item(Label_cls(
+                    "🏰 Guild War Saturday",
+                    self.gw_select,
+                    description="90 min duration (Ends by 23:00)"
+                ))
+            else:
+                self.add_item(self.gw_select)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+
+            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
+                if self.poll_id not in polls:
+                    await interaction.followup.send("This poll is no longer active!", ephemeral=True)
+                    return
+
+                user_id_str = str(self.user_id)
+                if user_id_str not in polls[self.poll_id]["selections"]:
+                    polls[self.poll_id]["selections"][user_id_str] = {}
+
+                # Save Guild War
+                if hasattr(self, 'gw_select'):
+                    selections = []
+                    if self.gw_select.values:
+                        selections.append({"time": self.gw_select.values[0]})
+                    else:
+                        selections.append(None)
+                    polls[self.poll_id]["selections"][user_id_str]["Guild War"] = selections
+
+                poll_data = polls[self.poll_id]
+
+            await self.cog._update_poll_message(self.guild_id, self.poll_id, poll_data)
+            await interaction.followup.send("✅ Your Guild War vote has been saved!", ephemeral=True)
+
+        except Exception as e:
+            log.error(f"Error in GuildWarVoteModal.on_submit: {e}", exc_info=True)
+            try:
+                await interaction.followup.send("An error occurred. Please try again.", ephemeral=True)
             except:
                 pass

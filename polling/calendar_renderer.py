@@ -283,7 +283,7 @@ class CalendarRenderer:
         self._draw_day_headers(draw, days)
 
         # Draw time labels and calendar grid
-        self._draw_calendar_grid(draw, days, time_slots, schedule, blocked_times, events)
+        self._draw_calendar_grid(img, draw, days, time_slots, schedule, blocked_times, events)
 
         # Draw footer with timestamp and voter count
         self._draw_footer(draw, width, height, total_voters)
@@ -549,6 +549,7 @@ class CalendarRenderer:
 
     def _draw_calendar_grid(
         self,
+        img: Image.Image,
         draw: ImageDraw,
         days: List[str],
         time_slots: List[str],
@@ -820,6 +821,21 @@ class CalendarRenderer:
                                 text_y = base_y + (line_idx * line_height)
 
                                 self._emoji_positions.append((text_x, text_y, line_text, self.font_bold))
+
+                            # Draw "2 games" vertical text for Guild War
+                            if event_name == "Guild War":
+                                txt = "2 games"
+                                bbox = draw.textbbox((0, 0), txt, font=self.font_small)
+                                w = bbox[2] - bbox[0] + 4
+                                h = bbox[3] - bbox[1] + 4
+                                txt_img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+                                txt_draw = ImageDraw.Draw(txt_img)
+                                txt_draw.text((2, 2), txt, font=self.font_small, fill=self.HEADER_TEXT)
+                                rotated_txt = txt_img.rotate(90, expand=True)
+                                rw, rh = rotated_txt.size
+                                paste_x = x + self.CELL_WIDTH - rw - 5
+                                paste_y = y + (self.CELL_HEIGHT - rh) // 2
+                                img.paste(rotated_txt, (paste_x, paste_y), rotated_txt)
 
     def _draw_legend(self, draw: ImageDraw, width: int, start_y: int, events: Dict):
         """Draw legend showing event labels and names"""
