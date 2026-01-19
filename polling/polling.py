@@ -220,7 +220,7 @@ class EventPolling(commands.Cog):
         except:
             pass
         # Fallback to default color
-        return discord.Color(0xcb4449)
+        return discord.Color(0x5a61ee)
 
     @tasks.loop(hours=24)
     async def backup_task(self):
