@@ -65,7 +65,7 @@ class EventPolling(commands.Cog):
                     "Saturday": "20:30"
                 }
             },
-            "Hero's Realm (Catch-up)": {
+            "Hero's Realm (Catch-Up)": {
                 "type": "once",
                 "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],  # Available voting days (Mon-Sat only)
                 "time_range": (17, 26),  # 17:00 to 02:00 (26 = 02:00 next day)
@@ -2037,7 +2037,7 @@ class EventPolling(commands.Cog):
         embed.add_field(
             name="🔓 Unlocked",
             value=(
-                "🛡️ **Hero's Realm (Catch-up)**\n"
+                "🛡️ **Hero's Realm (Catch-Up)**\n"
                 "Weekly (30 min, 1 slot)\n"
                 "⚔️ **Sword Trial / (Echo)**\n"
                 "Mon(Echo)/Wed/Fri (30 min)\n"
@@ -2046,7 +2046,7 @@ class EventPolling(commands.Cog):
                 "🏆 **Showdown**\n"
                 "Weekly (60 min, 2 slots)\n"
                 "🏰 **Guild War**\n"
-                "Sat 20:30-22:00\n"
+                "Sat (90 min, 20:30 - 23:00)\n"
                 "🎉 **Party**\n"
                 "Daily (10 min)"
             ),

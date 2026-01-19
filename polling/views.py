@@ -125,13 +125,13 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Row 0: Daily / Catch-up (Blue), Sword Trial (Blue)
+        # Row 0: Party / Catch-Up / Guild War (Blue), Sword Trial (Blue)
         # Row 1: Breaking Army (Blue), Showdown (Blue)
         # Row 2: Results (Grey)
         
-        # Daily / Catch-up button (Blue) - Row 0
+        # Party / Catch-Up / Guild War button (Blue) - Row 0
         general_button = discord.ui.Button(
-            label="Daily / Catch-up",
+            label="Party / Catch-Up / Guild War",
             style=discord.ButtonStyle.primary,
             emoji="📋",
             custom_id="event_poll:simple_events",
@@ -941,7 +941,7 @@ class FixedDaysModal(discord.ui.View):
 
 
 class WeeklyEventModal(discord.ui.View):
-    """Modal for Breaking Army / Showdown / Hero's Realm (Catch-up) - 1-2 slots with day+time dropdowns each"""
+    """Modal for Breaking Army / Showdown / Hero's Realm (Catch-Up) - 1-2 slots with day+time dropdowns each"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
                  event_name: str, user_selections: Dict, events: Dict, days: List[str]):

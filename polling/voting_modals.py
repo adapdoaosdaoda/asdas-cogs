@@ -20,7 +20,7 @@ except ImportError:
 log = logging.getLogger("red.asdas-cogs.polling")
 
 
-class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
+class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
     """Combined modal for Events (Party, Hero's Realm, and Guild War) votes
 
     Events voted for in a single modal:
@@ -93,9 +93,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             else:
                 self.add_item(party_select)
 
-        # 2. Hero's Realm (Catch-up) - day + time
-        if "Hero's Realm (Catch-up)" in events:
-            hero_info = events["Hero's Realm (Catch-up)"]
+        # 2. Hero's Realm (Catch-Up) - day + time
+        if "Hero's Realm (Catch-Up)" in events:
+            hero_info = events["Hero's Realm (Catch-Up)"]
 
             available_days = hero_info.get("days", self.days)
             times = cog.generate_time_options(
@@ -103,10 +103,10 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                 hero_info["time_range"][1],
                 hero_info["interval"],
                 hero_info["duration"],
-                "Hero's Realm (Catch-up)"
+                "Hero's Realm (Catch-Up)"
             )
 
-            current_hero = user_selections.get("Hero's Realm (Catch-up)")
+            current_hero = user_selections.get("Hero's Realm (Catch-Up)")
             current_day = None
             current_time = None
             if current_hero and isinstance(current_hero, list) and len(current_hero) > 0:
@@ -133,9 +133,9 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    "🛡️ Hero's Realm (Catch-up) Day",
+                    "🛡️ Hero's Realm (Catch-Up) Day",
                     hero_day_select,
-                    description="description: Monday - Saturday"
+                    description="Monday - Saturday"
                 ))
             else:
                 self.add_item(hero_day_select)
@@ -156,13 +156,13 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                 options=time_options,
                 custom_id="hero_time_select"
             )
-            self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
+            self.selects["Hero's Realm (Catch-Up)"] = {"day": hero_day_select, "time": hero_time_select}
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    "🛡️ Hero's Realm (Catch-up) Time",
+                    "🛡️ Hero's Realm (Catch-Up) Time",
                     hero_time_select,
-                    description="description: times in server time (UTC+1)"
+                    description="times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(hero_time_select)
@@ -207,7 +207,7 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                 self.add_item(Label_cls(
                     "🏰 Guild War (Saturday)",
                     gw_select,
-                    description="description: Saturday only"
+                    description="Saturday only"
                 ))
             else:
                 self.add_item(gw_select)
@@ -236,11 +236,11 @@ class CombinedSimpleEventsModal(Modal, title="Vote: Events"):
                         polls[self.poll_id]["selections"][user_id_str]["Party"] = {"time": party_select.values[0]}
 
                 # Save Hero's Realm vote
-                if "Hero's Realm (Catch-up)" in self.selects:
-                    day_select = self.selects["Hero's Realm (Catch-up)"]["day"]
-                    time_select = self.selects["Hero's Realm (Catch-up)"]["time"]
+                if "Hero's Realm (Catch-Up)" in self.selects:
+                    day_select = self.selects["Hero's Realm (Catch-Up)"]["day"]
+                    time_select = self.selects["Hero's Realm (Catch-Up)"]["time"]
                     if day_select.values and time_select.values:
-                        polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-up)"] = [{
+                        polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-Up)"] = [{
                             "day": day_select.values[0],
                             "time": time_select.values[0]
                         }]
@@ -275,7 +275,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
     This modal handles:
     - Party: Daily time vote
-    - Hero's Realm (Catch-up): Single day+time vote (Mon-Sat)
+    - Hero's Realm (Catch-Up): Single day+time vote (Mon-Sat)
     - Sword Trial: Two day votes (Wed, Fri) with times
     """
 
@@ -339,7 +339,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 self.add_item(self.time_select)
 
         elif event_info["type"] == "once":
-            # Hero's Realm (Catch-up) - day + time selection
+            # Hero's Realm (Catch-Up) - day + time selection
             times = cog.generate_time_options(
                 event_info["time_range"][0],
                 event_info["time_range"][1],
@@ -376,7 +376,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 self.add_item(Label_cls(
                     f"🛡️ {event_name} Day",
                     self.day_select,
-                    description="description: Monday - Saturday"
+                    description="Monday - Saturday"
                 ))
             else:
                 self.add_item(self.day_select)
@@ -401,7 +401,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 self.add_item(Label_cls(
                     f"🛡️ {event_name} Time",
                     self.time_select,
-                    description="description: times in server time (UTC+1)"
+                    description="times in server time (UTC+1)"
                 ))
             else:
                 self.add_item(self.time_select)
@@ -466,7 +466,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                     selection = None
 
             elif event_info["type"] == "once":
-                # Hero's Realm (Catch-up) - single day+time dict in list
+                # Hero's Realm (Catch-Up) - single day+time dict in list
                 if self.day_select.values and self.time_select.values:
                     selection = [{
                         "day": self.day_select.values[0],
