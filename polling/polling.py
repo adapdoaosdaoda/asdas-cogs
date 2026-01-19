@@ -222,6 +222,18 @@ class EventPolling(commands.Cog):
         # Fallback to default color
         return discord.Color(0x5a61ee)
 
+    def _get_calendar_color(self, guild: discord.Guild) -> discord.Color:
+        """Get the calendar embed color (fallback to 0x689040)"""
+        try:
+            if guild and guild.me:
+                # Use the bot's top role color if it's not default
+                if guild.me.color != discord.Color.default():
+                    return guild.me.color
+        except:
+            pass
+        # Fallback to calendar specific color
+        return discord.Color(0x689040)
+
     @tasks.loop(hours=24)
     async def backup_task(self):
         """Daily backup task for latest active poll"""
@@ -1744,7 +1756,7 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Live Calendar",
-            color=self._get_embed_color(guild)
+            color=self._get_calendar_color(guild)
         )
 
         # Get selections
@@ -1791,7 +1803,7 @@ class EventPolling(commands.Cog):
         embed = discord.Embed(
             title="📅 Event Calendar",
             description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
-            color=self._get_embed_color(guild)
+            color=self._get_calendar_color(guild)
         )
 
         # Get selections
