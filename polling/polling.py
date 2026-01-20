@@ -65,7 +65,7 @@ class EventPolling(commands.Cog):
                     "Saturday": "20:30"
                 }
             },
-            "Hero's Realm (Catch-Up)": {
+            "Hero's Realm (Catch-up)": {
                 "type": "once",
                 "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],  # Available voting days (Mon-Sat only)
                 "time_range": (17, 26),  # 17:00 to 02:00 (26 = 02:00 next day)
@@ -211,28 +211,12 @@ class EventPolling(commands.Cog):
         self.weekly_calendar_update.cancel()
 
     def _get_embed_color(self, guild: discord.Guild) -> discord.Color:
-        """Get the bot's color in the guild, or fallback to default"""
-        try:
-            if guild and guild.me:
-                # Use the bot's top role color if it's not default
-                if guild.me.color != discord.Color.default():
-                    return guild.me.color
-        except:
-            pass
-        # Fallback to default color
+        """Get the poll embed color (0x5a61ee)"""
         return discord.Color(0x5a61ee)
 
     def _get_calendar_color(self, guild: discord.Guild) -> discord.Color:
-        """Get the calendar embed color (fallback to 0x689040)"""
-        try:
-            if guild and guild.me:
-                # Use the bot's top role color if it's not default
-                if guild.me.color != discord.Color.default():
-                    return guild.me.color
-        except:
-            pass
-        # Fallback to calendar specific color
-        return discord.Color(0x689040)
+        """Get the calendar embed color (0xcb4449)"""
+        return discord.Color(0xcb4449)
 
     @tasks.loop(hours=24)
     async def backup_task(self):
@@ -2037,7 +2021,7 @@ class EventPolling(commands.Cog):
         embed.add_field(
             name="🔓 Unlocked",
             value=(
-                "🛡️ **Hero's Realm (Catch-Up)**\n"
+                "🛡️ **Hero's Realm (Catch-up)**\n"
                 "Weekly (30 min, 1 slot)\n"
                 "⚔️ **Sword Trial / (Echo)**\n"
                 "Mon(Echo)/Wed/Fri (30 min)\n"

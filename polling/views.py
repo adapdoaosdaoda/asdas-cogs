@@ -125,13 +125,13 @@ class EventPollView(discord.ui.View):
         self.blocked_times = blocked_times
         self.poll_id: Optional[str] = None
 
-        # Row 0: Party / Catch-Up / Guild War (Blue), Sword Trial (Blue)
+        # Row 0: Party / Catch-up / Guild War (Blue), Sword Trial (Blue)
         # Row 1: Breaking Army (Blue), Showdown (Blue)
         # Row 2: Results (Grey)
         
-        # Party / Catch-Up / Guild War button (Blue) - Row 0
+        # Party / Catch-up / Guild War button (Blue) - Row 0
         general_button = discord.ui.Button(
-            label="Party / Catch-Up / Guild War",
+            label="Party / Catch-up / Guild War",
             style=discord.ButtonStyle.primary,
             emoji="📋",
             custom_id="event_poll:simple_events",
@@ -395,7 +395,7 @@ class PartyModal(discord.ui.View):
                     )
                 )
 
-            time_select = discord.ui.Select(
+            time_select = discord.ui.Select(min_values=0, 
                 placeholder="Choose a time...",
                 options=time_options,
                 custom_id=f"time_select:{chunk_idx}",
@@ -687,7 +687,7 @@ class FixedDaysModal(discord.ui.View):
                     )
                 )
 
-            day_select = discord.ui.Select(
+            day_select = discord.ui.Select(min_values=0, 
                 placeholder="Choose a time...",
                 options=time_options,
                 custom_id=f"day_select:{day}",
@@ -941,7 +941,7 @@ class FixedDaysModal(discord.ui.View):
 
 
 class WeeklyEventModal(discord.ui.View):
-    """Modal for Breaking Army / Showdown / Hero's Realm (Catch-Up) - 1-2 slots with day+time dropdowns each"""
+    """Modal for Breaking Army / Showdown / Hero's Realm (Catch-up) - 1-2 slots with day+time dropdowns each"""
 
     def __init__(self, cog, guild_id: int, poll_id: str, user_id: int,
                  event_name: str, user_selections: Dict, events: Dict, days: List[str]):
@@ -994,7 +994,7 @@ class WeeklyEventModal(discord.ui.View):
                 )
             )
 
-        slot1_day_select = discord.ui.Select(
+        slot1_day_select = discord.ui.Select(min_values=0, 
             placeholder="Slot 1: Choose a day...",
             options=day_options_1,
             custom_id="slot1_day_select",
@@ -1015,7 +1015,7 @@ class WeeklyEventModal(discord.ui.View):
                 )
             )
 
-        slot1_time_select = discord.ui.Select(
+        slot1_time_select = discord.ui.Select(min_values=0, 
             placeholder=f"Slot 1: Choose a time... {timezone_display}",
             options=time_options_1,
             custom_id="slot1_time_select",
@@ -1038,7 +1038,7 @@ class WeeklyEventModal(discord.ui.View):
                     )
                 )
 
-            slot2_day_select = discord.ui.Select(
+            slot2_day_select = discord.ui.Select(min_values=0, 
                 placeholder="Slot 2: Choose a day...",
                 options=day_options_2,
                 custom_id="slot2_day_select",
@@ -1059,7 +1059,7 @@ class WeeklyEventModal(discord.ui.View):
                     )
                 )
 
-            slot2_time_select = discord.ui.Select(
+            slot2_time_select = discord.ui.Select(min_values=0, 
                 placeholder=f"Slot 2: Choose a time... {timezone_display}",
                 options=time_options_2,
                 custom_id="slot2_time_select",

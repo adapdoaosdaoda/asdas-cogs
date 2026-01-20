@@ -237,7 +237,7 @@ Bot: *Creates interactive poll with color-coded buttons and calendar view*
 
 **User voting example 1 - General (Party, Hero's Realm):**
 1. Click "🎯 General" (Grey) button
-2. A combined modal opens allowing you to vote for Party and Hero's Realm (Catch-Up)
+2. A combined modal opens allowing you to vote for Party and Hero's Realm (Catch-up)
 3. ✅ Selection saved!
 4. Poll calendar updates automatically
 

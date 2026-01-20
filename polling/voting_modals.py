@@ -20,7 +20,7 @@ except ImportError:
 log = logging.getLogger("red.asdas-cogs.polling")
 
 
-class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
+class CombinedSimpleEventsModal(Modal, title="Party / Catch-up / Guild War"):
     """Combined modal for Events (Party, Hero's Realm, and Guild War) votes
 
     Events voted for in a single modal:
@@ -77,7 +77,7 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
                 for time_str in times[:25]
             ]
 
-            party_select = StringSelect(
+            party_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=time_options,
                 custom_id="party_time_select"
@@ -93,9 +93,9 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
             else:
                 self.add_item(party_select)
 
-        # 2. Hero's Realm (Catch-Up) - day + time
-        if "Hero's Realm (Catch-Up)" in events:
-            hero_info = events["Hero's Realm (Catch-Up)"]
+        # 2. Hero's Realm (Catch-up) - day + time
+        if "Hero's Realm (Catch-up)" in events:
+            hero_info = events["Hero's Realm (Catch-up)"]
 
             available_days = hero_info.get("days", self.days)
             times = cog.generate_time_options(
@@ -103,10 +103,10 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
                 hero_info["time_range"][1],
                 hero_info["interval"],
                 hero_info["duration"],
-                "Hero's Realm (Catch-Up)"
+                "Hero's Realm (Catch-up)"
             )
 
-            current_hero = user_selections.get("Hero's Realm (Catch-Up)")
+            current_hero = user_selections.get("Hero's Realm (Catch-up)")
             current_day = None
             current_time = None
             if current_hero and isinstance(current_hero, list) and len(current_hero) > 0:
@@ -125,7 +125,7 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
                 for day in available_days
             ]
 
-            hero_day_select = StringSelect(
+            hero_day_select = StringSelect(min_values=0, 
                 placeholder="Choose a day...",
                 options=day_options,
                 custom_id="hero_day_select"
@@ -133,7 +133,7 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    "🛡️ Hero's Realm (Catch-Up) Day",
+                    "🛡️ Hero's Realm (Catch-up) Day",
                     hero_day_select,
                     description="Monday - Saturday"
                 ))
@@ -151,16 +151,16 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
                 for time_str in times[:25]
             ]
 
-            hero_time_select = StringSelect(
+            hero_time_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=time_options,
                 custom_id="hero_time_select"
             )
-            self.selects["Hero's Realm (Catch-Up)"] = {"day": hero_day_select, "time": hero_time_select}
+            self.selects["Hero's Realm (Catch-up)"] = {"day": hero_day_select, "time": hero_time_select}
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    "🛡️ Hero's Realm (Catch-Up) Time",
+                    "🛡️ Hero's Realm (Catch-up) Time",
                     hero_time_select,
                     description="times in server time (UTC+1)"
                 ))
@@ -196,7 +196,7 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
                 for time_str in times[:25]
             ]
 
-            gw_select = StringSelect(
+            gw_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=time_options,
                 custom_id="gw_time_select"
@@ -236,11 +236,11 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
                         polls[self.poll_id]["selections"][user_id_str]["Party"] = {"time": party_select.values[0]}
 
                 # Save Hero's Realm vote
-                if "Hero's Realm (Catch-Up)" in self.selects:
-                    day_select = self.selects["Hero's Realm (Catch-Up)"]["day"]
-                    time_select = self.selects["Hero's Realm (Catch-Up)"]["time"]
+                if "Hero's Realm (Catch-up)" in self.selects:
+                    day_select = self.selects["Hero's Realm (Catch-up)"]["day"]
+                    time_select = self.selects["Hero's Realm (Catch-up)"]["time"]
                     if day_select.values and time_select.values:
-                        polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-Up)"] = [{
+                        polls[self.poll_id]["selections"][user_id_str]["Hero's Realm (Catch-up)"] = [{
                             "day": day_select.values[0],
                             "time": time_select.values[0]
                         }]
@@ -275,7 +275,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
     This modal handles:
     - Party: Daily time vote
-    - Hero's Realm (Catch-Up): Single day+time vote (Mon-Sat)
+    - Hero's Realm (Catch-up): Single day+time vote (Mon-Sat)
     - Sword Trial: Two day votes (Wed, Fri) with times
     """
 
@@ -324,7 +324,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 for time_str in times[:25]  # Discord limit of 25 options
             ]
 
-            self.time_select = StringSelect(
+            self.time_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=time_options,
                 custom_id="party_time_select"
@@ -339,7 +339,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 self.add_item(self.time_select)
 
         elif event_info["type"] == "once":
-            # Hero's Realm (Catch-Up) - day + time selection
+            # Hero's Realm (Catch-up) - day + time selection
             times = cog.generate_time_options(
                 event_info["time_range"][0],
                 event_info["time_range"][1],
@@ -367,7 +367,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 for day in available_days
             ]
 
-            self.day_select = StringSelect(
+            self.day_select = StringSelect(min_values=0, 
                 placeholder="Choose a day...",
                 options=day_options,
                 custom_id="hero_day_select"
@@ -392,7 +392,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 for time_str in times[:25]
             ]
 
-            self.time_select = StringSelect(
+            self.time_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=time_options,
                 custom_id="hero_time_select"
@@ -434,7 +434,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                     for time_str in times[:25]
                 ]
 
-                day_select = StringSelect(
+                day_select = StringSelect(min_values=0, 
                     placeholder="Choose a time...",
                     options=time_options,
                     custom_id=f"sword_day_{idx}_select"
@@ -466,7 +466,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                     selection = None
 
             elif event_info["type"] == "once":
-                # Hero's Realm (Catch-Up) - single day+time dict in list
+                # Hero's Realm (Catch-up) - single day+time dict in list
                 if self.day_select.values and self.time_select.values:
                     selection = [{
                         "day": self.day_select.values[0],
@@ -562,7 +562,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             for day in days
         ]
 
-        self.slot1_day_select = StringSelect(
+        self.slot1_day_select = StringSelect(min_values=0, 
             placeholder="Slot 1: Choose a day...",
             options=day_options_1,
             custom_id="ba_slot1_day_select"
@@ -587,7 +587,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             for time_str in times[:25]
         ]
 
-        self.slot1_time_select = StringSelect(
+        self.slot1_time_select = StringSelect(min_values=0, 
             placeholder="Choose a time...",
             options=time_options_1,
             custom_id="ba_slot1_time_select"
@@ -612,7 +612,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             for day in days
         ]
 
-        self.slot2_day_select = StringSelect(
+        self.slot2_day_select = StringSelect(min_values=0, 
             placeholder="Slot 2: Choose a day...",
             options=day_options_2,
             custom_id="ba_slot2_day_select"
@@ -637,7 +637,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             for time_str in times[:25]
         ]
 
-        self.slot2_time_select = StringSelect(
+        self.slot2_time_select = StringSelect(min_values=0, 
             placeholder="Choose a time...",
             options=time_options_2,
             custom_id="ba_slot2_time_select"
@@ -752,7 +752,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             for day in days
         ]
 
-        self.slot1_day_select = StringSelect(
+        self.slot1_day_select = StringSelect(min_values=0, 
             placeholder="Slot 1: Choose a day...",
             options=day_options_1,
             custom_id="sd_slot1_day_select"
@@ -777,7 +777,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             for time_str in times[:25]
         ]
 
-        self.slot1_time_select = StringSelect(
+        self.slot1_time_select = StringSelect(min_values=0, 
             placeholder="Choose a time...",
             options=time_options_1,
             custom_id="sd_slot1_time_select"
@@ -802,7 +802,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             for day in days
         ]
 
-        self.slot2_day_select = StringSelect(
+        self.slot2_day_select = StringSelect(min_values=0, 
             placeholder="Slot 2: Choose a day...",
             options=day_options_2,
             custom_id="sd_slot2_day_select"
@@ -827,7 +827,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             for time_str in times[:25]
         ]
 
-        self.slot2_time_select = StringSelect(
+        self.slot2_time_select = StringSelect(min_values=0, 
             placeholder="Choose a time...",
             options=time_options_2,
             custom_id="sd_slot2_time_select"
@@ -944,7 +944,7 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 for time_str in times[:25]
             ]
 
-            self.mon_select = StringSelect(
+            self.mon_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=mon_options,
                 custom_id="sword_mon_select"
@@ -990,7 +990,7 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 for time_str in times[:25]
             ]
 
-            self.wed_select = StringSelect(
+            self.wed_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=wed_options,
                 custom_id="sword_wed_select"
@@ -1016,7 +1016,7 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 for time_str in times[:25]
             ]
 
-            self.fri_select = StringSelect(
+            self.fri_select = StringSelect(min_values=0, 
                 placeholder="Choose a time...",
                 options=fri_options,
                 custom_id="sword_fri_select"

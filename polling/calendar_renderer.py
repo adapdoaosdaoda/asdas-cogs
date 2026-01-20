@@ -27,7 +27,7 @@ class CalendarRenderer:
     # Event-specific cell background colors
     EVENT_BG_COLORS = {
         "Hero's Realm": (92, 107, 192),     # #5C6BC0 - Indigo
-        "Hero's Realm (Catch-Up)": (92, 107, 192),  # Inherit from Hero's Realm
+        "Hero's Realm (Catch-up)": (92, 107, 192),  # Inherit from Hero's Realm
         "Hero's Realm (Reset)": (92, 107, 192),     # Inherit from Hero's Realm
         "Sword Trial": (255, 202, 40),      # #FFCA28 - Yellow
         "Sword Trial (Echo)": (255, 202, 40),       # Inherit from Sword Trial
@@ -791,7 +791,7 @@ class CalendarRenderer:
                                 emoji = events.get(event_name, {}).get("emoji", "•")
 
                             # Split event name into multiple lines if it contains parentheses
-                            # E.g., "Hero's Realm (Catch-Up)" becomes ["Hero's Realm", "(Catch-Up)"]
+                            # E.g., "Hero's Realm (Catch-up)" becomes ["Hero's Realm", "(Catch-up)"]
                             event_lines = []
                             if "(" in event_name and ")" in event_name:
                                 # Split at opening parenthesis
