@@ -187,17 +187,6 @@ class EventPollView(discord.ui.View):
         results_button.callback = self._show_results
         self.add_item(results_button)
 
-        # Row 2: Clear Votes button (Red)
-        clear_button = discord.ui.Button(
-            label="Clear Votes",
-            style=discord.ButtonStyle.danger,
-            emoji="🗑️",
-            custom_id="event_poll:clear",
-            row=2
-        )
-        clear_button.callback = self._clear_votes
-        self.add_item(clear_button)
-
     def _create_simple_events_callback(self):
         """Create callback for combined simple events button"""
         async def callback(interaction: discord.Interaction):
@@ -276,51 +265,6 @@ class EventPollView(discord.ui.View):
             log.error(f"Missing permissions to show results for user {interaction.user.id}: {e}")
         except Exception as e:
             log.error(f"Unexpected error showing results for user {interaction.user.id}: {e}", exc_info=True)
-
-    async def _clear_votes(self, interaction: discord.Interaction):
-        """Clear all votes for the user"""
-        try:
-            # Get poll_id from the message
-            poll_id = str(interaction.message.id)
-
-            await interaction.response.defer(ephemeral=True)
-
-            async with self.cog.config.guild_from_id(self.guild_id).polls() as polls:
-                if poll_id not in polls:
-                    await interaction.followup.send(
-                        "This poll is no longer active!",
-                        ephemeral=True
-                    )
-                    return
-
-                poll_data = polls[poll_id]
-                user_id_str = str(interaction.user.id)
-
-                if user_id_str in poll_data["selections"]:
-                    del poll_data["selections"][user_id_str]
-                    
-                    # Update poll display
-                    await self.cog._update_poll_message(self.guild_id, poll_id, poll_data)
-                    
-                    await interaction.followup.send(
-                        "✅ All your votes have been cleared!",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "You haven't voted in this poll yet!",
-                        ephemeral=True
-                    )
-
-        except Exception as e:
-            log.error(f"Unexpected error clearing votes for user {interaction.user.id}: {e}", exc_info=True)
-            try:
-                await interaction.followup.send(
-                    "❌ An error occurred while clearing your votes.",
-                    ephemeral=True
-                )
-            except:
-                pass
 
     def _create_event_callback(self, event_name: str):
         async def callback(interaction: discord.Interaction):
