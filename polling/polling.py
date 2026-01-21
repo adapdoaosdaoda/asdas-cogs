@@ -33,6 +33,9 @@ class EventPolling(commands.Cog):
         # Store polls per guild
         self.config.register_guild(
             polls={},  # poll_id -> poll data
+            notification_channel_id=None,
+            notification_message="{event} is starting at {timestamp}!",
+            sent_notifications={},  # event_name -> last_notification_day_str (YYYY-MM-DD)
         )
 
         # Event definitions (ordered: Party, Guild War, Hero's Realm, Sword Trial, Breaking Army, Showdown)
@@ -204,12 +207,14 @@ class EventPolling(commands.Cog):
         self.backup_task.start()
         self.weekly_results_update.start()
         self.weekly_calendar_update.start()
+        self.event_notification_task.start()
 
     def cog_unload(self):
         """Called when the cog is unloaded"""
         self.backup_task.cancel()
         self.weekly_results_update.cancel()
         self.weekly_calendar_update.cancel()
+        self.event_notification_task.cancel()
 
     def _get_embed_color(self, guild: discord.Guild) -> discord.Color:
         """Get the poll embed color (0x5a61ee)"""
@@ -333,6 +338,146 @@ class EventPolling(commands.Cog):
     @weekly_calendar_update.before_loop
     async def before_weekly_calendar_update(self):
         """Wait for bot to be ready before starting weekly calendar update task"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=1)
+    async def event_notification_task(self):
+        """Check for upcoming events and send notifications"""
+        try:
+            # Use UTC+1 (CET/CEST) as server time, consistent with other tasks
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
+            now = datetime.now(server_tz)
+            today_str = now.strftime("%Y-%m-%d")
+            day_name = now.strftime("%A")
+
+            all_guilds = await self.config.all_guilds()
+
+            for guild_id, guild_data in all_guilds.items():
+                channel_id = guild_data.get("notification_channel_id")
+                if not channel_id:
+                    continue
+
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+                
+                channel = guild.get_channel(channel_id)
+                if not channel:
+                    continue
+
+                polls = guild_data.get("polls", {})
+                if not polls:
+                    continue
+
+                # Get latest poll
+                latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+                poll_data = polls[latest_poll_id]
+                selections = poll_data.get("selections", {})
+                
+                # Get winning times
+                winning_times = self._calculate_winning_times_weighted(selections)
+                
+                # Get sent notifications for this guild
+                sent_notifs = guild_data.get("sent_notifications", {})
+                
+                # Events to check
+                target_events = ["Party", "Showdown", "Breaking Army"]
+                
+                for event_name in winning_times:
+                    # Check if this is a target event
+                    if not any(event_name.startswith(t) for t in target_events):
+                        continue
+                        
+                    event_slots = winning_times[event_name]
+                    event_info = self.events.get(event_name)
+                    if not event_info:
+                        continue
+
+                    for slot_idx, slot_data in event_slots.items():
+                        winner_key, points, _ = slot_data
+                        
+                        # Determine winning day/time
+                        if event_info["type"] == "daily":
+                            win_day = day_name 
+                            win_time_str = winner_key[1]
+                        elif event_info["type"] in ["fixed_days", "once", "weekly"]:
+                             win_day = winner_key[0]
+                             win_time_str = winner_key[1]
+                        else:
+                            continue
+                            
+                        # Parse time
+                        try:
+                            h, m = map(int, win_time_str.split(":"))
+                            
+                            # Determine actual day/time of event
+                            is_next_day = h < 17 # Times 00:00 - 16:59 are considered part of the "night" of the previous day
+                            
+                            should_fire = False
+                            
+                            if is_next_day:
+                                # It's actually the next day relative to win_day
+                                prev_day_date = now - timedelta(days=1)
+                                prev_day_name = prev_day_date.strftime("%A")
+                                
+                                if win_day == prev_day_name and now.hour == h and now.minute == m:
+                                    should_fire = True
+
+                                # Daily event special case
+                                if event_info["type"] == "daily":
+                                    if now.hour == h and now.minute == m:
+                                        should_fire = True
+
+                            else:
+                                # Same day event
+                                if win_day == day_name and now.hour == h and now.minute == m:
+                                    should_fire = True
+                                    
+                            if should_fire:
+                                # Unique key for this notification instance: event_name + slot + date
+                                notif_key = f"{event_name}_{slot_idx}"
+                                last_sent = sent_notifs.get(notif_key)
+                                
+                                if last_sent != today_str:
+                                    # Send notification
+                                    msg_tmpl = guild_data.get("notification_message", "{event} is starting at {timestamp}!")
+                                    
+                                    # Create timestamp
+                                    event_dt = now.replace(second=0, microsecond=0)
+                                    ts = int(event_dt.timestamp())
+                                    discord_ts = f"<t:{ts}:R>" # Relative format (e.g. "in 2 minutes")
+                                    
+                                    event_display_name = event_name
+                                    if "Slot" in event_name or (event_info["slots"] > 1 and "Slot" not in event_name):
+                                        # Simple cleanup if needed, but event_name usually includes Slot info if managed that way, 
+                                        # actually polling.py keys are "Breaking Army", not "Breaking Army Slot 1".
+                                        # Slots are indices.
+                                        if event_info["slots"] > 1:
+                                            # Add slot info if relevant
+                                            pass
+
+                                    message = msg_tmpl.replace("{event}", event_display_name)\
+                                                      .replace("{timestamp}", discord_ts)\
+                                                      .replace("{time_str}", f"{now.hour:02d}:{now.minute:02d}")
+                                    
+                                    try:
+                                        await channel.send(message)
+                                        sent_notifs[notif_key] = today_str
+                                        # Save config
+                                        async with self.config.guild(guild).sent_notifications() as s:
+                                            s[notif_key] = today_str
+                                    except Exception as e:
+                                        print(f"Failed to send notification: {e}")
+
+                        except ValueError:
+                            continue
+
+        except Exception as e:
+            print(f"Error in event notification task: {e}")
+
+    @event_notification_task.before_loop
+    async def before_event_notification_task(self):
         await self.bot.wait_until_ready()
 
     async def _restore_poll_view(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
@@ -1396,7 +1541,35 @@ class EventPolling(commands.Cog):
                         "channel_id": ctx.channel.id
                     })
 
-        await ctx.send(f"✅ Successfully overwrote message with results: {message.jump_url}")
+        await ctx.send(f"✅ Successfully overwrote message with results embed! This message will now be auto-updated.")
+
+    @eventpoll.command(name="setchannel")
+    async def eventpoll_setchannel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """Set the channel for event notifications. Leave empty to disable."""
+        if channel:
+            await self.config.guild(ctx.guild).notification_channel_id.set(channel.id)
+            await ctx.send(f"✅ Event notifications will be sent to {channel.mention}")
+        else:
+            await self.config.guild(ctx.guild).notification_channel_id.set(None)
+            await ctx.send("✅ Event notifications disabled")
+
+    @eventpoll.command(name="setmessage")
+    async def eventpoll_setmessage(self, ctx: commands.Context, *, message: str = None):
+        """Set the notification message.
+        
+        Available placeholders:
+        {event} - Event name
+        {timestamp} - Discord timestamp of the event start
+        {time_str} - Time string (e.g. 20:00)
+        
+        Leave empty to reset to default.
+        """
+        if message:
+            await self.config.guild(ctx.guild).notification_message.set(message)
+            await ctx.send(f"✅ Notification message set to:\n{message}")
+        else:
+            await self.config.guild(ctx.guild).notification_message.clear()
+            await ctx.send("✅ Notification message reset to default")
 
     @eventpoll.command(name="export")
     async def export_backup(self, ctx: commands.Context):
@@ -2123,6 +2296,7 @@ class EventPolling(commands.Cog):
             "• 5 points: Your exact voted time",
             "• 2 points: 30 minutes before/after your voted time",
             "• 1 point: 1 hour before/after your voted time",
+            "  *(Note: Guild War only counts exact time matches)*",
             "",
             "**Event priority and tiebreak rules:**",
             "• Priority order: Guild War (6) > Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
@@ -2279,9 +2453,10 @@ class EventPolling(commands.Cog):
             "• 5 points: Your exact voted time",
             "• 2 points: 30 minutes before/after your voted time",
             "• 1 point: 1 hour before/after your voted time",
+            "  *(Note: Guild War only counts exact time matches)*",
             "",
             "**Event priority and tiebreak rules:**",
-            "• Priority order: Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
+            "• Priority order: Guild War (6) > Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
@@ -2560,8 +2735,9 @@ class EventPolling(commands.Cog):
                     # Award points for each voted entry
                     for voted_day, voted_time in voted_entries:
                         # Main points for the voted day
+                        is_weighted = event_name != "Guild War"
                         for target_time in all_times:
-                            points = self._calculate_weighted_points(voted_time, target_time)
+                            points = self._calculate_weighted_points(voted_time, target_time, weighted=is_weighted)
                             if points > 0:
                                 key = (voted_day, target_time)
                                 point_totals[key] = point_totals.get(key, 0) + points
@@ -2597,6 +2773,7 @@ class EventPolling(commands.Cog):
                             continue
 
                         selection = user_selections[event_name]
+                        is_weighted = event_name != "Guild War"
 
                         # Get the voted time for this slot
                         voted_time = None
@@ -2624,7 +2801,7 @@ class EventPolling(commands.Cog):
                         if event_info["type"] == "daily":
                             # Daily events
                             for target_time in all_times:
-                                points = self._calculate_weighted_points(voted_time, target_time)
+                                points = self._calculate_weighted_points(voted_time, target_time, weighted=is_weighted)
                                 if points > 0:
                                     key = ("Daily", target_time)
                                     point_totals[key] = point_totals.get(key, 0) + points
@@ -2634,14 +2811,14 @@ class EventPolling(commands.Cog):
                             if event_info["slots"] > 1 and voted_day:
                                 # Multi-slot: specific day
                                 for target_time in all_times:
-                                    points = self._calculate_weighted_points(voted_time, target_time)
+                                    points = self._calculate_weighted_points(voted_time, target_time, weighted=is_weighted)
                                     if points > 0:
                                         key = (voted_day, target_time)
                                         point_totals[key] = point_totals.get(key, 0) + points
                             else:
                                 # Single slot for all fixed days
                                 for target_time in all_times:
-                                    points = self._calculate_weighted_points(voted_time, target_time)
+                                    points = self._calculate_weighted_points(voted_time, target_time, weighted=is_weighted)
                                     if points > 0:
                                         key = ("Fixed", target_time)
                                         point_totals[key] = point_totals.get(key, 0) + points
@@ -2653,16 +2830,17 @@ class EventPolling(commands.Cog):
 
                             # Main points for the voted day
                             for target_time in all_times:
-                                points = self._calculate_weighted_points(voted_time, target_time)
+                                points = self._calculate_weighted_points(voted_time, target_time, weighted=is_weighted)
                                 if points > 0:
                                     key = (voted_day, target_time)
                                     point_totals[key] = point_totals.get(key, 0) + points
 
                             # Special case: 1 point to same time on all other days
-                            for day in self.days_of_week:
-                                if day != voted_day:
-                                    key = (day, voted_time)
-                                    point_totals[key] = point_totals.get(key, 0) + 1
+                            if is_weighted:
+                                for day in self.days_of_week:
+                                    if day != voted_day:
+                                        key = (day, voted_time)
+                                        point_totals[key] = point_totals.get(key, 0) + 1
 
                     # Select winner (highest points, latest time for ties)
                     if point_totals:
@@ -3003,15 +3181,17 @@ class EventPolling(commands.Cog):
         # Convert to minutes since 17:00
         return (hour - 17) * 60 + minute
 
-    def _calculate_weighted_points(self, voted_time: str, target_time: str) -> int:
+    def _calculate_weighted_points(self, voted_time: str, target_time: str, weighted: bool = True) -> int:
         """Calculate weighted points based on time difference
 
         Args:
             voted_time: Time the user voted for (HH:MM)
             target_time: Time to calculate points for (HH:MM)
+            weighted: Whether to include weighted points for nearby times (default: True)
 
         Returns:
-            Points: 5 for exact match, 3 for ±30min, 1 for ±60min, 0 otherwise
+            Points: 5 for exact match, 2 for ±30min, 1 for ±60min, 0 otherwise.
+            If weighted is False, returns 5 for exact match, 0 otherwise.
         """
         # Convert time strings to minutes since midnight (handles wrap-around)
         def time_to_minutes(time_str: str) -> int:
@@ -3032,6 +3212,10 @@ class EventPolling(commands.Cog):
 
         if diff_minutes == 0:
             return 5  # Exact match
+        
+        if not weighted:
+            return 0
+            
         elif diff_minutes == 30:
             return 2  # 30 minutes off
         elif diff_minutes == 60:
