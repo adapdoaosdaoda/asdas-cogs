@@ -86,7 +86,8 @@ class EventPolling(commands.Cog):
                 "duration": 30,  # 30 minutes
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🛡️",
-                "priority": 5
+                "priority": 5,
+                "slots": 1
             },
             "Sword Trial": {
                 "type": "fixed_days",
@@ -1740,6 +1741,7 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Live Calendar",
+            description="This calendar shows times in **Europe/Berlin** timezone.",
             color=self._get_calendar_color(guild)
         )
 
@@ -1786,7 +1788,7 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Event Calendar",
-            description=f"[Click here to vote in the poll](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})",
+            description="This calendar shows times in **Europe/Berlin** timezone.",
             color=self._get_calendar_color(guild)
         )
 
@@ -1812,8 +1814,9 @@ class EventPolling(commands.Cog):
         # Add footer
         embed.set_footer(text="times are adjusted every week based on Monday's results")
 
-        # Create view with timezone button (is_weekly=True)
-        view = CalendarTimezoneView(self, guild_id, poll_id, is_weekly=True)
+        # Create view with timezone button (is_weekly=True) and link button
+        poll_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+        view = CalendarTimezoneView(self, guild_id, poll_id, is_weekly=True, poll_url=poll_url)
 
         return embed, calendar_file, view, winning_times
 

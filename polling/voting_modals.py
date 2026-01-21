@@ -3,6 +3,7 @@
 import discord
 from typing import Dict, List
 import logging
+from datetime import datetime, timedelta
 
 # Import modalpatch components
 try:
@@ -20,7 +21,17 @@ except ImportError:
 log = logging.getLogger("red.asdas-cogs.polling")
 
 
-class CombinedSimpleEventsModal(Modal, title="Party / Catch-up / Guild War"):
+def format_time_range(start_time_str: str, duration_minutes: int) -> str:
+    """Format a time range string (e.g. '20:30 - 22:00')"""
+    try:
+        start_dt = datetime.strptime(start_time_str, "%H:%M")
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+        return f"{start_time_str} - {end_dt.strftime('%H:%M')}"
+    except ValueError:
+        return start_time_str
+
+
+class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
     """Combined modal for Events (Party, Hero's Realm, and Guild War) votes
 
     Events voted for in a single modal:
@@ -188,9 +199,9 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-up / Guild War"):
 
             time_options = [
                 discord.SelectOption(
-                    label=time_str,
+                    label=format_time_range(time_str, gw_info["duration"]),
                     value=time_str,
-                    emoji="🏰",
+                    emoji="🕐",
                     default=(current_gw_time == time_str)
                 )
                 for time_str in times[:25]
@@ -579,7 +590,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         # Slot 1 - Time
         time_options_1 = [
             discord.SelectOption(
-                label=time_str,
+                label=format_time_range(time_str, duration),
                 value=time_str,
                 emoji="🕐",
                 default=(current_slot1 and current_slot1.get("time") == time_str)
@@ -629,7 +640,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         # Slot 2 - Time
         time_options_2 = [
             discord.SelectOption(
-                label=time_str,
+                label=format_time_range(time_str, duration),
                 value=time_str,
                 emoji="🕐",
                 default=(current_slot2 and current_slot2.get("time") == time_str)
@@ -769,7 +780,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         # Slot 1 - Time
         time_options_1 = [
             discord.SelectOption(
-                label=time_str,
+                label=format_time_range(time_str, duration),
                 value=time_str,
                 emoji="🕐",
                 default=(current_slot1 and current_slot1.get("time") == time_str)
@@ -819,7 +830,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         # Slot 2 - Time
         time_options_2 = [
             discord.SelectOption(
-                label=time_str,
+                label=format_time_range(time_str, duration),
                 value=time_str,
                 emoji="🕐",
                 default=(current_slot2 and current_slot2.get("time") == time_str)
@@ -952,7 +963,7 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
             
             if Label_cls:
                 self.add_item(Label_cls(
-                    "⚔️ Sword Trial (Echo) Monday",
+                    "⚔️ Sword Trial Monday (Echo)",
                     self.mon_select,
                     description="Times in Server Time (UTC+1)"
                 ))
