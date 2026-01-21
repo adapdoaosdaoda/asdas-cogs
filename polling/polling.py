@@ -36,6 +36,7 @@ class EventPolling(commands.Cog):
             notification_channel_id=None,
             notification_message="{event} is starting at {timestamp}!",
             sent_notifications={},  # event_name -> last_notification_day_str (YYYY-MM-DD)
+            event_roles={},  # event_name -> role_id
         )
 
         # Event definitions (ordered: Party, Guild War, Hero's Realm, Sword Trial, Breaking Army, Showdown)
@@ -380,6 +381,7 @@ class EventPolling(commands.Cog):
                 
                 # Get sent notifications for this guild
                 sent_notifs = guild_data.get("sent_notifications", {})
+                event_roles = guild_data.get("event_roles", {})
                 
                 # Events to check
                 target_events = ["Party", "Showdown", "Breaking Army"]
@@ -448,7 +450,13 @@ class EventPolling(commands.Cog):
                                     ts = int(event_dt.timestamp())
                                     discord_ts = f"<t:{ts}:R>" # Relative format (e.g. "in 2 minutes")
                                     
-                                    event_display_name = event_name
+                                    # Determine display name (Role mention or Bold Text)
+                                    role_id = event_roles.get(event_name)
+                                    if role_id:
+                                        event_display_name = f"<@&{role_id}>"
+                                    else:
+                                        event_display_name = f"**{event_name}**"
+
                                     if "Slot" in event_name or (event_info["slots"] > 1 and "Slot" not in event_name):
                                         # Simple cleanup if needed, but event_name usually includes Slot info if managed that way, 
                                         # actually polling.py keys are "Breaking Army", not "Breaking Army Slot 1".
@@ -461,8 +469,15 @@ class EventPolling(commands.Cog):
                                                       .replace("{timestamp}", discord_ts)\
                                                       .replace("{time_str}", f"{now.hour:02d}:{now.minute:02d}")
                                     
+                                    # Calculate auto-delete duration
+                                    delete_duration = None
+                                    if "Showdown" in event_name or "Breaking Army" in event_name:
+                                        delete_duration = 180 * 60 # 180 minutes
+                                    elif "Party" in event_name:
+                                        delete_duration = 90 * 60 # 90 minutes
+
                                     try:
-                                        await channel.send(message)
+                                        await channel.send(message, delete_after=delete_duration)
                                         sent_notifs[notif_key] = today_str
                                         # Save config
                                         async with self.config.guild(guild).sent_notifications() as s:
@@ -1570,6 +1585,28 @@ class EventPolling(commands.Cog):
         else:
             await self.config.guild(ctx.guild).notification_message.clear()
             await ctx.send("✅ Notification message reset to default")
+
+    @eventpoll.command(name="setrole")
+    async def eventpoll_setrole(self, ctx: commands.Context, event_name: str, role: discord.Role = None):
+        """Set a role to be mentioned for a specific event.
+        
+        Usage: [p]eventpoll setrole "Event Name" @Role
+        Example: [p]eventpoll setrole "Breaking Army" @BreakingArmy
+        
+        Leave role empty to clear the role for that event.
+        """
+        if event_name not in self.events:
+            await ctx.send(f"❌ Invalid event name. Available events: {', '.join(self.events.keys())}")
+            return
+
+        async with self.config.guild(ctx.guild).event_roles() as roles:
+            if role:
+                roles[event_name] = role.id
+                await ctx.send(f"✅ Set role for **{event_name}** to {role.mention}")
+            else:
+                if event_name in roles:
+                    del roles[event_name]
+                await ctx.send(f"✅ Cleared role for **{event_name}**")
 
     @eventpoll.command(name="export")
     async def export_backup(self, ctx: commands.Context):
