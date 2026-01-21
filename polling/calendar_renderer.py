@@ -457,7 +457,7 @@ class CalendarRenderer:
                     if slot_time_str not in schedule:
                         schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
                     # Add Guild War event (priority 0, will be handled specially)
-                    schedule[slot_time_str][short_day].append((0, "Guild War (Locked)", 0, start_time_str, duration))
+                    schedule[slot_time_str][short_day].append((0, "Guild War", 0, start_time_str, duration))
                     current_dt += timedelta(minutes=30)
 
         # Add locked events (Hero's Realm Reset, Sword Trial Echo) - these always show
@@ -694,7 +694,7 @@ class CalendarRenderer:
                 prev_row_content = cell_contents.get((row - 1, col), None)
 
                 # Multi-slot events that span multiple time slots
-                multi_slot_events = ["Breaking Army", "Showdown", "Guild War", "Guild War (Locked)"]
+                multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
 
                 # Skip borders ONLY for multi-slot event continuations
                 # This allows internal borders to overlap (2px + 2px = 4px)
@@ -785,7 +785,7 @@ class CalendarRenderer:
                             priority, event_name, slot_num, start_time, duration = sorted_events[event_idx]
 
                             # Get emoji (handle Guild War specially since it's not in events dict)
-                            if event_name == "Guild War" or event_name == "Guild War (Locked)":
+                            if event_name == "Guild War":
                                 emoji = "🏰"
                             else:
                                 emoji = events.get(event_name, {}).get("emoji", "•")
@@ -845,11 +845,11 @@ class CalendarRenderer:
                                 self._emoji_positions.append((text_x, text_y, line_text, self.font_bold))
 
                             # Collect Guild War overlay if start of event (draw later to span cells)
-                            if (event_name == "Guild War" or event_name == "Guild War (Locked)") and start_time == time_str:
+                            if event_name == "Guild War" and start_time == time_str:
                                 # Calculate total height based on duration
                                 num_slots = max(1, duration // 30)
                                 total_height = num_slots * self.CELL_HEIGHT
-                                overlay_text = "2 Games / Locked" if event_name == "Guild War (Locked)" else "2 Games"
+                                overlay_text = "2 Games / Locked" if priority == 0 else "2 Games"
                                 overlays.append((x, y, total_height, overlay_text))
 
                             # Collect Hero's Realm (Reset) overlay
