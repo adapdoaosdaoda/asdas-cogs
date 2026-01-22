@@ -20,7 +20,8 @@ class BreakingArmy(commands.Cog):
             "active_poll": {
                 "message_id": None,
                 "channel_id": None,
-                "votes": {}  # user_id: [boss_names]
+                "votes": {},  # user_id: [boss_names]
+                "live_view_message": None  # {channel_id, message_id}
             },
             "active_run": {
                 "message_id": None,
@@ -34,13 +35,59 @@ class BreakingArmy(commands.Cog):
         self.config.register_guild(**default_guild)
 
     async def cog_load(self):
-        # Restore views for active polls/runs if needed
-        # This requires fetching message IDs from config and re-attaching views
-        # For simplicity in this iteration, we rely on the persistent view setup via bot.add_view if timeout is None
-        # But since we might have dynamic data, we'll try to re-hook if we can.
-        # Actually, for this initial version, we will re-initialize views on command usage or manual "fix" command
-        # to avoid complex restore logic right away, but we should clear stale state if messages are gone.
         pass
+
+    async def _update_live_view(self, guild):
+        """Updates the live view message with current vote counts."""
+        poll_data = await self.config.guild(guild).active_poll()
+        live_view = poll_data.get("live_view_message")
+        
+        if not live_view or not live_view.get("message_id"):
+            return
+
+        # Tally votes
+        votes = poll_data.get("votes", {})
+        tally = {}
+        for user_votes in votes.values():
+            for boss in user_votes:
+                tally[boss] = tally.get(boss, 0) + 1
+        
+        # Sort by count (desc)
+        sorted_tally = sorted(tally.items(), key=lambda x: x[1], reverse=True)
+        
+        # Build Description
+        desc = ""
+        total_voters = len(votes)
+        
+        if not sorted_tally:
+            desc = "No votes yet."
+        else:
+            for boss, count in sorted_tally:
+                desc += f"**{boss}**: {count} votes\n"
+        
+        embed = discord.Embed(
+            title="📊 Live Poll Results",
+            description=desc,
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text=f"Total Voters: {total_voters}")
+
+        # Update Message
+        try:
+            channel = guild.get_channel(live_view["channel_id"])
+            if channel:
+                msg = await channel.fetch_message(live_view["message_id"])
+                await msg.edit(embed=embed)
+            else:
+                # Channel deleted? Clear config to stop trying
+                async with self.config.guild(guild).active_poll() as p:
+                    p["live_view_message"] = None
+        except discord.NotFound:
+            # Message deleted
+            async with self.config.guild(guild).active_poll() as p:
+                p["live_view_message"] = None
+        except Exception as e:
+            pass # Ignore other errors
 
     @commands.group(name="ba")
     @commands.guild_only()
@@ -113,45 +160,69 @@ class BreakingArmy(commands.Cog):
         """Poll management commands."""
         pass
 
+    @ba_poll.command(name="live")
+    async def poll_live(self, ctx: commands.Context):
+        """
+        Create a live-updating view of the poll results.
+        """
+        embed = discord.Embed(title="📊 Live Poll Results", description="Initializing...", color=discord.Color.blue())
+        msg = await ctx.send(embed=embed)
+        
+        async with self.config.guild(ctx.guild).active_poll() as poll:
+            poll["live_view_message"] = {
+                "message_id": msg.id,
+                "channel_id": msg.channel.id
+            }
+        
+        # Force initial update
+        await self._update_live_view(ctx.guild)
+
     @ba_poll.command(name="start")
     async def poll_start(self, ctx: commands.Context):
-        """Start a new voting poll."""
+        """
+        Start (or move) the persistent voting poll.
+        
+        If a poll is already active, this will create a NEW message linked to the SAME voting data.
+        Use `[p]ba poll close` first if you want to wipe votes and start fresh.
+        """
         pool = await self.config.guild(ctx.guild).boss_pool()
         if not pool:
             await ctx.send("Boss pool is empty! Add bosses via `[p]ba config addboss` first.")
             return
 
-        # Clear previous poll data
-        await self.config.guild(ctx.guild).active_poll.set({
-            "message_id": None,
-            "channel_id": None,
-            "votes": {}
-        })
+        # Check for existing poll
+        current_poll = await self.config.guild(ctx.guild).active_poll()
+        if current_poll["message_id"]:
+            await ctx.send("A poll is already active. I will create a new message linked to the **existing** votes.\nIf you wanted a fresh poll, run `[p]ba poll close` first.")
 
         embed = discord.Embed(
             title="Breaking Army: Boss Selection Vote",
-            description="Vote for the bosses you want to fight in the upcoming run!\n\nSelect all that apply from the dropdown below.",
+            description="**Live Poll:** Vote for the bosses you want to fight!\n\nThis poll is always open. Admins can snapshot the results at any time to start a run.\nSelect all that apply from the dropdown below.",
             color=discord.Color.gold()
         )
         
         view = BossPollView(self, pool)
         msg = await ctx.send(embed=embed, view=view)
         
-        await self.config.guild(ctx.guild).active_poll.set({
-            "message_id": msg.id,
-            "channel_id": msg.channel.id,
-            "votes": {}
-        })
+        # Update config with new message location, preserving votes if they exist
+        async with self.config.guild(ctx.guild).active_poll() as poll:
+            poll["message_id"] = msg.id
+            poll["channel_id"] = msg.channel.id
+            # votes are preserved
 
-    @ba_poll.command(name="end")
-    async def poll_end(self, ctx: commands.Context):
-        """End the current poll and generate the run list."""
+    @ba_poll.command(name="snapshot")
+    async def poll_snapshot(self, ctx: commands.Context):
+        """
+        Take a snapshot of the current votes and start a run.
+        
+        This does NOT close the poll or clear votes.
+        """
         poll_data = await self.config.guild(ctx.guild).active_poll()
         if not poll_data["message_id"]:
-            await ctx.send("No active poll found.")
+            await ctx.send("No active poll found. Start one with `[p]ba poll start`.")
             return
 
-        # Tally votes
+        # Tally votes (Live Snapshot)
         votes = poll_data["votes"]
         tally = {}
         for user_votes in votes.values():
@@ -170,11 +241,23 @@ class BreakingArmy(commands.Cog):
         final_list = [boss for boss, count in candidates[:limit]]
 
         if not final_list:
-            await ctx.send(f"No bosses met the threshold of {threshold} votes.")
-            # We don't clear the poll here in case they want to lower threshold and retry
+            await ctx.send(f"No bosses met the threshold of {threshold} votes in this snapshot.")
             return
 
-        # Save Run State
+        # Check if a run is already active
+        active_run = await self.config.guild(ctx.guild).active_run()
+        if active_run["is_running"]:
+            await ctx.send("⚠️ A run is already in progress! This will overwrite it. (Type `yes` to confirm)")
+            try:
+                msg = await self.bot.wait_for("message", check=lambda m: m.author == ctx.author and m.channel == ctx.channel, timeout=15)
+                if msg.content.lower() != "yes":
+                    await ctx.send("Snapshot cancelled.")
+                    return
+            except asyncio.TimeoutError:
+                await ctx.send("Timed out. Snapshot cancelled.")
+                return
+
+        # Save Run State (Poll remains open)
         await self.config.guild(ctx.guild).active_run.set({
             "message_id": None,
             "channel_id": None,
@@ -185,8 +268,19 @@ class BreakingArmy(commands.Cog):
 
         # Create Run View
         await self._start_run_display(ctx, final_list)
-        
-        # Disable poll view
+        await ctx.send(f"✅ **Run Generated!** The poll remains open for future snapshots.")
+
+    @ba_poll.command(name="close")
+    async def poll_close(self, ctx: commands.Context):
+        """
+        Close the active poll and wipe all votes.
+        """
+        poll_data = await self.config.guild(ctx.guild).active_poll()
+        if not poll_data["message_id"]:
+            await ctx.send("No active poll to close.")
+            return
+
+        # Try to disable the old view
         try:
             channel = ctx.guild.get_channel(poll_data["channel_id"])
             if channel:
@@ -194,13 +288,37 @@ class BreakingArmy(commands.Cog):
                 await msg.edit(view=None, content="**Poll Closed**")
         except:
             pass
-            
+        
+        # Clear live view if it exists
+        live_view = poll_data.get("live_view_message")
+        if live_view:
+            try:
+                c = ctx.guild.get_channel(live_view["channel_id"])
+                if c:
+                    m = await c.fetch_message(live_view["message_id"])
+                    await m.delete()
+            except:
+                pass
+
         # Clear poll data
         await self.config.guild(ctx.guild).active_poll.set({
             "message_id": None,
             "channel_id": None,
-            "votes": {}
+            "votes": {},
+            "live_view_message": None
         })
+        await ctx.send("Poll closed, live view removed, and votes cleared.")
+
+    @ba_poll.command(name="resetvotes")
+    async def poll_reset_votes(self, ctx: commands.Context):
+        """
+        Clear all votes but keep the poll open.
+        """
+        async with self.config.guild(ctx.guild).active_poll() as poll:
+            poll["votes"] = {}
+        
+        await self._update_live_view(ctx.guild)
+        await ctx.send("All votes have been cleared. The poll remains open.")
 
     async def _start_run_display(self, ctx, boss_list):
         embed = self._generate_run_embed(boss_list, -1, False)
@@ -277,6 +395,7 @@ class BossPollView(discord.ui.View):
         async with self.cog.config.guild(interaction.guild).active_poll() as poll:
             poll["votes"][str(interaction.user.id)] = selected_bosses
             
+        await self.cog._update_live_view(interaction.guild)
         await interaction.followup.send(f"Votes saved for: {', '.join(selected_bosses)}", ephemeral=True)
 
 class RunManagerView(discord.ui.View):
