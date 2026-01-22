@@ -1,0 +1,10 @@
+{
+    "author": ["Your Name"],
+    "version": "1.0.0",
+    "description": "Boss polling and run management system for the Breaking Army event in Where Winds Meet.",
+    "install_msg": "Breaking Army cog installed. Use `[p]ba config` to set up your boss pool first!",
+    "short": "Breaking Army Boss Manager",
+    "tags": ["game", "event", "boss", "polling", "management"],
+    "requirements": [],
+    "end_user_data_statement": "This cog stores configuration for boss lists and temporary voting data."
+}
