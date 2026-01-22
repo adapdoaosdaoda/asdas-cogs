@@ -377,8 +377,11 @@ class EventPolling(commands.Cog):
                 poll_data = polls[latest_poll_id]
                 selections = poll_data.get("selections", {})
                 
-                # Get winning times
-                winning_times = self._calculate_winning_times_weighted(selections)
+                # Get winning times - prefer weekly snapshot if available (stable schedule)
+                winning_times = poll_data.get("weekly_snapshot_winning_times")
+                if not winning_times:
+                    # Fallback to live data if no snapshot exists
+                    winning_times = self._calculate_winning_times_weighted(selections)
                 
                 # Get sent notifications for this guild
                 sent_notifs = guild_data.get("sent_notifications", {})
