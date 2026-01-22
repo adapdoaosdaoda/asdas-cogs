@@ -201,6 +201,7 @@ class EventPolling(commands.Cog):
             polls = guild_data.get("polls", {})
             for poll_id, poll_data in polls.items():
                 await self._restore_poll_view(guild, poll_data, poll_id)
+                await self._restore_calendar_views(guild, poll_data, poll_id)
                 # Add small delay between restores to avoid rate limiting
                 import asyncio
                 await asyncio.sleep(0.5)
@@ -561,6 +562,45 @@ class EventPolling(commands.Cog):
             # Silently fail if we can't restore the view
             print(f"Could not restore poll view for poll {poll_id}: {e}")
 
+    async def _restore_calendar_views(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
+        """Restore views for calendar messages after bot restart
+
+        Args:
+            guild: The guild containing the poll
+            poll_data: The poll data dictionary
+            poll_id: The poll ID
+        """
+        from .views import CalendarTimezoneView
+
+        # Restore live calendar views
+        calendar_messages = poll_data.get("calendar_messages", [])
+        for cal_msg_data in calendar_messages:
+            try:
+                channel = guild.get_channel(cal_msg_data["channel_id"])
+                if channel:
+                    message = await channel.fetch_message(cal_msg_data["message_id"])
+                    view = CalendarTimezoneView(self, guild.id, poll_id)
+                    await message.edit(view=view)
+            except Exception as e:
+                print(f"Could not restore calendar view for poll {poll_id}: {e}")
+
+        # Restore weekly calendar views
+        weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
+        if weekly_calendar_messages:
+            poll_channel_id = poll_data.get("channel_id")
+            poll_message_id = poll_data.get("message_id")
+            poll_url = f"https://discord.com/channels/{guild.id}/{poll_channel_id}/{poll_message_id}"
+            
+            for cal_msg_data in weekly_calendar_messages:
+                try:
+                    channel = guild.get_channel(cal_msg_data["channel_id"])
+                    if channel:
+                        message = await channel.fetch_message(cal_msg_data["message_id"])
+                        view = CalendarTimezoneView(self, guild.id, poll_id, is_weekly=True, poll_url=poll_url)
+                        await message.edit(view=view)
+                except Exception as e:
+                    print(f"Could not restore weekly calendar view for poll {poll_id}: {e}")
+
     async def _update_poll_message(self, guild_id: int, poll_id: str, poll_data: Dict):
         """Update the poll message embed and related calendar messages"""
         try:
@@ -596,6 +636,9 @@ class EventPolling(commands.Cog):
 
             # Check if we need to create initial weekly snapshot (for first vote)
             await self._check_and_create_initial_snapshot(guild, poll_id)
+
+            # Update any weekly calendar messages for this poll
+            await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
         except Exception as e:
             log.error(f"Error updating poll message: {e}")
 
