@@ -481,7 +481,11 @@ class EventPolling(commands.Cog):
                                         delete_duration = 90 * 60 # 90 minutes
 
                                     try:
-                                        await channel.send(message, delete_after=delete_duration)
+                                        await channel.send(
+                                            message,
+                                            delete_after=delete_duration,
+                                            allowed_mentions=discord.AllowedMentions(roles=True)
+                                        )
                                         sent_notifs[notif_key] = today_str
                                         # Save config
                                         async with self.config.guild(guild).sent_notifications() as s:
