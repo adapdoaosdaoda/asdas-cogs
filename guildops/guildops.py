@@ -186,7 +186,7 @@ class GuildOps(commands.Cog):
         success, msg = await self.bot.loop.run_in_executor(None, _do_work)
         return success, msg
 
-    async def _process_ocr_result(self, sheet_id: str, ign: str, status: str, guild: discord.Guild):
+    async def _process_ocr_result(self, sheet_id: str, ign: str, status: str, guild: discord.Guild, date_accepted: str):
         """
         Handles OCR result:
         1. Updates sheet (Add if missing).
@@ -211,6 +211,7 @@ class GuildOps(commands.Cog):
                 ign_col = header_map["ign"] + 1
                 status_col = header_map["status"] + 1
                 discord_id_col = header_map.get("discord id", -1) + 1
+                date_acc_col = header_map.get("date accepted", -1) + 1
                 import_col = header_map.get("import", -1) + 1
                 
                 # Find the cell with the IGN
@@ -234,6 +235,8 @@ class GuildOps(commands.Cog):
                     new_row = [""] * len(headers)
                     new_row[ign_col - 1] = ign
                     new_row[status_col - 1] = status
+                    if date_acc_col > 0:
+                        new_row[date_acc_col - 1] = date_accepted
                     if import_col > 0:
                         new_row[import_col - 1] = "OCR"
                     
@@ -467,12 +470,13 @@ class GuildOps(commands.Cog):
                 parsed_entries = self._parse_ocr_text(text)
                 processed_count = 0
                 results = []
+                date_acc = message.created_at.strftime("%Y-%m-%d")
                 
                 for ign, status in parsed_entries:
                     log.info(f"GuildOps: Found potential entry: {ign} -> {status}")
                     
                     if len(ign) > 2: # Min length sanity check
-                        success, result_msg = await self._process_ocr_result(sheet_id, ign, status, message.guild)
+                        success, result_msg = await self._process_ocr_result(sheet_id, ign, status, message.guild, date_acc)
                         if success:
                             processed_count += 1
                             results.append(f"• {result_msg}")
