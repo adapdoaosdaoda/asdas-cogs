@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 from datetime import datetime
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageChops, ImageOps
 from typing import Optional, List, Dict, Any, Tuple
 
 from redbot.core import commands, Config, data_manager, checks
@@ -478,14 +478,30 @@ class GuildOps(commands.Cog):
                 img_data = await att.read()
                 
                 def _ocr_task():
-                    img = Image.open(BytesIO(img_data)).convert('L') # Grayscale
+                    # 1. Load and Grayscale
+                    img = Image.open(BytesIO(img_data)).convert('L')
                     
-                    # Apply a sharp threshold to remove gray/thin underlines and noise
-                    # Most game text is bright on dark or dark on bright. 
-                    # This normalization helps Tesseract ignore artifacts.
-                    img = img.point(lambda x: 0 if x < 150 else 255)
+                    # 2. Thresholding to create a sharp mask
+                    # We use a threshold to separate text from background.
+                    # This assumes light text on a dark background.
+                    mask = img.point(lambda x: 0 if x < 160 else 255)
                     
-                    # Rescale if small to improve accuracy
+                    # 3. Underline Removal via Vertical Shift Filter
+                    # By shifting the mask up and down and performing a logical AND (min),
+                    # we can eliminate thin horizontal structures (underlines) that don't
+                    # have vertical continuity, while preserving vertical strokes of characters.
+                    shift = 2
+                    mask_up = ImageChops.offset(mask, 0, -shift)
+                    mask_dn = ImageChops.offset(mask, 0, shift)
+                    
+                    # Keep only pixels that exist in all three (Original, Up, Down)
+                    # This wipes out horizontal lines thinner than 2*shift.
+                    mask = ImageChops.darker(mask, ImageChops.darker(mask_up, mask_dn))
+                    
+                    # 4. Invert to Black-on-White (Tesseract preference)
+                    img = ImageOps.invert(mask)
+                    
+                    # 5. Rescale for better OCR accuracy
                     width, height = img.size
                     if width < 1500:
                         scale = 2
