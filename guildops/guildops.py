@@ -344,6 +344,85 @@ class GuildOps(commands.Cog):
             await ctx.send(f"✅ Sheet **{title}** created and shared with `{share_email}`.\nURL: {result}\nID: `{sheet_id}`\n\nI have automatically set this as your active sheet.")
 
     @ops.command()
+    async def debug_msg(self, ctx, message_link: str):
+        """Analyzes a specific message to debug why it's not being parsed."""
+        try:
+            # Parse link: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
+            parts = message_link.split('/')
+            if len(parts) < 3:
+                return await ctx.send("Invalid message link.")
+            
+            message_id = int(parts[-1])
+            channel_id = int(parts[-2])
+            
+            channel = ctx.guild.get_channel(channel_id)
+            if not channel:
+                return await ctx.send(f"Could not find channel with ID {channel_id}.")
+                
+            try:
+                message = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                return await ctx.send(f"Could not find message with ID {message_id} in {channel.mention}.")
+            except discord.Forbidden:
+                return await ctx.send(f"I don't have permission to read messages in {channel.mention}.")
+
+            # --- Debug Report ---
+            report = [f"**Analysis of Message {message_id}**"]
+            
+            # 1. Content
+            report.append(f"**Content:**\n`{message.content}`")
+            
+            # 2. Embeds
+            report.append(f"**Embeds found:** {len(message.embeds)}")
+            for i, embed in enumerate(message.embeds):
+                report.append(f"  -- Embed {i+1} --")
+                if embed.title: report.append(f"  Title: {embed.title}")
+                if embed.description: report.append(f"  Desc: {embed.description}")
+                if embed.footer and embed.footer.text: report.append(f"  Footer: {embed.footer.text}")
+                for field in embed.fields:
+                    report.append(f"  Field: Name='{field.name}' Value='{field.value}'")
+            
+            # 3. Components
+            report.append(f"**Components found:** {len(message.components)}")
+            for i, comp in enumerate(message.components):
+                report.append(f"  -- Component Row {i+1} --")
+                if hasattr(comp, 'children'):
+                    for child in comp.children:
+                        c_type = getattr(child, 'type', 'Unknown')
+                        label = getattr(child, 'label', 'None')
+                        custom_id = getattr(child, 'custom_id', 'None')
+                        report.append(f"    Type: {c_type}, Label: '{label}', ID: '{custom_id}'")
+
+            # 4. Parsing Result
+            result = self._parse_forms_message(message)
+            if result:
+                report.append("\n**✅ PARSING SUCCESS**")
+                report.append(f"Discord ID: `{result['discord_id']}`")
+                report.append(f"IGN: `{result['ign']}`")
+                report.append(f"Date: `{result['date_accepted']}`")
+            else:
+                report.append("\n**❌ PARSING FAILED**")
+                # Add hints
+                report.append("  - Did not find 'Accepted by' text in content, embeds, or buttons.")
+                report.append("  - OR Did not find a valid Discord User ID.")
+                report.append("  - OR Did not find an IGN field (IGN, UID, In-Game Name).")
+
+            # Chunk and Send
+            full_text = "\n".join(report)
+            if len(full_text) > 1900:
+                # Naive chunking
+                await ctx.send(full_text[:1900])
+                await ctx.send(full_text[1900:])
+            else:
+                await ctx.send(full_text)
+
+        except ValueError:
+            await ctx.send("Invalid message link format.")
+        except Exception as e:
+            log.exception("Debug command failed")
+            await ctx.send(f"An error occurred: {str(e)}")
+
+    @ops.command()
     async def sync_history(self, ctx):
         """Syncs historical application forms to the sheet."""
         sheet_id = await self.config.guild(ctx.guild).sheet_id()
