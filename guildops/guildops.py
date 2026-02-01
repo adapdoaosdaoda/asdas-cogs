@@ -322,6 +322,83 @@ class GuildOps(commands.Cog):
             "date_accepted": date_acc
         }, []
 
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if not message.guild or message.author.id == self.bot.user.id:
+            return
+
+        # Check Forms Channel
+        forms_channel_id = await self.config.guild(message.guild).forms_channel()
+        if forms_channel_id and message.channel.id == forms_channel_id:
+             await self._handle_form_message(message)
+
+        # Check OCR Channel
+        ocr_channel_id = await self.config.guild(message.guild).ocr_channel()
+        if ocr_channel_id and message.channel.id == ocr_channel_id and not message.author.bot:
+             await self._handle_ocr_message(message)
+
+    async def _handle_form_message(self, message):
+        data, reasons = self._parse_forms_message(message)
+        if data:
+            sheet_id = await self.config.guild(message.guild).sheet_id()
+            if not sheet_id:
+                return
+            
+            success, msg = await self._sync_data_to_sheet(sheet_id, [data])
+            if success:
+                await message.add_reaction("✅")
+            else:
+                log.warning(f"Failed to sync form: {msg}")
+
+    async def _handle_ocr_message(self, message):
+        if not message.attachments:
+            return
+            
+        sheet_id = await self.config.guild(message.guild).sheet_id()
+        if not sheet_id:
+            return
+
+        for att in message.attachments:
+            if not att.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                continue
+                
+            try:
+                if att.size > 8 * 1024 * 1024:
+                    continue
+                    
+                img_data = await att.read()
+                
+                def _ocr_task():
+                    img = Image.open(BytesIO(img_data))
+                    return pytesseract.image_to_string(img)
+                
+                text = await self.bot.loop.run_in_executor(None, _ocr_task)
+                
+                # Basic parsing: look for lines ending in specific status keywords
+                lines = text.split('\n')
+                processed_count = 0
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line: continue
+                    
+                    # Regex for "Name Status"
+                    # We look for lines that end with a status word
+                    match = re.search(r'^(.*?)\s+(Active|Left|Guest|Member|Banned)$', line, re.IGNORECASE)
+                    if match:
+                        ign = match.group(1).strip()
+                        status = match.group(2).capitalize()
+                        
+                        if len(ign) > 2: # Min length sanity check
+                            await self._process_ocr_result(sheet_id, ign, status, message.guild)
+                            processed_count += 1
+                
+                if processed_count > 0:
+                    await message.add_reaction("👀")
+                    
+            except Exception as e:
+                log.error("OCR Error", exc_info=e)
+
     @commands.group()
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
@@ -365,3 +442,25 @@ class GuildOps(commands.Cog):
             "3. Download the JSON key."
         )
         await ctx.send(msg)
+
+    @opset.command()
+    async def status(self, ctx):
+        """Check GuildOps status and configuration."""
+        conf = await self.config.guild(ctx.guild).all()
+        sheet = conf['sheet_id'] or "Not Set"
+        forms = f"<#{conf['forms_channel']}>" if conf['forms_channel'] else "Not Set"
+        ocr = f"<#{conf['ocr_channel']}>" if conf['ocr_channel'] else "Not Set"
+        m_role = f"<@&{conf['member_role']}>" if conf['member_role'] else "Not Set"
+        l_role = f"<@&{conf['left_role']}>" if conf['left_role'] else "Not Set"
+        
+        embed = discord.Embed(title="GuildOps Settings", color=discord.Color.blue())
+        embed.add_field(name="Sheet ID", value=f"`{sheet}`", inline=False)
+        embed.add_field(name="Channels", value=f"Forms: {forms}\nOCR: {ocr}", inline=True)
+        embed.add_field(name="Roles", value=f"Member: {m_role}\nLeft: {l_role}", inline=True)
+        
+        if self.creds_file.exists():
+            embed.set_footer(text="✅ Service Account File Found")
+        else:
+            embed.set_footer(text="⚠️ Service Account File Missing (Use [p]opset creds)")
+            
+        await ctx.send(embed=embed)
