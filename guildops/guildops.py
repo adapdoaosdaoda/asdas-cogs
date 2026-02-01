@@ -456,6 +456,29 @@ class GuildOps(commands.Cog):
             log.info(f"Form parsing failed: {', '.join(reasons)}")
             await message.add_reaction("❌")
 
+    def _get_processed_image(self, img_data: bytes, threshold: int, use_filter: bool) -> Image.Image:
+        """Applies the processing pipeline to an image and returns the PIL Image object."""
+        # 1. Load and Grayscale
+        img = Image.open(BytesIO(img_data)).convert('L')
+        
+        # 2. Contrast stretch to normalize levels
+        img = ImageOps.autocontrast(img)
+        
+        # 3. Thresholding to isolate white text and create a black background
+        # Anything below the threshold becomes pure black (0)
+        mask = img.point(lambda x: 0 if x < threshold else 255)
+        
+        # 4. Underline Removal (2px shift as requested)
+        if use_filter:
+            # With White text (255) on Black background (0), we use 'darker' (min)
+            # to eliminate horizontal white lines that lack vertical continuity.
+            shift = 2
+            m_up = ImageChops.offset(mask, 0, -shift)
+            m_dn = ImageChops.offset(mask, 0, shift)
+            mask = ImageChops.darker(mask, ImageChops.darker(m_up, m_dn))
+        
+        return mask
+
     async def _handle_ocr_message(self, message):
         log.info(f"GuildOps: Handling OCR message {message.id} with {len(message.attachments)} attachments.")
         if not message.attachments:
@@ -478,33 +501,16 @@ class GuildOps(commands.Cog):
                     log.info(f"GuildOps: Skipping large attachment {att.filename} ({att.size} bytes)")
                     continue
                     
+                img_data = await att.read()
+                
                 # Fetch OCR settings
                 threshold = await self.config.guild(message.guild).ocr_threshold()
                 use_filter = await self.config.guild(message.guild).ocr_filter()
                 debug_enabled = await self.config.guild(message.guild).ocr_debug()
 
                 def _ocr_task():
-                    # 1. Load and Grayscale
-                    img = Image.open(BytesIO(img_data)).convert('L')
-                    
-                    # 2. Contrast stretch to normalize levels
-                    img = ImageOps.autocontrast(img)
-                    
-                    # 3. Thresholding to isolate white text and create a black background
-                    # Anything below the threshold becomes pure black (0)
-                    mask = img.point(lambda x: 0 if x < threshold else 255)
-                    
-                    # 4. Underline Removal (2px shift as requested)
-                    if use_filter:
-                        # With White text (255) on Black background (0), we use 'darker' (min)
-                        # to eliminate horizontal white lines that lack vertical continuity.
-                        shift = 2
-                        m_up = ImageChops.offset(mask, 0, -shift)
-                        m_dn = ImageChops.offset(mask, 0, shift)
-                        mask = ImageChops.darker(mask, ImageChops.darker(m_up, m_dn))
-                    
-                    # We send the White-on-Black image directly to Tesseract as requested.
-                    return pytesseract.image_to_string(mask, lang='eng+chi_sim+chi_tra', config='--psm 6')
+                    processed_img = self._get_processed_image(img_data, threshold, use_filter)
+                    return pytesseract.image_to_string(processed_img, lang='eng+chi_sim+chi_tra', config='--psm 6')
                 
                 log.info(f"GuildOps: Running OCR on {att.filename}...")
                 text = await self.bot.loop.run_in_executor(None, _ocr_task)
@@ -719,6 +725,53 @@ class GuildOps(commands.Cog):
         async with ctx.typing():
             await self._handle_ocr_message(message)
             await ctx.send("✅ OCR processing triggered. Check the message for reaction status.")
+
+    @guildops.command(name="debugimage")
+    async def guildops_debug_image(self, ctx, message_id: int):
+        """
+        Process an OCR image and upload the resulting 'binary' version.
+        Use this to see exactly what the OCR engine is reading.
+        """
+        ocr_channel_id = await self.config.guild(ctx.guild).ocr_channel()
+        if not ocr_channel_id:
+            await ctx.send("❌ OCR channel not configured.")
+            return
+
+        ocr_channel = ctx.guild.get_channel(ocr_channel_id)
+        if not ocr_channel:
+            await ctx.send("❌ Configured OCR channel not found.")
+            return
+
+        try:
+            message = await ocr_channel.fetch_message(message_id)
+        except discord.NotFound:
+            await ctx.send("❌ Message not found in the OCR channel.")
+            return
+
+        if not message.attachments:
+            await ctx.send("❌ Message has no attachments.")
+            return
+
+        threshold = await self.config.guild(ctx.guild).ocr_threshold()
+        use_filter = await self.config.guild(ctx.guild).ocr_filter()
+
+        async with ctx.typing():
+            for att in message.attachments:
+                if not att.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                    continue
+                
+                img_data = await att.read()
+                
+                def _process():
+                    processed_img = self._get_processed_image(img_data, threshold, use_filter)
+                    final_io = BytesIO()
+                    processed_img.save(final_io, format="PNG")
+                    final_io.seek(0)
+                    return final_io
+
+                final_io = await self.bot.loop.run_in_executor(None, _process)
+                file = discord.File(final_io, filename=f"debug_{att.filename}")
+                await ctx.send(f"🖼️ **Processed Image for {att.filename}:**\n(Threshold: {threshold}, Filter: {use_filter})", file=file)
 
     @guildops.command(name="synchistory")
     async def guildops_sync_history(self, ctx, channel_type: str, limit: int = 50):
