@@ -479,6 +479,12 @@ class GuildOps(commands.Cog):
                 
                 def _ocr_task():
                     img = Image.open(BytesIO(img_data)).convert('L') # Grayscale
+                    
+                    # Apply a sharp threshold to remove gray/thin underlines and noise
+                    # Most game text is bright on dark or dark on bright. 
+                    # This normalization helps Tesseract ignore artifacts.
+                    img = img.point(lambda x: 0 if x < 150 else 255)
+                    
                     # Rescale if small to improve accuracy
                     width, height = img.size
                     if width < 1500:
