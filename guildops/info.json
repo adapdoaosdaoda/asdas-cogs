@@ -1,0 +1,10 @@
+{
+    "author": ["Gemini"],
+    "description": "Synchronize guild membership using Discord Embeds and OCR.",
+    "install_msg": "GuildOps is installed. Use `[p]opset` to configure it.",
+    "min_bot_version": "3.5.0",
+    "name": "GuildOps",
+    "requirements": ["gspread", "pytesseract", "Pillow"],
+    "short": "Guild membership synchronization tool.",
+    "tags": ["guild", "ocr", "sync", "utility"]
+}
