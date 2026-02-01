@@ -643,3 +643,84 @@ class GuildOps(commands.Cog):
         async with ctx.typing():
             await self._handle_ocr_message(message)
             await ctx.send("✅ OCR processing triggered. Check the message for reaction status.")
+
+    @guildops.command(name="synchistory")
+    async def guildops_sync_history(self, ctx, channel_type: str, limit: int = 50):
+        """
+        Sync history from Forms or OCR channel.
+        
+        channel_type: 'forms' or 'ocr'
+        limit: Number of messages to scan (default 50)
+        """
+        channel_type = channel_type.lower()
+        if channel_type not in ["forms", "ocr"]:
+             await ctx.send("❌ Invalid type. Use 'forms' or 'ocr'.")
+             return
+
+        guild = ctx.guild
+        
+        if channel_type == "forms":
+            channel_id = await self.config.guild(guild).forms_channel()
+            if not channel_id:
+                await ctx.send("❌ Forms channel not configured.")
+                return
+            
+            channel = guild.get_channel(channel_id)
+            if not channel:
+                await ctx.send("❌ Forms channel not found.")
+                return
+            
+            await ctx.send(f"🔄 Scanning last {limit} messages in {channel.mention} for forms...")
+            
+            valid_data = []
+            count = 0
+            
+            async with ctx.typing():
+                async for message in channel.history(limit=limit):
+                    if message.author.bot: continue
+                    
+                    data, _ = self._parse_forms_message(message)
+                    if data:
+                        valid_data.append(data)
+                        count += 1
+                        
+                if valid_data:
+                    sheet_id = await self.config.guild(guild).sheet_id()
+                    if not sheet_id:
+                         await ctx.send("❌ Sheet ID not configured.")
+                         return
+                         
+                    success, msg = await self._sync_data_to_sheet(sheet_id, valid_data)
+                    if success:
+                        await ctx.send(f"✅ Batch Sync Complete: Found {count} forms. Result: {msg}")
+                    else:
+                        await ctx.send(f"❌ Batch Sync Failed: {msg}")
+                else:
+                    await ctx.send("⚠️ No valid forms found in history.")
+
+        elif channel_type == "ocr":
+            channel_id = await self.config.guild(guild).ocr_channel()
+            if not channel_id:
+                await ctx.send("❌ OCR channel not configured.")
+                return
+            
+            channel = guild.get_channel(channel_id)
+            if not channel:
+                await ctx.send("❌ OCR channel not found.")
+                return
+
+            await ctx.send(f"🔄 Scanning last {limit} messages in {channel.mention} for OCR images (this may take a while)...")
+            
+            count = 0
+            async with ctx.typing():
+                async for message in channel.history(limit=limit):
+                    if message.author.bot: continue
+                    if not message.attachments: continue
+                    
+                    # We call the handler for each message. 
+                    # Note: This is slow but safe as it reuses existing logic.
+                    await self._handle_ocr_message(message)
+                    count += 1
+                    await asyncio.sleep(1) # Rate limit protection
+            
+            await ctx.send(f"✅ OCR Sync Complete. Processed {count} messages containing attachments.")

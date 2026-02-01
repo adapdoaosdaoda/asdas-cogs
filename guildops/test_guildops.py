@@ -110,3 +110,48 @@ flourishes!
                     
             assert found_id_update, "Did not update Discord ID on existing row"
             assert found_import_update, "Did not update Import source to Form"
+
+    async def test_synchistory_forms(self, cog):
+        """Test synchistory command for forms."""
+        ctx = MagicMock()
+        ctx.guild.id = 123
+        ctx.typing.return_value.__aenter__.return_value = None
+        
+        # Mock Config
+        cog.config.guild.return_value.forms_channel.return_value = 999
+        cog.config.guild.return_value.sheet_id.return_value = "SHEET_ID"
+        
+        # Mock Channel History
+        mock_channel = MagicMock()
+        ctx.guild.get_channel.return_value = mock_channel
+        
+        # Mock Messages
+        msg1 = MagicMock()
+        msg1.author.bot = False
+        msg2 = MagicMock()
+        msg2.author.bot = False
+        
+        # Async Iterator for history
+        async def mock_history(limit=50):
+            yield msg1
+            yield msg2
+        
+        mock_channel.history = mock_history
+        
+        # Mock _parse_forms_message to return data for msg1, None for msg2
+        cog._parse_forms_message = MagicMock(side_effect=[
+            ({"discord_id": "1", "ign": "A", "date_accepted": "2024-01-01"}, []),
+            (None, ["Reason"])
+        ])
+        
+        # Mock _sync_data_to_sheet
+        cog._sync_data_to_sheet = AsyncMock(return_value=(True, "Synced 1"))
+        
+        await cog.guildops_sync_history(ctx, "forms", limit=10)
+        
+        # Verify
+        assert cog._sync_data_to_sheet.called
+        call_args = cog._sync_data_to_sheet.call_args
+        assert call_args[0][0] == "SHEET_ID"
+        assert len(call_args[0][1]) == 1 # Only one valid form
+        assert call_args[0][1][0]['ign'] == "A"
