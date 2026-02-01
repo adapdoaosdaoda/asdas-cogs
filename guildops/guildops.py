@@ -70,13 +70,13 @@ class GuildOps(commands.Cog):
                 
                 # ensure headers
                 headers = ws.row_values(1)
-                required_headers = ["Discord ID", "IGN", "Date Accepted", "Status"]
+                required_headers = ["Discord ID", "IGN", "Date Accepted", "Status", "Import"]
                 
                 # Check if headers are empty or effectively empty (e.g. ["", "", ""])
                 is_empty = not headers or not any(h.strip() for h in headers)
                 
                 if is_empty:
-                    ws.update('A1:D1', [required_headers])
+                    ws.update('A1:E1', [required_headers])
                     headers = required_headers
                 
                 # Map headers to indices (Case Insensitive)
@@ -98,18 +98,30 @@ class GuildOps(commands.Cog):
                 else:
                     data_rows = []
 
-                # Index by Discord ID
+                # Index by Discord ID and IGN
                 id_col_idx = header_map["discord id"]
                 ign_col_idx = header_map["ign"]
                 date_col_idx = header_map["date accepted"]
                 status_col_idx = header_map.get("status")
+                import_col_idx = header_map.get("import")
                 
-                existing_map = {}
+                existing_map = {} # Discord ID -> Row Index
+                ign_map = {}      # IGN -> Row Index
+                
                 for i, row in enumerate(data_rows):
+                    row_idx = i + 2
+                    
+                    # Map by Discord ID
                     if len(row) > id_col_idx:
                         d_id = str(row[id_col_idx]).strip()
                         if d_id:
-                            existing_map[d_id] = i + 2
+                            existing_map[d_id] = row_idx
+                    
+                    # Map by IGN
+                    if len(row) > ign_col_idx:
+                        ign_val = str(row[ign_col_idx]).strip().lower()
+                        if ign_val and ign_val not in ign_map:
+                             ign_map[ign_val] = row_idx
 
                 updates = []
                 appends = []
@@ -119,23 +131,45 @@ class GuildOps(commands.Cog):
                     ign = entry['ign']
                     date_acc = entry['date_accepted']
                     
+                    target_row_idx = None
+                    
                     if d_id in existing_map:
-                        row_idx = existing_map[d_id]
+                        target_row_idx = existing_map[d_id]
+                    elif ign.lower() in ign_map:
+                        target_row_idx = ign_map[ign.lower()]
+                    
+                    if target_row_idx:
+                        # Update existing row
+                        # Always update IGN and Date for consistency
                         updates.append({
-                            'range': f"{gspread.utils.rowcol_to_a1(row_idx, ign_col_idx + 1)}",
+                            'range': f"{gspread.utils.rowcol_to_a1(target_row_idx, ign_col_idx + 1)}",
                             'values': [[ign]]
                         })
                         updates.append({
-                            'range': f"{gspread.utils.rowcol_to_a1(row_idx, date_col_idx + 1)}",
+                            'range': f"{gspread.utils.rowcol_to_a1(target_row_idx, date_col_idx + 1)}",
                             'values': [[date_acc]]
                         })
+                        # Ensure Discord ID is set (fix for retroactive updates)
+                        updates.append({
+                            'range': f"{gspread.utils.rowcol_to_a1(target_row_idx, id_col_idx + 1)}",
+                            'values': [[d_id]]
+                        })
+                        # Set Import source to Form
+                        if import_col_idx is not None:
+                             updates.append({
+                                'range': f"{gspread.utils.rowcol_to_a1(target_row_idx, import_col_idx + 1)}",
+                                'values': [["Form"]]
+                            })
                     else:
+                        # Append new row
                         new_row = [""] * len(headers)
                         new_row[id_col_idx] = d_id
                         new_row[ign_col_idx] = ign
                         new_row[date_col_idx] = date_acc
                         if status_col_idx is not None:
                             new_row[status_col_idx] = "Active"
+                        if import_col_idx is not None:
+                            new_row[import_col_idx] = "Form"
                         appends.append(new_row)
                 
                 if appends:
@@ -144,7 +178,7 @@ class GuildOps(commands.Cog):
                 if updates:
                     ws.batch_update(updates)
                     
-                return True, f"Synced {len(appends)} new and {len(updates)//2} updated records."
+                return True, f"Synced {len(appends)} new and {len(updates)//4} updated records."
 
             except Exception as e:
                 return False, str(e)
@@ -177,6 +211,7 @@ class GuildOps(commands.Cog):
                 ign_col = header_map["ign"] + 1
                 status_col = header_map["status"] + 1
                 discord_id_col = header_map.get("discord id", -1) + 1
+                import_col = header_map.get("import", -1) + 1
                 
                 # Find the cell with the IGN
                 cell = ws.find(ign, in_column=ign_col, case_sensitive=False)
@@ -199,6 +234,8 @@ class GuildOps(commands.Cog):
                     new_row = [""] * len(headers)
                     new_row[ign_col - 1] = ign
                     new_row[status_col - 1] = status
+                    if import_col > 0:
+                        new_row[import_col - 1] = "OCR"
                     
                     ws.append_row(new_row)
                     return True, None, f"Added {ign} as {status} (Missing Discord ID)."
@@ -325,6 +362,42 @@ class GuildOps(commands.Cog):
             "date_accepted": date_acc
         }, []
 
+    def _parse_ocr_text(self, text: str) -> List[Tuple[str, str]]:
+        """Parses OCR text for IGN and Status pairs."""
+        parsed_entries = []
+        lines = text.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            ign = None
+            status = None
+
+            # Regex 1: "Name Status" (e.g. "Player1 Active")
+            match_list = re.search(r'^(.*?)\s+(Active|Left|Guest|Member|Banned)$', line, re.IGNORECASE)
+            
+            # Regex 2: Sentence "Name has left the guild."
+            match_left = re.search(r'^(.*?)\s+has left the guild\.?$', line, re.IGNORECASE)
+
+            # Regex 3: Sentence "approved <Name>'s application"
+            match_approve = re.search(r'approved\s+(.*?)\'s\s+application', line, re.IGNORECASE)
+
+            if match_list:
+                ign = match_list.group(1).strip()
+                status = match_list.group(2).capitalize()
+            elif match_left:
+                ign = match_left.group(1).strip()
+                status = "Left"
+            elif match_approve:
+                ign = match_approve.group(1).strip()
+                status = "Active"
+
+            if ign and status:
+                parsed_entries.append((ign, status))
+        
+        return parsed_entries
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if not message.guild or message.author.id == self.bot.user.id:
@@ -391,43 +464,22 @@ class GuildOps(commands.Cog):
                 text = await self.bot.loop.run_in_executor(None, _ocr_task)
                 log.info(f"GuildOps: OCR Result (First 100 chars): {text[:100]}...")
                 
-                # Basic parsing: look for lines ending in specific status keywords
-                lines = text.split('\n')
+                parsed_entries = self._parse_ocr_text(text)
                 processed_count = 0
                 results = []
                 
-                for line in lines:
-                    line = line.strip()
-                    if not line: continue
+                for ign, status in parsed_entries:
+                    log.info(f"GuildOps: Found potential entry: {ign} -> {status}")
                     
-                    ign = None
-                    status = None
-
-                    # Regex 1: "Name Status" (e.g. "Player1 Active")
-                    match_list = re.search(r'^(.*?)\s+(Active|Left|Guest|Member|Banned)$', line, re.IGNORECASE)
-                    
-                    # Regex 2: Sentence "Name has left the guild."
-                    match_left = re.search(r'^(.*?)\s+has left the guild\.?$', line, re.IGNORECASE)
-
-                    if match_list:
-                        ign = match_list.group(1).strip()
-                        status = match_list.group(2).capitalize()
-                    elif match_left:
-                        ign = match_left.group(1).strip()
-                        status = "Left"
-
-                    if ign and status:
-                        log.info(f"GuildOps: Found potential entry: {ign} -> {status}")
-                        
-                        if len(ign) > 2: # Min length sanity check
-                            success, result_msg = await self._process_ocr_result(sheet_id, ign, status, message.guild)
-                            if success:
-                                processed_count += 1
-                                results.append(f"• {result_msg}")
-                            else:
-                                results.append(f"• ❌ Error processing {ign}: {result_msg}")
+                    if len(ign) > 2: # Min length sanity check
+                        success, result_msg = await self._process_ocr_result(sheet_id, ign, status, message.guild)
+                        if success:
+                            processed_count += 1
+                            results.append(f"• {result_msg}")
                         else:
-                            log.info(f"GuildOps: IGN '{ign}' too short, skipping.")
+                            results.append(f"• ❌ Error processing {ign}: {result_msg}")
+                    else:
+                        log.info(f"GuildOps: IGN '{ign}' too short, skipping.")
                 
                 log.info(f"GuildOps: Processed {processed_count} valid entries from {att.filename}")
                 if processed_count > 0:

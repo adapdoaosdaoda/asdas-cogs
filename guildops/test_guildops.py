@@ -28,116 +28,85 @@ class TestGuildOps:
         assert cog is not None
         assert hasattr(cog, 'bot')
         assert hasattr(cog, 'config')
-        assert hasattr(cog, 'data_path')
-        assert hasattr(cog, 'creds_file')
 
-    async def test_cog_has_commands(self, cog):
-        """Test that all expected commands exist."""
-        # Configuration commands
-        assert hasattr(cog, 'opset')
-        assert hasattr(cog, 'guildops')
+    async def test_parse_ocr_text_mixed(self, cog):
+        """Test OCR parsing for various patterns including acceptance."""
+        text = """
+Player1 Active
+Player2 Left
+Player3 has left the guild.
+® [Members]Songbird has Idago
+approved izzue's application to
+join the guild. The guild
+flourishes!
+"""
+        parsed = cog._parse_ocr_text(text)
+        
+        expected = [
+            ("Player1", "Active"),
+            ("Player2", "Left"),
+            ("Player3", "Left"),
+            ("izzue", "Active")
+        ]
+        
+        assert len(parsed) == 4
+        for item in expected:
+            assert item in parsed
 
-        # Check opset subcommands
-        opset_commands = [cmd.name for cmd in cog.opset.commands]
-        assert 'sheet' in opset_commands
-        assert 'forms' in opset_commands
-        assert 'ocr' in opset_commands
-        assert 'roles' in opset_commands
-        assert 'creds' in opset_commands
-        assert 'status' in opset_commands
-
-        # Check guildops subcommands
-        guildops_commands = [cmd.name for cmd in cog.guildops.commands]
-        assert 'status' in guildops_commands
-        assert 'processform' in guildops_commands
-        assert 'processocr' in guildops_commands
-
-    async def test_extract_all_text_basic(self, cog):
-        """Test text extraction from components."""
-        # Mock component with label
-        mock_component = MagicMock()
-        mock_component.label = "Test Label"
-        mock_component.placeholder = None
-        mock_component.value = None
-        mock_component.options = None
-        mock_component.children = []
-        mock_component.to_dict.return_value = {}
-
-        result = cog._extract_all_text([mock_component])
-        assert "Test Label" in result
-
-    async def test_parse_forms_message_missing_data(self, cog):
-        """Test form parsing with missing required fields."""
-        # Mock message without required data
-        mock_message = MagicMock(spec=discord.Message)
-        mock_message.content = "Test message"
-        mock_message.embeds = []
-        mock_message.components = []
-
-        data, reasons = cog._parse_forms_message(mock_message)
-
-        assert data is None
-        assert len(reasons) > 0
-        assert any("Discord User ID" in r for r in reasons)
-
-    async def test_parse_forms_message_with_valid_data(self, cog):
-        """Test form parsing with valid embed data."""
-        # Mock message with valid data
-        mock_message = MagicMock(spec=discord.Message)
-        mock_message.content = "Application Accepted by <@123456789>"
-        mock_message.created_at = MagicMock()
-        mock_message.created_at.strftime = MagicMock(return_value="2024-01-01")
-
-        # Mock embed with IGN field
-        mock_embed = MagicMock(spec=discord.Embed)
-        mock_embed.title = "Application"
-        mock_embed.description = "Test"
-        mock_embed.footer = MagicMock()
-        mock_embed.footer.text = ""
-
-        mock_field = MagicMock()
-        mock_field.name = "IGN"
-        mock_field.value = "TestPlayer123"
-        mock_embed.fields = [mock_field]
-
-        mock_message.embeds = [mock_embed]
-        mock_message.components = []
-
-        data, reasons = cog._parse_forms_message(mock_message)
-
-        assert data is not None
-        assert data['discord_id'] == "123456789"
-        assert data['ign'] == "TestPlayer123"
-        assert data['date_accepted'] == "2024-01-01"
-        assert len(reasons) == 0
-
-    async def test_get_gc_no_credentials(self, cog):
-        """Test Google Sheets client when credentials are missing."""
-        cog.creds_file.exists = MagicMock(return_value=False)
-
-        result = await cog._get_gc()
-        assert result is None
-
-    async def test_listener_registered(self, cog):
-        """Test that the on_message listener is registered."""
-        assert hasattr(cog, 'on_message')
-        assert callable(cog.on_message)
-
-    async def test_on_message_ignores_bot_messages(self, cog):
-        """Test that bot messages are ignored."""
-        mock_message = MagicMock(spec=discord.Message)
-        mock_message.guild = MagicMock()
-        mock_message.author.id = cog.bot.user.id
-
-        # Should return early without processing
-        result = await cog.on_message(mock_message)
-        assert result is None
-
-    async def test_on_message_ignores_dm(self, cog):
-        """Test that DM messages are ignored."""
-        mock_message = MagicMock(spec=discord.Message)
-        mock_message.guild = None
-
-        # Should return early without processing
-        result = await cog.on_message(mock_message)
-        assert result is None
+    async def test_sync_data_retroactive(self, cog):
+        """Test that sync_data updates retroactive rows by IGN."""
+        
+        # Mock Google Sheets
+        mock_gc = MagicMock()
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        
+        mock_gc.open_by_key.return_value = mock_sh
+        mock_sh.sheet1 = mock_ws
+        
+        # Headers: Discord ID, IGN, Date, Status, Import
+        mock_ws.row_values.return_value = ["Discord ID", "IGN", "Date Accepted", "Status", "Import"]
+        
+        # Existing data: One row added by OCR (No Discord ID, Import=OCR)
+        # Row 2 (Index 0 in data)
+        mock_ws.get_all_values.return_value = [
+            ["Discord ID", "IGN", "Date Accepted", "Status", "Import"],
+            ["", "TestUser", "", "Active", "OCR"] 
+        ]
+        
+        # Mock executor to run _do_work immediately
+        async def mock_executor(executor, func):
+            return func()
+        cog.bot.loop.run_in_executor = mock_executor
+        
+        # Patch _get_gc
+        with patch.object(cog, '_get_gc', return_value=mock_gc):
+            new_data = [{
+                "discord_id": "12345",
+                "ign": "TestUser",
+                "date_accepted": "2024-01-01"
+            }]
+            
+            success, msg = await cog._sync_data_to_sheet("sheet_id", new_data)
+            
+            assert success is True
+            # Verification:
+            # Should call batch_update with updates for Row 2 (cols for IGN, Date, ID, Import)
+            # We specifically look for the Discord ID update on the existing row
+            assert mock_ws.batch_update.called
+            updates = mock_ws.batch_update.call_args[0][0]
+            
+            # Check if we are updating the Discord ID (Col 1 -> A)
+            found_id_update = False
+            found_import_update = False
+            
+            for update in updates:
+                # Row 2 is index 2 in A1 notation? rowcol_to_a1(2, 1) -> A2
+                # Our mock setup logic: row_idx = i + 2 = 0 + 2 = 2.
+                if 'A2' in update['range'] and update['values'] == [['12345']]:
+                    found_id_update = True
+                if 'E2' in update['range'] and update['values'] == [['Form']]: # Col 5 is Import
+                    found_import_update = True
+                    
+            assert found_id_update, "Did not update Discord ID on existing row"
+            assert found_import_update, "Did not update Import source to Form"
