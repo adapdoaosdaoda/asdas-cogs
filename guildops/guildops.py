@@ -487,30 +487,23 @@ class GuildOps(commands.Cog):
                     # 1. Load and Grayscale
                     img = Image.open(BytesIO(img_data)).convert('L')
                     
-                    # 2. Rescale - x4 is much safer for character preservation
-                    width, height = img.size
-                    scale = 4 if width < 1500 else 2
-                    img = img.resize((width*scale, height*scale), Image.Resampling.LANCZOS)
-                    
-                    # 3. Contrast stretch
+                    # 2. Contrast stretch to normalize levels
                     img = ImageOps.autocontrast(img)
                     
-                    # 4. Thresholding using configured value
+                    # 3. Thresholding to isolate white text and create a black background
+                    # Anything below the threshold becomes pure black (0)
                     mask = img.point(lambda x: 0 if x < threshold else 255)
                     
-                    # 5. Polarity Correction (Target: Black text on White bg)
-                    hist = mask.histogram()
-                    # Background is likely the color with most pixels
-                    if hist[0] > hist[255]:
-                        mask = ImageOps.invert(mask)
-                    
-                    # 6. Underline Removal (Optional 1px shift)
+                    # 4. Underline Removal (2px shift as requested)
                     if use_filter:
-                        shift = 1
+                        # With White text (255) on Black background (0), we use 'darker' (min)
+                        # to eliminate horizontal white lines that lack vertical continuity.
+                        shift = 2
                         m_up = ImageChops.offset(mask, 0, -shift)
                         m_dn = ImageChops.offset(mask, 0, shift)
-                        mask = ImageChops.lighter(mask, ImageChops.lighter(m_up, m_dn))
+                        mask = ImageChops.darker(mask, ImageChops.darker(m_up, m_dn))
                     
+                    # We send the White-on-Black image directly to Tesseract as requested.
                     return pytesseract.image_to_string(mask, lang='eng+chi_sim+chi_tra', config='--psm 6')
                 
                 log.info(f"GuildOps: Running OCR on {att.filename}...")
