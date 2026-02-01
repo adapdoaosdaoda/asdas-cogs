@@ -180,17 +180,30 @@ class GuildOps(commands.Cog):
         """Parses a forms message and returns data dict or None."""
         
         # 1. Check for "Accepted by" status
-        # It could be in content, embed title, description, or footer.
+        # It could be in content, embed title, description, footer, OR BUTTONS (Components).
         content_text = message.content or ""
         embed_text = ""
+        component_text = ""
         
         if message.embeds:
             for embed in message.embeds:
                 embed_text += f" {embed.title or ''} {embed.description or ''} {embed.footer.text or ''}"
                 for field in embed.fields:
                     embed_text += f" {field.name} {field.value}"
+                    
+        # Check Components (Buttons, etc.)
+        if message.components:
+            for component in message.components:
+                if hasattr(component, 'children'):
+                    for child in component.children:
+                        # Check Button Label
+                        if hasattr(child, 'label') and child.label:
+                            component_text += f" {child.label}"
+                        # Check Select Menu Placeholder
+                        if hasattr(child, 'placeholder') and child.placeholder:
+                            component_text += f" {child.placeholder}"
         
-        full_text = content_text + embed_text
+        full_text = content_text + embed_text + component_text
         
         if "Accepted by" not in full_text:
             # Try case insensitive just in case
