@@ -378,6 +378,8 @@ class GuildOps(commands.Cog):
                 report.append("⚠️ **Warning: Message content is empty.** Ensure 'Message Content Intent' is enabled in the Discord Developer Portal.")
             
             # 2. Raw attributes for deep debug
+            report.append(f"**Bot Intent (Message Content):** `{self.bot.intents.message_content}`")
+            report.append(f"**Message Type:** `{message.type}`")
             report.append(f"**Raw Flags:** `{message.flags.value}`")
             report.append(f"**Author Bot:** `{message.author.bot}`")
             
