@@ -35,7 +35,8 @@ class TestGuildOps:
 Player1 Active
 Player2 Left
 Player3 has left the guild.
-[Members]Luojing has removed Po LIAR from the guild.
+[Members]Luojing has removed Po
+LIAR from the guild.
 ® [Members]Songbird has Idago
 approved izzue's application to
 join the guild. The guild

@@ -383,45 +383,40 @@ class GuildOps(commands.Cog):
     def _parse_ocr_text(self, text: str) -> List[Tuple[str, str]]:
         """Parses OCR text for IGN and Status pairs."""
         parsed_entries = []
-        lines = text.split('\n')
         
+        # 1. Handle sentence-based logs (flexible with newlines)
+        # Regex 2: Sentence "Name has left the guild."
+        for match in re.finditer(r'([^\n]+?)\s+has\s+left\s+the\s+guild', text, re.IGNORECASE | re.DOTALL):
+            ign = match.group(1).strip().split('\n')[-1].strip()
+            if ign:
+                parsed_entries.append((ign, "Left"))
+
+        # Regex 3: Sentence "approved <Name>'s application"
+        for match in re.finditer(r'approved\s+(.*?)\'s\s+application', text, re.IGNORECASE | re.DOTALL):
+            ign = match.group(1).strip().replace('\n', ' ')
+            if ign:
+                parsed_entries.append((ign, "Active"))
+
+        # Regex 4: Sentence "has removed <Name> from the guild"
+        for match in re.finditer(r'has\s+removed\s+(.*?)\s+from\s+the\s+guild', text, re.IGNORECASE | re.DOTALL):
+            ign = match.group(1).strip().replace('\n', ' ')
+            if ign:
+                parsed_entries.append((ign, "Left"))
+
+        # 2. Handle the "List" format line-by-line
+        lines = text.split('\n')
         for line in lines:
             line = line.strip()
             if not line: continue
             
-            ign = None
-            status = None
-
             # Regex 1: "Name Status" (e.g. "Player1 Active")
-            # Improved to handle spaces and non-latin characters more robustly
             match_list = re.search(r'^(.*?)\s+(Active|Left|Guest|Member|Banned)$', line, re.IGNORECASE)
-            
-            # Regex 2: Sentence "Name has left the guild."
-            match_left = re.search(r'^(.*?)\s+has left the guild\.?$', line, re.IGNORECASE)
-
-            # Regex 3: Sentence "approved <Name>'s application"
-            match_approve = re.search(r'approved\s+(.*?)\'s\s+application', line, re.IGNORECASE)
-
-            # Regex 4: Sentence "has removed <Name> from the guild"
-            match_removed = re.search(r'has\s+removed\s+(.*?)\s+from\s+the\s+guild', line, re.IGNORECASE)
-
             if match_list:
                 ign = match_list.group(1).strip()
-                # Clean up common OCR noise from the name if it's too messy
-                # But keep underscores as the user said they are intentional
                 status = match_list.group(2).capitalize()
-            elif match_left:
-                ign = match_left.group(1).strip()
-                status = "Left"
-            elif match_removed:
-                ign = match_removed.group(1).strip()
-                status = "Left"
-            elif match_approve:
-                ign = match_approve.group(1).strip()
-                status = "Active"
-
-            if ign and status:
-                parsed_entries.append((ign, status))
+                # Avoid duplicate if already caught by sentence regex
+                if not any(e[0].lower() == ign.lower() for e in parsed_entries):
+                    parsed_entries.append((ign, status))
         
         return parsed_entries
 
