@@ -467,7 +467,7 @@ class GuildOps(commands.Cog):
             await ctx.send("Invalid message link format.")
         except Exception as e:
             log.exception("Debug command failed")
-            await ctx.send(f"An error occurred: {str(e})")
+            await ctx.send(f"An error occurred: {str(e)}")
 
         except ValueError:
             await ctx.send("Invalid message link format.")
