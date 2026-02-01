@@ -70,7 +70,7 @@ class GuildOps(commands.Cog):
                 
                 # ensure headers
                 headers = ws.row_values(1)
-                required_headers = ["Discord ID", "IGN", "Date Accepted", "Status", "Import"]
+                required_headers = ["Discord ID", "IGN", "Date Added", "Status", "Import"]
                 
                 # Check if headers are empty or effectively empty (e.g. ["", "", ""])
                 is_empty = not headers or not any(h.strip() for h in headers)
@@ -85,7 +85,7 @@ class GuildOps(commands.Cog):
                 required_map = {
                     "discord id": "Discord ID",
                     "ign": "IGN",
-                    "date accepted": "Date Accepted"
+                    "date added": "Date Added"
                 }
                 
                 for req_key, display_name in required_map.items():
@@ -101,7 +101,7 @@ class GuildOps(commands.Cog):
                 # Index by Discord ID and IGN
                 id_col_idx = header_map["discord id"]
                 ign_col_idx = header_map["ign"]
-                date_col_idx = header_map["date accepted"]
+                date_col_idx = header_map["date added"]
                 status_col_idx = header_map.get("status")
                 import_col_idx = header_map.get("import")
                 
@@ -211,7 +211,7 @@ class GuildOps(commands.Cog):
                 ign_col = header_map["ign"] + 1
                 status_col = header_map["status"] + 1
                 discord_id_col = header_map.get("discord id", -1) + 1
-                date_acc_col = header_map.get("date accepted", -1) + 1
+                date_acc_col = header_map.get("date added", -1) + 1
                 import_col = header_map.get("import", -1) + 1
                 
                 # Find the cell with the IGN

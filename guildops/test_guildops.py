@@ -65,12 +65,12 @@ flourishes!
         mock_sh.sheet1 = mock_ws
         
         # Headers: Discord ID, IGN, Date, Status, Import
-        mock_ws.row_values.return_value = ["Discord ID", "IGN", "Date Accepted", "Status", "Import"]
+        mock_ws.row_values.return_value = ["Discord ID", "IGN", "Date Added", "Status", "Import"]
         
         # Existing data: One row added by OCR (No Discord ID, Import=OCR)
         # Row 2 (Index 0 in data)
         mock_ws.get_all_values.return_value = [
-            ["Discord ID", "IGN", "Date Accepted", "Status", "Import"],
+            ["Discord ID", "IGN", "Date Added", "Status", "Import"],
             ["", "TestUser", "", "Active", "OCR"] 
         ]
         
