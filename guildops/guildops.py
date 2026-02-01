@@ -77,13 +77,21 @@ class GuildOps(commands.Cog):
                     ws.update('A1:D1', [required_headers])
                     headers = required_headers
                 
-                # Map headers to indices
-                header_map = {h: i for i, h in enumerate(headers)}
+                # Map headers to indices (Case Insensitive)
+                # Normalize header to lowercase and stripped
+                header_map = {h.lower().strip(): i for i, h in enumerate(headers)}
                 
-                # Verify we have the columns we need
-                for req in ["Discord ID", "IGN", "Date Accepted"]:
-                    if req not in header_map:
-                        return False, f"Missing column: {req}"
+                # Verify we have the columns we need (using normalized keys)
+                required_map = {
+                    "discord id": "Discord ID",
+                    "ign": "IGN",
+                    "date accepted": "Date Accepted"
+                }
+                
+                # Check normalized keys
+                for req_key, display_name in required_map.items():
+                    if req_key not in header_map:
+                        return False, f"Missing column: {display_name} (Found: {headers})"
 
                 # Read all data
                 all_values = ws.get_all_values()
@@ -93,9 +101,10 @@ class GuildOps(commands.Cog):
                     data_rows = []
 
                 # Index by Discord ID
-                id_col_idx = header_map["Discord ID"]
-                ign_col_idx = header_map["IGN"]
-                date_col_idx = header_map["Date Accepted"]
+                id_col_idx = header_map["discord id"]
+                ign_col_idx = header_map["ign"]
+                date_col_idx = header_map["date accepted"]
+                status_col_idx = header_map.get("status") # Optional
                 
                 # existing_map: Discord ID -> Row Index (1-based)
                 existing_map = {}
@@ -133,8 +142,8 @@ class GuildOps(commands.Cog):
                         new_row[ign_col_idx] = ign
                         new_row[date_col_idx] = date_acc
                         # Default status to Active? prompt doesn't say, but implies "Added"
-                        if "Status" in header_map:
-                            new_row[header_map["Status"]] = "Active"
+                        if status_col_idx is not None:
+                            new_row[status_col_idx] = "Active"
                         appends.append(new_row)
                 
                 if appends:
