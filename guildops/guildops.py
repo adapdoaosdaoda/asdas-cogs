@@ -396,6 +396,7 @@ class GuildOps(commands.Cog):
                 # Basic parsing: look for lines ending in specific status keywords
                 lines = text.split('\n')
                 processed_count = 0
+                results = []
                 
                 for line in lines:
                     line = line.strip()
@@ -420,19 +421,26 @@ class GuildOps(commands.Cog):
                     if ign and status:
                         log.info(f"GuildOps: Found potential entry: {ign} -> {status}")
                         
-                        # Clean up IGN if it has leading special chars from OCR noise (common in game screenshots)
-                        # e.g. "® [Members]Name" -> "Name" if possible, but that's risky. 
-                        # For now, just minimum length check.
-                        
                         if len(ign) > 2: # Min length sanity check
-                            await self._process_ocr_result(sheet_id, ign, status, message.guild)
-                            processed_count += 1
+                            success, result_msg = await self._process_ocr_result(sheet_id, ign, status, message.guild)
+                            if success:
+                                processed_count += 1
+                                results.append(f"• {result_msg}")
+                            else:
+                                results.append(f"• ❌ Error processing {ign}: {result_msg}")
                         else:
                             log.info(f"GuildOps: IGN '{ign}' too short, skipping.")
                 
                 log.info(f"GuildOps: Processed {processed_count} valid entries from {att.filename}")
                 if processed_count > 0:
                     await message.add_reaction("👀")
+                    # Send summary to channel
+                    summary = f"**OCR Processing Results ({att.filename})**\n" + "\n".join(results)
+                    await message.channel.send(summary)
+                elif results:
+                    # Case where we found entries but they all failed
+                    summary = f"**OCR Processing Errors ({att.filename})**\n" + "\n".join(results)
+                    await message.channel.send(summary)
                     
             except Exception as e:
                 log.error("OCR Error", exc_info=e)
