@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 from datetime import datetime
 from io import BytesIO
-from PIL import Image, ImageChops, ImageOps
+from PIL import Image, ImageChops, ImageOps, ImageFilter
 from typing import Optional, List, Dict, Any, Tuple
 
 from redbot.core import commands, Config, data_manager, checks
@@ -31,7 +31,7 @@ class GuildOps(commands.Cog):
             "member_role": None,
             "left_role": None,
             "ocr_debug": False,
-            "ocr_threshold": 210,
+            "ocr_threshold": 160,
             "ocr_filter": True,
         }
         self.config.register_guild(**default_guild)
@@ -461,14 +461,16 @@ class GuildOps(commands.Cog):
         # 1. Load and Grayscale
         img = Image.open(BytesIO(img_data)).convert('L')
         
-        # 2. Contrast stretch to normalize levels
-        img = ImageOps.autocontrast(img)
+        # 2. Contrast stretch (2% cutoff helps stretch light gray into pure white)
+        img = ImageOps.autocontrast(img, cutoff=2)
         
-        # 3. Thresholding to isolate white text and create a black background
-        # Anything below the threshold becomes pure black (0)
+        # 3. Subtle smoothing to help anti-aliased / light gray edges stay connected
+        img = img.filter(ImageFilter.SMOOTH_MORE)
+        
+        # 4. Thresholding to isolate white/light-gray text and create a black background
         mask = img.point(lambda x: 0 if x < threshold else 255)
         
-        # 4. Underline Removal (2px shift as requested)
+        # 5. Underline Removal (2px shift)
         if use_filter:
             # With White text (255) on Black background (0), we use 'darker' (min)
             # to eliminate horizontal white lines that lack vertical continuity.
