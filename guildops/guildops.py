@@ -23,7 +23,7 @@ class GuildOps(commands.Cog):
     def __init__(self, bot: Red):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=9876543210, force_registration=True)
-        
+
         default_guild = {
             "sheet_id": None,
             "forms_channel": None,
@@ -32,10 +32,15 @@ class GuildOps(commands.Cog):
             "left_role": None,
         }
         self.config.register_guild(**default_guild)
-        
+
         self.data_path = data_manager.cog_data_path(self)
         self.creds_file = self.data_path / "service_account.json"
-        self._ocr_lock = asyncio.Lock()
+
+        # Validate service account on load
+        if self.creds_file.exists():
+            log.info("GuildOps: Service account file found.")
+        else:
+            log.warning(f"GuildOps: Service account file not found at {self.creds_file}. Google Sheets sync will not work.")
 
     async def _get_gc(self):
         """
@@ -343,12 +348,16 @@ class GuildOps(commands.Cog):
             sheet_id = await self.config.guild(message.guild).sheet_id()
             if not sheet_id:
                 return
-            
+
             success, msg = await self._sync_data_to_sheet(sheet_id, [data])
             if success:
                 await message.add_reaction("✅")
             else:
                 log.warning(f"Failed to sync form: {msg}")
+                await message.add_reaction("❌")
+        else:
+            log.info(f"Form parsing failed: {', '.join(reasons)}")
+            await message.add_reaction("❌")
 
     async def _handle_ocr_message(self, message):
         if not message.attachments:
@@ -480,3 +489,67 @@ class GuildOps(commands.Cog):
     async def guildops_status(self, ctx):
         """Show GuildOps status (Alias for opset status)."""
         await self._show_status(ctx)
+
+    @guildops.command(name="processform")
+    async def guildops_process_form(self, ctx, message_id: int):
+        """Manually process a form message by ID.
+
+        Use this to reprocess a form that failed or was posted before the bot was configured.
+        The message must be in the configured forms channel.
+        """
+        forms_channel_id = await self.config.guild(ctx.guild).forms_channel()
+        if not forms_channel_id:
+            await ctx.send("❌ Forms channel not configured. Use `[p]opset forms` first.")
+            return
+
+        forms_channel = ctx.guild.get_channel(forms_channel_id)
+        if not forms_channel:
+            await ctx.send("❌ Configured forms channel not found.")
+            return
+
+        try:
+            message = await forms_channel.fetch_message(message_id)
+        except discord.NotFound:
+            await ctx.send("❌ Message not found in the forms channel.")
+            return
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to read that message.")
+            return
+
+        async with ctx.typing():
+            await self._handle_form_message(message)
+            await ctx.send("✅ Form processing triggered. Check the message for reaction status.")
+
+    @guildops.command(name="processocr")
+    async def guildops_process_ocr(self, ctx, message_id: int):
+        """Manually process an OCR screenshot by message ID.
+
+        Use this to reprocess a screenshot that failed or was posted before the bot was configured.
+        The message must be in the configured OCR channel and contain image attachments.
+        """
+        ocr_channel_id = await self.config.guild(ctx.guild).ocr_channel()
+        if not ocr_channel_id:
+            await ctx.send("❌ OCR channel not configured. Use `[p]opset ocr` first.")
+            return
+
+        ocr_channel = ctx.guild.get_channel(ocr_channel_id)
+        if not ocr_channel:
+            await ctx.send("❌ Configured OCR channel not found.")
+            return
+
+        try:
+            message = await ocr_channel.fetch_message(message_id)
+        except discord.NotFound:
+            await ctx.send("❌ Message not found in the OCR channel.")
+            return
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to read that message.")
+            return
+
+        if not message.attachments:
+            await ctx.send("❌ Message has no attachments.")
+            return
+
+        async with ctx.typing():
+            await self._handle_ocr_message(message)
+            await ctx.send("✅ OCR processing triggered. Check the message for reaction status.")

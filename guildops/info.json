@@ -1,7 +1,8 @@
 {
     "author": ["Gemini"],
     "description": "Synchronize guild membership using Discord Embeds and OCR.",
-    "install_msg": "GuildOps is installed. Use `[p]opset` to configure it.",
+    "end_user_data_statement": "This cog stores Discord user IDs and in-game names in a Google Sheet configured by server admins. Data is only stored when application forms are processed or OCR updates are triggered.",
+    "install_msg": "GuildOps is installed. Use `[p]opset` to configure it.\n\n**IMPORTANT:** This cog requires Tesseract OCR to be installed on your system for image processing.\nUbuntu/Debian: `sudo apt-get install tesseract-ocr`\nMacOS: `brew install tesseract`\nWindows: Download from https://github.com/UB-Mannheim/tesseract/wiki",
     "min_bot_version": "3.5.0",
     "name": "GuildOps",
     "requirements": ["gspread", "pytesseract", "Pillow"],
