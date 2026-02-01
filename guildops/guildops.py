@@ -467,8 +467,9 @@ class GuildOps(commands.Cog):
         # 3. Subtle smoothing to help anti-aliased / light gray edges stay connected
         img = img.filter(ImageFilter.SMOOTH_MORE)
         
-        # 4. Thresholding to isolate white/light-gray text and create a black background
-        mask = img.point(lambda x: 0 if x < threshold else 255)
+        # 4. Clipping: Preserve original gray/white intensities for text, black out background
+        # This keeps the "gray" edges and details instead of forcing everything to pure white.
+        mask = img.point(lambda x: x if x >= threshold else 0)
         
         # 5. Underline Removal (2px shift)
         if use_filter:
