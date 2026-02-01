@@ -401,14 +401,29 @@ class GuildOps(commands.Cog):
                     line = line.strip()
                     if not line: continue
                     
-                    # Regex for "Name Status"
-                    # We look for lines that end with a status word
-                    match = re.search(r'^(.*?)\s+(Active|Left|Guest|Member|Banned)$', line, re.IGNORECASE)
-                    if match:
-                        ign = match.group(1).strip()
-                        status = match.group(2).capitalize()
-                        
+                    ign = None
+                    status = None
+
+                    # Regex 1: "Name Status" (e.g. "Player1 Active")
+                    match_list = re.search(r'^(.*?)\s+(Active|Left|Guest|Member|Banned)$', line, re.IGNORECASE)
+                    
+                    # Regex 2: Sentence "Name has left the guild."
+                    match_left = re.search(r'^(.*?)\s+has left the guild\.?$', line, re.IGNORECASE)
+
+                    if match_list:
+                        ign = match_list.group(1).strip()
+                        status = match_list.group(2).capitalize()
+                    elif match_left:
+                        ign = match_left.group(1).strip()
+                        status = "Left"
+
+                    if ign and status:
                         log.info(f"GuildOps: Found potential entry: {ign} -> {status}")
+                        
+                        # Clean up IGN if it has leading special chars from OCR noise (common in game screenshots)
+                        # e.g. "® [Members]Name" -> "Name" if possible, but that's risky. 
+                        # For now, just minimum length check.
+                        
                         if len(ign) > 2: # Min length sanity check
                             await self._process_ocr_result(sheet_id, ign, status, message.guild)
                             processed_count += 1
