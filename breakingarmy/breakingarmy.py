@@ -29,6 +29,13 @@ class BreakingArmy(commands.Cog):
                 "boss_order": [], # List[str]
                 "current_index": -1, # -1 = not started, 0 = first boss, etc.
                 "is_running": False
+            },
+            "season_data": {
+                "current_week": 1,
+                "anchors": [],
+                "guests": [],
+                "encore_boss": None,
+                "is_active": False
             }
         }
         
@@ -153,6 +160,137 @@ class BreakingArmy(commands.Cog):
             return
         await self.config.guild(ctx.guild).min_vote_threshold.set(threshold)
         await ctx.send(f"Minimum vote threshold set to {threshold}.")
+
+    @ba.group(name="season")
+    @commands.admin_or_permissions(manage_guild=True)
+    async def ba_season(self, ctx: commands.Context):
+        """Season Management Commands"""
+        pass
+
+    @ba_season.command(name="setup")
+    async def season_setup(self, ctx: commands.Context):
+        """
+        Setup a new season automatically using the Top 8 bosses from the Active Poll.
+        
+        Anchors = Top 3 Votes
+        Guests = Ranks 4-8
+        """
+        # Fetch Poll Data
+        poll_data = await self.config.guild(ctx.guild).active_poll()
+        votes = poll_data.get("votes", {})
+        
+        if not votes:
+            await ctx.send("No votes found in the active poll! Cannot generate a season.")
+            return
+
+        # Tally Votes
+        tally = {}
+        for user_votes in votes.values():
+            for boss in user_votes:
+                tally[boss] = tally.get(boss, 0) + 1
+                
+        # Sort (Desc)
+        ranked_bosses = sorted(tally.items(), key=lambda x: x[1], reverse=True)
+        # Extract just names
+        boss_pool = [b[0] for b in ranked_bosses]
+        
+        if len(boss_pool) < 8:
+            await ctx.send(f"**Not enough bosses!**\nI need at least 8 unique bosses with votes to populate a season.\nCurrently have: {len(boss_pool)}")
+            return
+            
+        # Assign Roster
+        anchors = boss_pool[:3]
+        guests = boss_pool[3:8]
+        
+        async with self.config.guild(ctx.guild).season_data() as season:
+            season["anchors"] = anchors
+            season["guests"] = guests
+            season["current_week"] = 1
+            season["encore_boss"] = None
+            season["is_active"] = True
+            
+        embed = discord.Embed(title="Breaking Army Season Setup (Auto-Populated)", color=discord.Color.green())
+        embed.add_field(name="Anchors (Top 3)", value="\n".join([f"1. {a} ({tally[a]} votes)" for a in anchors]), inline=True)
+        embed.add_field(name="Guests (Next 5)", value="\n".join([f"{i+4}. {g} ({tally[g]} votes)" for i, g in enumerate(guests)]), inline=True)
+        embed.set_footer(text="Season initialized! Use '[p]ba season next' to generate Week 1.")
+        
+        await ctx.send(embed=embed)
+
+    @ba_season.command(name="setencore")
+    async def season_setencore(self, ctx: commands.Context, *, boss_name: str):
+        """Set the Encore Boss for Week 6."""
+        async with self.config.guild(ctx.guild).season_data() as season:
+            if not season["is_active"]:
+                await ctx.send("No active season. Run setup first.")
+                return
+            season["encore_boss"] = boss_name
+            
+        await ctx.send(f"Week 6 Encore Boss set to: **{boss_name}**")
+
+    @ba_season.command(name="next")
+    async def season_next(self, ctx: commands.Context):
+        """
+        Generate the run for the current week and advance the schedule.
+        """
+        season = await self.config.guild(ctx.guild).season_data()
+        
+        if not season["is_active"]:
+            await ctx.send("No active season! Use `[p]ba season setup` first.")
+            return
+            
+        week = season["current_week"]
+        anchors = season["anchors"]
+        guests = season["guests"]
+        
+        if week > 6:
+            await ctx.send("Season complete! (Week > 6). Use `setup` to start a new season.")
+            return
+
+        boss_list = []
+        
+        # Logic Matrix
+        if week == 1:
+            boss_list = [anchors[0], guests[0]]
+        elif week == 2:
+            boss_list = [anchors[1], guests[1]]
+        elif week == 3:
+            boss_list = [anchors[2], guests[2]]
+        elif week == 4:
+            boss_list = [anchors[0], guests[3]]
+        elif week == 5:
+            boss_list = [anchors[1], guests[4]]
+        elif week == 6:
+            # Anchor 3 + (Encore OR Guest 1)
+            encore = season.get("encore_boss")
+            second_boss = encore if encore else guests[0]
+            boss_list = [anchors[2], second_boss]
+            
+        # Confirm Generation
+        await ctx.send(f"**Generating Run for Week {week}**\nBosses: {', '.join(boss_list)}")
+        
+        # Check if run active
+        active_run = await self.config.guild(ctx.guild).active_run()
+        if active_run["is_running"]:
+             await ctx.send("⚠️ A run is currently active. Overwriting...")
+        
+        # Save Run State
+        await self.config.guild(ctx.guild).active_run.set({
+            "message_id": None,
+            "channel_id": None,
+            "boss_order": boss_list,
+            "current_index": -1,
+            "is_running": False
+        })
+        
+        # Start Display
+        await self._start_run_display(ctx, boss_list)
+        
+        # Advance Week
+        async with self.config.guild(ctx.guild).season_data() as s:
+            s["current_week"] += 1
+            if s["current_week"] > 6:
+                s["is_active"] = False # Mark complete
+                await ctx.send("🎉 **Season Complete!** This was the final week.")
 
     @ba.group(name="poll")
     @commands.admin_or_permissions(manage_guild=True)
