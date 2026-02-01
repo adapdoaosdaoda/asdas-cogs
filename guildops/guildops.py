@@ -576,25 +576,37 @@ class GuildOps(commands.Cog):
             # Regex Matching
             clean_text = re.sub(r'\s+', ' ', text).strip()
             
-            status = None
-            ign = None
+            # Find ALL matches
+            # Join Pattern: approved (.*?) application to join
+            # Leave Pattern: (?:end\.?|Members\])\s*(.*?)\s+has\s+left\s+the\s+guild
             
-            join_match = re.search(r'approved\s+(.*?)(?:\'s)?\s+application\s+to\s+join', clean_text, re.IGNORECASE)
-            leave_match = re.search(r'(?:end\.?|Members\])\s*(.*?)\s+has\s+left\s+the\s+guild', clean_text, re.IGNORECASE)
+            updates_to_process = []
+            
+            # Find Joins
+            for match in re.finditer(r'approved\s+(.*?)(?:\'s)?\s+application\s+to\s+join', clean_text, re.IGNORECASE):
+                ign = match.group(1).strip()
+                updates_to_process.append((ign, "Active"))
+                
+            # Find Leaves
+            for match in re.finditer(r'(?:end\.?|Members\])\s*(.*?)\s+has\s+left\s+the\s+guild', clean_text, re.IGNORECASE):
+                ign = match.group(1).strip()
+                updates_to_process.append((ign, "Left"))
+            
+            if not updates_to_process:
+                return
 
-            if join_match:
-                status = "Active"
-                ign = join_match.group(1).strip()
-            elif leave_match:
-                status = "Left"
-                ign = leave_match.group(1).strip()
-            
-            if ign and status:
+            # Process all updates
+            results = []
+            for ign, status in updates_to_process:
                 success, msg = await self._update_status_by_ign(sheet_id, ign, status)
                 if success:
-                    await message.reply(f"✅ Parsed **{ign}** as **{status}**.")
+                    results.append(f"✅ **{ign}** -> **{status}**")
                 else:
-                    await message.reply(f"⚠️ Parsed **{ign}** as **{status}**, but sheet update failed: {msg}")
+                    results.append(f"⚠️ **{ign}** ({status}): {msg}")
+            
+            # Send summary
+            if results:
+                await message.reply("\n".join(results))
 
         except Exception as e:
             log.exception("Error in OCR listener")
