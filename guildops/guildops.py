@@ -177,6 +177,10 @@ class GuildOps(commands.Cog):
                 
                 if updates:
                     ws.batch_update(updates)
+
+                # Sort by Date Added (ascending)
+                if date_col_idx is not None:
+                    ws.sort((date_col_idx + 1, 'asc'))
                     
                 return True, f"Synced {len(appends)} new and {len(updates)//4} updated records."
 
@@ -229,6 +233,11 @@ class GuildOps(commands.Cog):
                             val = row_vals[discord_id_col - 1]
                             if val:
                                 discord_id = str(val).strip()
+
+                    # Sort by Date Added (ascending)
+                    if date_acc_col > 0:
+                        ws.sort((date_acc_col, 'asc'))
+                        
                     return True, discord_id, f"Updated {ign} to {status}."
                 else:
                     # Append new row
@@ -241,6 +250,11 @@ class GuildOps(commands.Cog):
                         new_row[import_col - 1] = "OCR"
                     
                     ws.append_row(new_row)
+
+                    # Sort by Date Added (ascending)
+                    if date_acc_col > 0:
+                        ws.sort((date_acc_col, 'asc'))
+                        
                     return True, None, f"Added {ign} as {status} (Missing Discord ID)."
                 
             except Exception as e:
