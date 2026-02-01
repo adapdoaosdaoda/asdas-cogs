@@ -339,8 +339,10 @@ class GuildOps(commands.Cog):
 
         # Check OCR Channel
         ocr_channel_id = await self.config.guild(message.guild).ocr_channel()
-        if ocr_channel_id and message.channel.id == ocr_channel_id and not message.author.bot:
-             await self._handle_ocr_message(message)
+        if ocr_channel_id and message.channel.id == ocr_channel_id:
+            log.info(f"GuildOps: Message in OCR channel {ocr_channel_id} from {message.author} (Bot: {message.author.bot})")
+            if not message.author.bot:
+                 await self._handle_ocr_message(message)
 
     async def _handle_form_message(self, message):
         data, reasons = self._parse_forms_message(message)
@@ -360,19 +362,25 @@ class GuildOps(commands.Cog):
             await message.add_reaction("❌")
 
     async def _handle_ocr_message(self, message):
+        log.info(f"GuildOps: Handling OCR message {message.id} with {len(message.attachments)} attachments.")
         if not message.attachments:
+            log.info("GuildOps: No attachments found.")
             return
             
         sheet_id = await self.config.guild(message.guild).sheet_id()
         if not sheet_id:
+            log.warning("GuildOps: Sheet ID not configured.")
             return
 
         for att in message.attachments:
+            log.info(f"GuildOps: Checking attachment {att.filename}")
             if not att.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                log.info(f"GuildOps: Skipping non-image attachment {att.filename}")
                 continue
                 
             try:
                 if att.size > 8 * 1024 * 1024:
+                    log.info(f"GuildOps: Skipping large attachment {att.filename} ({att.size} bytes)")
                     continue
                     
                 img_data = await att.read()
@@ -381,7 +389,9 @@ class GuildOps(commands.Cog):
                     img = Image.open(BytesIO(img_data))
                     return pytesseract.image_to_string(img)
                 
+                log.info(f"GuildOps: Running OCR on {att.filename}...")
                 text = await self.bot.loop.run_in_executor(None, _ocr_task)
+                log.info(f"GuildOps: OCR Result (First 100 chars): {text[:100]}...")
                 
                 # Basic parsing: look for lines ending in specific status keywords
                 lines = text.split('\n')
@@ -398,10 +408,14 @@ class GuildOps(commands.Cog):
                         ign = match.group(1).strip()
                         status = match.group(2).capitalize()
                         
+                        log.info(f"GuildOps: Found potential entry: {ign} -> {status}")
                         if len(ign) > 2: # Min length sanity check
                             await self._process_ocr_result(sheet_id, ign, status, message.guild)
                             processed_count += 1
+                        else:
+                            log.info(f"GuildOps: IGN '{ign}' too short, skipping.")
                 
+                log.info(f"GuildOps: Processed {processed_count} valid entries from {att.filename}")
                 if processed_count > 0:
                     await message.add_reaction("👀")
                     
