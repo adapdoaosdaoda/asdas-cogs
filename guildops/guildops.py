@@ -363,3 +363,5 @@ class GuildOps(commands.Cog):
             "1. Go to Google Cloud Console."
             "2. Create a Service Account."
             "3. Download the JSON key."
+        )
+        await ctx.send(msg)
