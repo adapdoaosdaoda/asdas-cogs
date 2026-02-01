@@ -464,3 +464,15 @@ class GuildOps(commands.Cog):
             embed.set_footer(text="⚠️ Service Account File Missing (Use [p]opset creds)")
             
         await ctx.send(embed=embed)
+
+    @commands.group(aliases=["ops"])
+    @commands.guild_only()
+    @checks.admin_or_permissions(manage_guild=True)
+    async def guildops(self, ctx):
+        """GuildOps main commands."""
+        pass
+
+    @guildops.command(name="status")
+    async def guildops_status(self, ctx):
+        """Show GuildOps status (Alias for opset status)."""
+        await self.status(ctx)
