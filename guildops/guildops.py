@@ -245,8 +245,10 @@ class GuildOps(commands.Cog):
         if not discord_id:
             return None
         
-        # 3. Extract IGN from Embed
+        # 3. Extract IGN
         ign = None
+        
+        # Strategy A: Check Embeds
         if message.embeds:
             for embed in message.embeds:
                 for field in embed.fields:
@@ -258,6 +260,24 @@ class GuildOps(commands.Cog):
                 if ign:
                     break
         
+        # Strategy B: Check Message Content (Markdown Headers)
+        # Structure: "### What's your IGN/UID ?\nTaoLei"
+        if not ign and content_text:
+            # Look for lines starting with ### or ** containing IGN keywords
+            # Then capture the next line(s) until the next header or end of string
+            # Regex explanation:
+            # ^(?:###|\*\*)\s*.*?(?:IGN|UID|In-Game).*?$  -> Match header line with keyword
+            # \s*                                       -> Newline/whitespace
+            # (.+?)                                     -> Capture value (lazy)
+            # \s*                                       -> Trailing whitespace
+            # (?=(?:###|\*\*)|$)                        -> Lookahead for next header or EOS
+            
+            pattern = r"(?:###|\*\*)\s*.*?(?:IGN|UID|In-Game).*?[\r\n]+(.+?)(?=\s*(?:###|\*\*)|$)"
+            match_ign = re.search(pattern, content_text, re.IGNORECASE | re.DOTALL)
+            
+            if match_ign:
+                ign = match_ign.group(1).strip()
+
         if not ign:
             return None
             
