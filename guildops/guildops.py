@@ -176,6 +176,41 @@ class GuildOps(commands.Cog):
 
         return await self.bot.loop.run_in_executor(None, _do_work)
 
+    def _parse_forms_message(self, message: discord.Message) -> Optional[Dict[str, str]]:
+        """Parses a forms message and returns data dict or None."""
+        # Filter: "Accepted by" in content
+        if "Accepted by" not in message.content:
+            return None
+        
+        # Extract Discord ID
+        match_id = re.search(r'<@!?(\d+)>', message.content)
+        if not match_id:
+            return None
+        discord_id = match_id.group(1)
+        
+        # Extract IGN from Embed
+        ign = None
+        if message.embeds:
+            for embed in message.embeds:
+                for field in embed.fields:
+                    if "What's your IGN/UID ?" in field.name:
+                        ign = field.value.strip()
+                        break
+                if ign:
+                    break
+        
+        if not ign:
+            return None
+            
+        # Date Accepted - Using message creation time
+        date_acc = message.created_at.strftime("%Y-%m-%d")
+        
+        return {
+            "discord_id": discord_id,
+            "ign": ign,
+            "date_accepted": date_acc
+        }
+
     @commands.group()
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
@@ -223,6 +258,33 @@ class GuildOps(commands.Cog):
         pass
 
     @ops.command()
+    async def create_sheet(self, ctx, title: str, share_email: str):
+        """Creates a new Google Sheet and shares it with the specified email."""
+        gc = await self._get_gc()
+        if not gc:
+            return await ctx.send("Service account file not found. Please setup credentials first.")
+
+        def _create_and_share():
+            try:
+                # Create spreadsheet
+                sh = gc.create(title)
+                # Share with user
+                sh.share(share_email, perm_type='user', role='writer')
+                return sh.id, sh.url
+            except Exception as e:
+                return None, str(e)
+
+        async with ctx.typing():
+            sheet_id, result = await self.bot.loop.run_in_executor(None, _create_and_share)
+            
+            if not sheet_id:
+                return await ctx.send(f"Failed to create sheet: {result}")
+            
+            # Auto-configure
+            await self.config.guild(ctx.guild).sheet_id.set(sheet_id)
+            await ctx.send(f"✅ Sheet **{title}** created and shared with `{share_email}`.\nURL: {result}\nID: `{sheet_id}`\n\nI have automatically set this as your active sheet.")
+
+    @ops.command()
     async def sync_history(self, ctx):
         """Syncs historical application forms to the sheet."""
         sheet_id = await self.config.guild(ctx.guild).sheet_id()
@@ -239,43 +301,11 @@ class GuildOps(commands.Cog):
             
         async with ctx.typing():
             data_to_sync = []
-            count = 0
             
             async for message in channel.history(limit=None):
-                # Filter: "Accepted by" in content (ignore case just in case, but prompt implied specific text)
-                if "Accepted by" not in message.content:
-                    continue
-                
-                # Extract Discord ID
-                # Look for user mention <@123> or <@!123>
-                match_id = re.search(r'<@!?(\d+)>', message.content)
-                if not match_id:
-                    continue
-                discord_id = match_id.group(1)
-                
-                # Extract IGN from Embed
-                ign = None
-                if message.embeds:
-                    for embed in message.embeds:
-                        for field in embed.fields:
-                            if "What's your IGN/UID ?" in field.name:
-                                ign = field.value.strip()
-                                break
-                        if ign:
-                            break
-                
-                if not ign:
-                    continue
-                    
-                # Date Accepted - Using message creation time
-                date_acc = message.created_at.strftime("%Y-%m-%d")
-                
-                data_to_sync.append({
-                    "discord_id": discord_id,
-                    "ign": ign,
-                    "date_accepted": date_acc
-                })
-                count += 1
+                entry = self._parse_forms_message(message)
+                if entry:
+                    data_to_sync.append(entry)
                 
             if not data_to_sync:
                 return await ctx.send("No valid application forms found in history.")
@@ -293,6 +323,17 @@ class GuildOps(commands.Cog):
         if not message.guild:
             return
             
+        # --- Forms Channel Logic ---
+        forms_channel_id = await self.config.guild(message.guild).forms_channel()
+        if forms_channel_id and message.channel.id == forms_channel_id:
+            entry = self._parse_forms_message(message)
+            if entry:
+                sheet_id = await self.config.guild(message.guild).sheet_id()
+                if sheet_id:
+                    await self._sync_data_to_sheet(sheet_id, [entry])
+            return # Don't process as OCR if it's a form message (though likely mutually exclusive channels)
+
+        # --- OCR Channel Logic ---
         ocr_channel_id = await self.config.guild(message.guild).ocr_channel()
         if message.channel.id != ocr_channel_id:
             return
@@ -305,13 +346,9 @@ class GuildOps(commands.Cog):
         if not att.content_type or not att.content_type.startswith("image/"):
             return
 
-        # Acquire lock to prevent spamming OCR logic? 
-        # Or just let it run. Let's use a lock per guild if possible, but global is fine for now to save resources.
-        # Actually, let's just proceed.
-        
         sheet_id = await self.config.guild(message.guild).sheet_id()
         if not sheet_id:
-            return # Silent fail if not configured
+            return 
 
         try:
             # Download
@@ -337,16 +374,11 @@ class GuildOps(commands.Cog):
                 return
 
             # Regex Matching
-            # Normalize text for easier matching (strip extra whitespace)
             clean_text = re.sub(r'\s+', ' ', text).strip()
-            
-            # Join Pattern: approved (.*?) application to join
-            # Leave Pattern: (?:end\.?|Members\])\s*(.*?)\s+has\s+left\s+the\s+guild
             
             status = None
             ign = None
             
-            # Case insensitive search
             join_match = re.search(r'approved\s+(.*?)(?:\'s)?\s+application\s+to\s+join', clean_text, re.IGNORECASE)
             leave_match = re.search(r'(?:end\.?|Members\])\s*(.*?)\s+has\s+left\s+the\s+guild', clean_text, re.IGNORECASE)
 
