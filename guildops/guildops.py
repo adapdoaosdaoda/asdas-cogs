@@ -402,6 +402,9 @@ class GuildOps(commands.Cog):
             # Regex 3: Sentence "approved <Name>'s application"
             match_approve = re.search(r'approved\s+(.*?)\'s\s+application', line, re.IGNORECASE)
 
+            # Regex 4: Sentence "has removed <Name> from the guild"
+            match_removed = re.search(r'has\s+removed\s+(.*?)\s+from\s+the\s+guild', line, re.IGNORECASE)
+
             if match_list:
                 ign = match_list.group(1).strip()
                 # Clean up common OCR noise from the name if it's too messy
@@ -409,6 +412,9 @@ class GuildOps(commands.Cog):
                 status = match_list.group(2).capitalize()
             elif match_left:
                 ign = match_left.group(1).strip()
+                status = "Left"
+            elif match_removed:
+                ign = match_removed.group(1).strip()
                 status = "Left"
             elif match_approve:
                 ign = match_approve.group(1).strip()

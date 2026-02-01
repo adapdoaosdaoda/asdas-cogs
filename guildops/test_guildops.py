@@ -35,6 +35,7 @@ class TestGuildOps:
 Player1 Active
 Player2 Left
 Player3 has left the guild.
+[Members]Luojing has removed Po LIAR from the guild.
 ® [Members]Songbird has Idago
 approved izzue's application to
 join the guild. The guild
@@ -46,10 +47,11 @@ flourishes!
             ("Player1", "Active"),
             ("Player2", "Left"),
             ("Player3", "Left"),
+            ("Po LIAR", "Left"),
             ("izzue", "Active")
         ]
         
-        assert len(parsed) == 4
+        assert len(parsed) == 5
         for item in expected:
             assert item in parsed
 
