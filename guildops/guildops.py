@@ -176,11 +176,11 @@ class GuildOps(commands.Cog):
 
         return await self.bot.loop.run_in_executor(None, _do_work)
 
-    def _parse_forms_message(self, message: discord.Message) -> Optional[Dict[str, str]]:
-        """Parses a forms message and returns data dict or None."""
+    def _parse_forms_message(self, message: discord.Message) -> Tuple[Optional[Dict[str, str]], List[str]]:
+        """Parses a forms message and returns (data_dict, failure_reasons)."""
+        reasons = []
         
         # 1. Check for "Accepted by" status
-        # It could be in content, embed title, description, footer, OR BUTTONS (Components).
         content_text = message.content or ""
         embed_text = ""
         component_text = ""
@@ -191,42 +191,33 @@ class GuildOps(commands.Cog):
                 for field in embed.fields:
                     embed_text += f" {field.name} {field.value}"
                     
-        # Check Components (Buttons, etc.)
         if message.components:
             for component in message.components:
                 if hasattr(component, 'children'):
                     for child in component.children:
-                        # Check Button Label
                         if hasattr(child, 'label') and child.label:
                             component_text += f" {child.label}"
-                        # Check Select Menu Placeholder
                         if hasattr(child, 'placeholder') and child.placeholder:
                             component_text += f" {child.placeholder}"
+                        if hasattr(child, 'value') and child.value:
+                            component_text += f" {child.value}"
+                        if hasattr(child, 'options') and child.options:
+                            for option in child.options:
+                                component_text += f" {option.label} {option.value} {option.description or ''}"
         
         full_text = content_text + embed_text + component_text
         
         if "Accepted by" not in full_text:
-            # Try case insensitive just in case
             if "accepted by" not in full_text.lower():
-                return None
+                reasons.append("Status 'Accepted by' not found in text/embeds/components.")
         
         # 2. Extract Discord ID
-        # Priority: Message Content -> Embed Fields -> Embed Description
         discord_id = None
-        
-        # Check content first (usual for bot pings)
         match_id = re.search(r'<@!?(\d+)>', content_text)
         if match_id:
             discord_id = match_id.group(1)
         else:
-            # Check Embeds
-            # We want to avoid the "Accepted by <@Mod>" ID if possible.
-            # Usually the applicant is in a specific field or description.
             if message.embeds:
-                # Look for a field named "User" or "Applicant" or similar?
-                # Or just grab the first mention that isn't the bot itself?
-                # For now, let's just grab the first ID found in the embed text that seems relevant.
-                # A safer bet is often the "User" field if it exists.
                 for embed in message.embeds:
                     for field in embed.fields:
                         if any(x in field.name.lower() for x in ["user", "applicant", "member"]):
@@ -236,14 +227,13 @@ class GuildOps(commands.Cog):
                                 break
                     if discord_id: break
                 
-                # If still not found, just grep the whole embed text
                 if not discord_id:
                      match_embed = re.search(r'<@!?(\d+)>', embed_text)
                      if match_embed:
                          discord_id = match_embed.group(1)
 
         if not discord_id:
-            return None
+            reasons.append("Discord User ID not found in content or embeds.")
         
         # 3. Extract IGN
         ign = None
@@ -252,7 +242,6 @@ class GuildOps(commands.Cog):
         if message.embeds:
             for embed in message.embeds:
                 for field in embed.fields:
-                    # Relaxed matching: "IGN", "UID", "In-Game Name"
                     name_lower = field.name.lower()
                     if "ign" in name_lower or "uid" in name_lower or "in-game" in name_lower:
                         ign = field.value.strip()
@@ -261,34 +250,28 @@ class GuildOps(commands.Cog):
                     break
         
         # Strategy B: Check Message Content (Markdown Headers)
-        # Structure: "### What's your IGN/UID ?\nTaoLei"
         if not ign and content_text:
-            # Look for lines starting with ### or ** containing IGN keywords
-            # Then capture the next line(s) until the next header or end of string
-            # Regex explanation:
-            # ^(?:###|\*\*)\s*.*?(?:IGN|UID|In-Game).*?$  -> Match header line with keyword
-            # \s*                                       -> Newline/whitespace
-            # (.+?)                                     -> Capture value (lazy)
-            # \s*                                       -> Trailing whitespace
-            # (?=(?:###|\*\*)|$)                        -> Lookahead for next header or EOS
-            
             pattern = r"(?:###|\*\*)\s*.*?(?:IGN|UID|In-Game).*?[\r\n]+(.+?)(?=\s*(?:###|\*\*)|$)"
             match_ign = re.search(pattern, content_text, re.IGNORECASE | re.DOTALL)
-            
             if match_ign:
                 ign = match_ign.group(1).strip()
 
         if not ign:
-            return None
+            reasons.append("IGN/UID not found (checked Embed fields and Markdown headers).")
             
-        # Date Accepted - Using message creation time
+        # Return success only if we have everything (and no fatal reasons)
+        # Note: We check all 3 to report all missing parts.
+        if reasons:
+            return None, reasons
+
+        # Date Accepted
         date_acc = message.created_at.strftime("%Y-%m-%d")
         
         return {
             "discord_id": discord_id,
             "ign": ign,
             "date_accepted": date_acc
-        }
+        }, []
 
     @commands.group()
     @commands.guild_only()
@@ -421,7 +404,7 @@ class GuildOps(commands.Cog):
                                 report.append(f"      Option: Label='{opt.label}' Value='{opt.value}'")
 
             # 4. Parsing Result
-            result = self._parse_forms_message(message)
+            result, reasons = self._parse_forms_message(message)
             if result:
                 report.append("\n**✅ PARSING SUCCESS**")
                 report.append(f"Discord ID: `{result['discord_id']}`")
@@ -429,10 +412,8 @@ class GuildOps(commands.Cog):
                 report.append(f"Date: `{result['date_accepted']}`")
             else:
                 report.append("\n**❌ PARSING FAILED**")
-                # Add hints
-                report.append("  - Did not find 'Accepted by' text in content, embeds, or buttons.")
-                report.append("  - OR Did not find a valid Discord User ID.")
-                report.append("  - OR Did not find an IGN field (IGN, UID, In-Game Name).")
+                for r in reasons:
+                    report.append(f"  - {r}")
 
             # Chunk and Send
             full_text = "\n".join(report)
@@ -468,7 +449,7 @@ class GuildOps(commands.Cog):
             data_to_sync = []
             
             async for message in channel.history(limit=None):
-                entry = self._parse_forms_message(message)
+                entry, _ = self._parse_forms_message(message)
                 if entry:
                     data_to_sync.append(entry)
                 
@@ -491,7 +472,7 @@ class GuildOps(commands.Cog):
         # --- Forms Channel Logic ---
         forms_channel_id = await self.config.guild(message.guild).forms_channel()
         if forms_channel_id and message.channel.id == forms_channel_id:
-            entry = self._parse_forms_message(message)
+            entry, _ = self._parse_forms_message(message)
             if entry:
                 sheet_id = await self.config.guild(message.guild).sheet_id()
                 if sheet_id:
