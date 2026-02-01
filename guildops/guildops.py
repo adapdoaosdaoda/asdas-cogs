@@ -157,6 +157,7 @@ class GuildOps(commands.Cog):
         Handles OCR result:
         1. Updates sheet (Add if missing).
         2. Handles Role changes for "Left" status.
+        Returns: (success: bool, message: str)
         """
         gc = await self._get_gc()
         if not gc:
@@ -171,7 +172,7 @@ class GuildOps(commands.Cog):
                 header_map = {h.lower().strip(): i for i, h in enumerate(headers)}
                 
                 if "ign" not in header_map or "status" not in header_map:
-                    return None, "Sheet missing IGN or Status columns."
+                    return False, None, "Sheet missing IGN or Status columns."
                 
                 ign_col = header_map["ign"] + 1
                 status_col = header_map["status"] + 1
@@ -189,31 +190,28 @@ class GuildOps(commands.Cog):
                     if discord_id_col > 0:
                         row_vals = ws.row_values(cell.row)
                         if len(row_vals) >= discord_id_col:
-                            # gspread 1-based index vs list 0-based
-                            # discord_id_col is 1-based index. List is 0-based.
-                            # So index is discord_id_col - 1
                             val = row_vals[discord_id_col - 1]
                             if val:
                                 discord_id = str(val).strip()
-                    return discord_id, f"Updated {ign} to {status}."
+                    return True, discord_id, f"Updated {ign} to {status}."
                 else:
-                    # Append new row (Missing Discord ID)
-                    # Only append if Status is Active (Wait, prompt says "OCR should add new members")
-                    # So yes, add them.
+                    # Append new row
                     new_row = [""] * len(headers)
                     new_row[ign_col - 1] = ign
                     new_row[status_col - 1] = status
-                    # Date? Not extracted from OCR, leave blank or set today
                     
                     ws.append_row(new_row)
-                    return None, f"Added {ign} as {status} (Missing Discord ID)."
+                    return True, None, f"Added {ign} as {status} (Missing Discord ID)."
                 
             except Exception as e:
-                return None, str(e)
+                return False, None, str(e)
 
         # Run sheet update
-        discord_id, msg = await self.bot.loop.run_in_executor(None, _sheet_work)
+        success, discord_id, msg = await self.bot.loop.run_in_executor(None, _sheet_work)
         
+        if not success:
+            return False, msg
+
         # Handle Roles if Left and Discord ID known
         if status == "Left" and discord_id:
             try:
@@ -441,6 +439,9 @@ class GuildOps(commands.Cog):
                     # Case where we found entries but they all failed
                     summary = f"**OCR Processing Errors ({att.filename})**\n" + "\n".join(results)
                     await message.channel.send(summary)
+                else:
+                    # Case where no entries were found at all
+                    await message.channel.send(f"⚠️ OCR completed for `{att.filename}` but no recognizable status updates were found.")
                     
             except Exception as e:
                 log.error("OCR Error", exc_info=e)
