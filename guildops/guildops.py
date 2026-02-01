@@ -178,22 +178,68 @@ class GuildOps(commands.Cog):
 
     def _parse_forms_message(self, message: discord.Message) -> Optional[Dict[str, str]]:
         """Parses a forms message and returns data dict or None."""
-        # Filter: "Accepted by" in content
-        if "Accepted by" not in message.content:
+        
+        # 1. Check for "Accepted by" status
+        # It could be in content, embed title, description, or footer.
+        content_text = message.content or ""
+        embed_text = ""
+        
+        if message.embeds:
+            for embed in message.embeds:
+                embed_text += f" {embed.title or ''} {embed.description or ''} {embed.footer.text or ''}"
+                for field in embed.fields:
+                    embed_text += f" {field.name} {field.value}"
+        
+        full_text = content_text + embed_text
+        
+        if "Accepted by" not in full_text:
+            # Try case insensitive just in case
+            if "accepted by" not in full_text.lower():
+                return None
+        
+        # 2. Extract Discord ID
+        # Priority: Message Content -> Embed Fields -> Embed Description
+        discord_id = None
+        
+        # Check content first (usual for bot pings)
+        match_id = re.search(r'<@!?(\d+)>', content_text)
+        if match_id:
+            discord_id = match_id.group(1)
+        else:
+            # Check Embeds
+            # We want to avoid the "Accepted by <@Mod>" ID if possible.
+            # Usually the applicant is in a specific field or description.
+            if message.embeds:
+                # Look for a field named "User" or "Applicant" or similar?
+                # Or just grab the first mention that isn't the bot itself?
+                # For now, let's just grab the first ID found in the embed text that seems relevant.
+                # A safer bet is often the "User" field if it exists.
+                for embed in message.embeds:
+                    for field in embed.fields:
+                        if any(x in field.name.lower() for x in ["user", "applicant", "member"]):
+                            match_field = re.search(r'<@!?(\d+)>', field.value)
+                            if match_field:
+                                discord_id = match_field.group(1)
+                                break
+                    if discord_id: break
+                
+                # If still not found, just grep the whole embed text
+                if not discord_id:
+                     match_embed = re.search(r'<@!?(\d+)>', embed_text)
+                     if match_embed:
+                         discord_id = match_embed.group(1)
+
+        if not discord_id:
             return None
         
-        # Extract Discord ID
-        match_id = re.search(r'<@!?(\d+)>', message.content)
-        if not match_id:
-            return None
-        discord_id = match_id.group(1)
-        
-        # Extract IGN from Embed
+        # 3. Extract IGN from Embed
         ign = None
         if message.embeds:
             for embed in message.embeds:
                 for field in embed.fields:
-                    if "What's your IGN/UID ?" in field.name:
+                    # Relaxed matching: "IGN", "UID", "In-Game Name"
+                    name_lower = field.name.lower()
+                    if "ign" in name_lower or "uid" in name_lower or "in-game" in name_lower:
                         ign = field.value.strip()
                         break
                 if ign:
