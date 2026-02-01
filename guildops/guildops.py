@@ -443,9 +443,8 @@ class GuildOps(commands.Cog):
         )
         await ctx.send(msg)
 
-    @opset.command()
-    async def status(self, ctx):
-        """Check GuildOps status and configuration."""
+    async def _show_status(self, ctx):
+        """Internal helper for status display."""
         conf = await self.config.guild(ctx.guild).all()
         sheet = conf['sheet_id'] or "Not Set"
         forms = f"<#{conf['forms_channel']}>" if conf['forms_channel'] else "Not Set"
@@ -465,6 +464,11 @@ class GuildOps(commands.Cog):
             
         await ctx.send(embed=embed)
 
+    @opset.command()
+    async def status(self, ctx):
+        """Check GuildOps status and configuration."""
+        await self._show_status(ctx)
+
     @commands.group(aliases=["ops"])
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
@@ -475,4 +479,4 @@ class GuildOps(commands.Cog):
     @guildops.command(name="status")
     async def guildops_status(self, ctx):
         """Show GuildOps status (Alias for opset status)."""
-        await self.status(ctx)
+        await self._show_status(ctx)
