@@ -411,7 +411,14 @@ class GuildOps(commands.Cog):
                         c_type = getattr(child, 'type', 'Unknown')
                         label = getattr(child, 'label', 'None')
                         custom_id = getattr(child, 'custom_id', 'None')
-                        report.append(f"    Type: {c_type}, Label: '{label}', ID: '{custom_id}'")
+                        value = getattr(child, 'value', 'None')
+                        placeholder = getattr(child, 'placeholder', 'None')
+                        
+                        report.append(f"    Type: {c_type}, Label: '{label}', ID: '{custom_id}', Value: '{value}', Placeholder: '{placeholder}'")
+                        
+                        if hasattr(child, 'options') and child.options:
+                            for opt in child.options:
+                                report.append(f"      Option: Label='{opt.label}' Value='{opt.value}'")
 
             # 4. Parsing Result
             result = self._parse_forms_message(message)
