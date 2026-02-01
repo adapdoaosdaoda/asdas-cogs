@@ -362,4 +362,4 @@ class GuildOps(commands.Cog):
             f"`{self.creds_file}`\n\n"
             "1. Go to Google Cloud Console."
             "2. Create a Service Account."
-            
+            "3. Download the JSON key."
