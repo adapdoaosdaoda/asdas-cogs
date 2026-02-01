@@ -64,8 +64,17 @@ class GuildOps(commands.Cog):
                 # ensure headers
                 headers = ws.row_values(1)
                 required_headers = ["Discord ID", "IGN", "Date Accepted", "Status"]
-                if not headers:
-                    ws.append_row(required_headers)
+                
+                # Check if headers are empty or effectively empty (e.g. ["", "", ""])
+                is_empty = not headers or not any(h.strip() for h in headers)
+                
+                if is_empty:
+                    # Clear row 1 just in case there are empty strings
+                    ws.resize(rows=ws.row_count, cols=len(required_headers)) # Optional: Resize to fit? No, just overwrite.
+                    # Actually, if we just append_row on a truly empty sheet, it goes to row 1.
+                    # If sheet has empty rows, append_row goes to first empty row.
+                    # Safer: Update row 1 explicitly.
+                    ws.update('A1:D1', [required_headers])
                     headers = required_headers
                 
                 # Map headers to indices
