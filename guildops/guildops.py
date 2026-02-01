@@ -386,15 +386,15 @@ class GuildOps(commands.Cog):
             # --- Debug Report ---
             report = [f"**Analysis of Message {message_id}**"]
             
-            # Fetch Raw JSON directly from API (Bypass cache/intents logic in d.py to see what API sends)
+            # Fetch Raw JSON directly from API
+            raw_json = None
             try:
                 raw_json = await self.bot.http.get_message(channel_id, message_id)
                 import json
-                # Truncate if too long
                 json_str = json.dumps(raw_json, indent=2)
-                if len(json_str) > 800:
-                    json_str = json_str[:800] + "... (truncated)"
-                report.append(f"**Raw API Response (Truncated):**\n```json\n{json_str}\n```")
+                # Keep a snippet for the report
+                snippet = json_str[:400] + "... (see attached file)"
+                report.append(f"**Raw API Response Snippet:**\n```json\n{snippet}\n```")
             except Exception as e:
                 report.append(f"**Failed to fetch raw JSON:** {e}")
 
@@ -409,8 +409,8 @@ class GuildOps(commands.Cog):
             report.append(f"**Raw Flags:** `{message.flags.value}`")
             report.append(f"**Author Bot:** `{message.author.bot}`")
             
-            # 2. Embeds
-            report.append(f"**Embeds found:** {len(message.embeds)}")
+            # 3. Embeds
+            report.append(f"\n**Embeds found:** {len(message.embeds)}")
             for i, embed in enumerate(message.embeds):
                 report.append(f"  -- Embed {i+1} --")
                 if embed.title: report.append(f"  Title: {embed.title}")
@@ -419,8 +419,8 @@ class GuildOps(commands.Cog):
                 for field in embed.fields:
                     report.append(f"  Field: Name='{field.name}' Value='{field.value}'")
             
-            # 3. Components
-            report.append(f"**Components found:** {len(message.components)}")
+            # 4. Components
+            report.append(f"\n**Components found:** {len(message.components)}")
             for i, comp in enumerate(message.components):
                 report.append(f"  -- Component Row {i+1} --")
                 if hasattr(comp, 'children'):
@@ -437,7 +437,7 @@ class GuildOps(commands.Cog):
                             for opt in child.options:
                                 report.append(f"      Option: Label='{opt.label}' Value='{opt.value}'")
 
-            # 4. Parsing Result
+            # 5. Parsing Result
             result, reasons = self._parse_forms_message(message)
             if result:
                 report.append("\n**✅ PARSING SUCCESS**")
@@ -449,14 +449,25 @@ class GuildOps(commands.Cog):
                 for r in reasons:
                     report.append(f"  - {r}")
 
+            # Prepare File
+            files = []
+            if raw_json:
+                json_bytes = BytesIO(json.dumps(raw_json, indent=2).encode('utf-8'))
+                files.append(discord.File(json_bytes, filename=f"message_{message_id}.json"))
+
             # Chunk and Send
             full_text = "\n".join(report)
             if len(full_text) > 1900:
-                # Naive chunking
                 await ctx.send(full_text[:1900])
-                await ctx.send(full_text[1900:])
+                await ctx.send(full_text[1900:], files=files)
             else:
-                await ctx.send(full_text)
+                await ctx.send(full_text, files=files)
+
+        except ValueError:
+            await ctx.send("Invalid message link format.")
+        except Exception as e:
+            log.exception("Debug command failed")
+            await ctx.send(f"An error occurred: {str(e})")
 
         except ValueError:
             await ctx.send("Invalid message link format.")
