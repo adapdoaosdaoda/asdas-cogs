@@ -481,33 +481,37 @@ class GuildOps(commands.Cog):
                     # 1. Load and Grayscale
                     img = Image.open(BytesIO(img_data)).convert('L')
                     
-                    # 2. Thresholding to create a sharp mask
-                    # We use a threshold to separate text from background.
-                    # This assumes light text on a dark background.
-                    mask = img.point(lambda x: 0 if x < 160 else 255)
-                    
-                    # 3. Underline Removal via Vertical Shift Filter
-                    # By shifting the mask up and down and performing a logical AND (min),
-                    # we can eliminate thin horizontal structures (underlines) that don't
-                    # have vertical continuity, while preserving vertical strokes of characters.
-                    shift = 2
-                    mask_up = ImageChops.offset(mask, 0, -shift)
-                    mask_dn = ImageChops.offset(mask, 0, shift)
-                    
-                    # Keep only pixels that exist in all three (Original, Up, Down)
-                    # This wipes out horizontal lines thinner than 2*shift.
-                    mask = ImageChops.darker(mask, ImageChops.darker(mask_up, mask_dn))
-                    
-                    # 4. Invert to Black-on-White (Tesseract preference)
-                    img = ImageOps.invert(mask)
-                    
-                    # 5. Rescale for better OCR accuracy
+                    # 2. Rescale early - this makes filtering much safer
                     width, height = img.size
-                    if width < 1500:
-                        scale = 2
-                        img = img.resize((width*scale, height*scale), Image.Resampling.LANCZOS)
+                    scale = 2
+                    if width < 1000:
+                        scale = 3
+                    img = img.resize((width*scale, height*scale), Image.Resampling.LANCZOS)
                     
-                    return pytesseract.image_to_string(img, lang='eng+chi_sim+chi_tra', config='--psm 6')
+                    # 3. Contrast stretch to normalize levels
+                    img = ImageOps.autocontrast(img)
+                    
+                    # 4. Thresholding to create a sharp mask
+                    mask = img.point(lambda x: 0 if x < 128 else 255)
+                    
+                    # 5. Polarity Correction (Tesseract wants Black text on White bg)
+                    hist = mask.histogram()
+                    black_pixels = hist[0]
+                    white_pixels = hist[255]
+                    
+                    # If background is black (majority), invert so it's white for Tesseract
+                    if black_pixels > white_pixels:
+                        mask = ImageOps.invert(mask)
+                    
+                    # 6. Underline Removal (Gentle 1px shift)
+                    # Now we have Black text (0) on White background (255).
+                    # We use 'lighter' (max) to eliminate thin horizontal black lines.
+                    shift = 1
+                    m_up = ImageChops.offset(mask, 0, -shift)
+                    m_dn = ImageChops.offset(mask, 0, shift)
+                    mask = ImageChops.lighter(mask, ImageChops.lighter(m_up, m_dn))
+                    
+                    return pytesseract.image_to_string(mask, lang='eng+chi_sim+chi_tra', config='--psm 6')
                 
                 log.info(f"GuildOps: Running OCR on {att.filename}...")
                 text = await self.bot.loop.run_in_executor(None, _ocr_task)
