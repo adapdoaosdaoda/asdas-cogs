@@ -31,6 +31,8 @@ class GuildOps(commands.Cog):
             "member_role": None,
             "left_role": None,
             "ocr_debug": False,
+            "ocr_threshold": 210,
+            "ocr_filter": True,
         }
         self.config.register_guild(**default_guild)
 
@@ -476,50 +478,44 @@ class GuildOps(commands.Cog):
                     log.info(f"GuildOps: Skipping large attachment {att.filename} ({att.size} bytes)")
                     continue
                     
-                img_data = await att.read()
-                
+                # Fetch OCR settings
+                threshold = await self.config.guild(message.guild).ocr_threshold()
+                use_filter = await self.config.guild(message.guild).ocr_filter()
+                debug_enabled = await self.config.guild(message.guild).ocr_debug()
+
                 def _ocr_task():
                     # 1. Load and Grayscale
                     img = Image.open(BytesIO(img_data)).convert('L')
                     
-                    # 2. Rescale early - this makes filtering much safer
+                    # 2. Rescale - x4 is much safer for character preservation
                     width, height = img.size
-                    scale = 2
-                    if width < 1000:
-                        scale = 3
+                    scale = 4 if width < 1500 else 2
                     img = img.resize((width*scale, height*scale), Image.Resampling.LANCZOS)
                     
-                    # 3. Contrast stretch to normalize levels
+                    # 3. Contrast stretch
                     img = ImageOps.autocontrast(img)
                     
-                    # 4. Thresholding to create a sharp mask
-                    # We use a high threshold (210) to specifically target the bright white 
-                    # log text while filtering out the dimmer gray timestamps.
-                    mask = img.point(lambda x: 0 if x < 210 else 255)
+                    # 4. Thresholding using configured value
+                    mask = img.point(lambda x: 0 if x < threshold else 255)
                     
-                    # 5. Polarity Correction (Tesseract wants Black text on White bg)
+                    # 5. Polarity Correction (Target: Black text on White bg)
                     hist = mask.histogram()
-                    black_pixels = hist[0]
-                    white_pixels = hist[255]
-                    
-                    # If background is black (majority), invert so it's white for Tesseract
-                    if black_pixels > white_pixels:
+                    # Background is likely the color with most pixels
+                    if hist[0] > hist[255]:
                         mask = ImageOps.invert(mask)
                     
-                    # 6. Underline Removal (Gentle 1px shift)
-                    # Now we have Black text (0) on White background (255).
-                    # We use 'lighter' (max) to eliminate thin horizontal black lines.
-                    shift = 1
-                    m_up = ImageChops.offset(mask, 0, -shift)
-                    m_dn = ImageChops.offset(mask, 0, shift)
-                    mask = ImageChops.lighter(mask, ImageChops.lighter(m_up, m_dn))
+                    # 6. Underline Removal (Optional 1px shift)
+                    if use_filter:
+                        shift = 1
+                        m_up = ImageChops.offset(mask, 0, -shift)
+                        m_dn = ImageChops.offset(mask, 0, shift)
+                        mask = ImageChops.lighter(mask, ImageChops.lighter(m_up, m_dn))
                     
                     return pytesseract.image_to_string(mask, lang='eng+chi_sim+chi_tra', config='--psm 6')
                 
                 log.info(f"GuildOps: Running OCR on {att.filename}...")
                 text = await self.bot.loop.run_in_executor(None, _ocr_task)
                 
-                debug_enabled = await self.config.guild(message.guild).ocr_debug()
                 if debug_enabled:
                     # Send raw OCR to channel for debugging
                     raw_text = text[:1900] # Stay under 2k limit
@@ -600,6 +596,22 @@ class GuildOps(commands.Cog):
         await self.config.guild(ctx.guild).ocr_debug.set(toggle)
         status = "enabled" if toggle else "disabled"
         await ctx.send(f"OCR Debugging is now {status}.")
+
+    @opset.command()
+    async def ocrthreshold(self, ctx, value: int):
+        """Set the brightness threshold for OCR (0-255). High = target bright white text only."""
+        if not (0 <= value <= 255):
+            await ctx.send("❌ Value must be between 0 and 255.")
+            return
+        await self.config.guild(ctx.guild).ocr_threshold.set(value)
+        await ctx.send(f"OCR threshold set to {value}.")
+
+    @opset.command()
+    async def ocrfilter(self, ctx, toggle: bool):
+        """Toggle the underline-removal filter."""
+        await self.config.guild(ctx.guild).ocr_filter.set(toggle)
+        status = "enabled" if toggle else "disabled"
+        await ctx.send(f"OCR underline filter is now {status}.")
 
     @opset.command()
     async def creds(self, ctx):
