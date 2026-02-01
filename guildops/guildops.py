@@ -191,8 +191,10 @@ class GuildOps(commands.Cog):
                 for field in embed.fields:
                     embed_text += f" {field.name} {field.value}"
                     
+        # Check Components (Buttons, Select Menus, Text Displays, etc.)
         if message.components:
             for component in message.components:
+                # 1. Standard Children (ActionRows)
                 if hasattr(component, 'children'):
                     for child in component.children:
                         if hasattr(child, 'label') and child.label:
@@ -204,6 +206,17 @@ class GuildOps(commands.Cog):
                         if hasattr(child, 'options') and child.options:
                             for option in child.options:
                                 component_text += f" {option.label} {option.value} {option.description or ''}"
+                
+                # 2. Raw Component Data (For "Type 10" Text Displays)
+                # The user's JSON shows: "components": [{"type": 10, "content": ...}]
+                # discord.py might not map "content" to an attribute for this new type yet.
+                try:
+                    comp_dict = component.to_dict()
+                    if "content" in comp_dict:
+                        text_val = comp_dict["content"]
+                        component_text += f"\n{text_val}" # Add newline to separate headers
+                except:
+                    pass
         
         full_text = content_text + embed_text + component_text
         
@@ -213,24 +226,22 @@ class GuildOps(commands.Cog):
         
         # 2. Extract Discord ID
         discord_id = None
-        match_id = re.search(r'<@!?(\d+)>', content_text)
+        # Check all text sources for ID
+        match_id = re.search(r'<@!?(\d+)>', full_text) # CHANGED: Search full_text, not just content
         if match_id:
             discord_id = match_id.group(1)
-        else:
-            if message.embeds:
+        
+        if not discord_id:
+             # Fallback checks (Embed fields specific)
+             if message.embeds:
                 for embed in message.embeds:
                     for field in embed.fields:
-                        if any(x in field.name.lower() for x in ["user", "applicant", "member"]):
+                         if any(x in field.name.lower() for x in ["user", "applicant", "member"]):
                             match_field = re.search(r'<@!?(\d+)>', field.value)
                             if match_field:
                                 discord_id = match_field.group(1)
                                 break
                     if discord_id: break
-                
-                if not discord_id:
-                     match_embed = re.search(r'<@!?(\d+)>', embed_text)
-                     if match_embed:
-                         discord_id = match_embed.group(1)
 
         if not discord_id:
             reasons.append("Discord User ID not found in content or embeds.")
@@ -249,10 +260,13 @@ class GuildOps(commands.Cog):
                 if ign:
                     break
         
-        # Strategy B: Check Message Content (Markdown Headers)
-        if not ign and content_text:
+        # Strategy B: Check Message Content AND Component Content (Markdown Headers)
+        # We use full_text now because the text is likely in the component
+        if not ign:
+            # Look for lines starting with ### or ** containing IGN keywords
             pattern = r"(?:###|\*\*)\s*.*?(?:IGN|UID|In-Game).*?[\r\n]+(.+?)(?=\s*(?:###|\*\*)|$)"
-            match_ign = re.search(pattern, content_text, re.IGNORECASE | re.DOTALL)
+            # Search in full_text (Content + Embeds + Components)
+            match_ign = re.search(pattern, full_text, re.IGNORECASE | re.DOTALL)
             if match_ign:
                 ign = match_ign.group(1).strip()
 
