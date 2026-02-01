@@ -498,7 +498,9 @@ class GuildOps(commands.Cog):
                     img = ImageOps.autocontrast(img)
                     
                     # 4. Thresholding to create a sharp mask
-                    mask = img.point(lambda x: 0 if x < 128 else 255)
+                    # We use a high threshold (210) to specifically target the bright white 
+                    # log text while filtering out the dimmer gray timestamps.
+                    mask = img.point(lambda x: 0 if x < 210 else 255)
                     
                     # 5. Polarity Correction (Tesseract wants Black text on White bg)
                     hist = mask.histogram()
