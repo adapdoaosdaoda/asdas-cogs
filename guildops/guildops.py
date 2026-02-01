@@ -183,7 +183,7 @@ class GuildOps(commands.Cog):
 
                 # Sort by Date Added (ascending)
                 if date_col_idx is not None:
-                    ws.sort((date_col_idx + 1, 'asc'))
+                    ws.sort((date_col_idx + 1, 'des'))
                     
                 return True, f"Synced {len(appends)} new and {len(updates)//4} updated records."
 
@@ -239,7 +239,7 @@ class GuildOps(commands.Cog):
 
                     # Sort by Date Added (ascending)
                     if date_acc_col > 0:
-                        ws.sort((date_acc_col, 'asc'))
+                        ws.sort((date_acc_col, 'des'))
                         
                     return True, discord_id, f"Updated {ign} to {status}."
                 else:
@@ -256,7 +256,7 @@ class GuildOps(commands.Cog):
 
                     # Sort by Date Added (ascending)
                     if date_acc_col > 0:
-                        ws.sort((date_acc_col, 'asc'))
+                        ws.sort((date_acc_col, 'des'))
                         
                     return True, None, f"Added {ign} as {status} (Missing Discord ID)."
                 
