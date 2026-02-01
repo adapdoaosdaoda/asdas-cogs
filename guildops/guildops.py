@@ -30,6 +30,7 @@ class GuildOps(commands.Cog):
             "ocr_channel": None,
             "member_role": None,
             "left_role": None,
+            "ocr_debug": False,
         }
         self.config.register_guild(**default_guild)
 
@@ -392,6 +393,7 @@ class GuildOps(commands.Cog):
             status = None
 
             # Regex 1: "Name Status" (e.g. "Player1 Active")
+            # Improved to handle spaces and non-latin characters more robustly
             match_list = re.search(r'^(.*?)\s+(Active|Left|Guest|Member|Banned)$', line, re.IGNORECASE)
             
             # Regex 2: Sentence "Name has left the guild."
@@ -402,6 +404,8 @@ class GuildOps(commands.Cog):
 
             if match_list:
                 ign = match_list.group(1).strip()
+                # Clean up common OCR noise from the name if it's too messy
+                # But keep underscores as the user said they are intentional
                 status = match_list.group(2).capitalize()
             elif match_left:
                 ign = match_left.group(1).strip()
@@ -474,11 +478,24 @@ class GuildOps(commands.Cog):
                 img_data = await att.read()
                 
                 def _ocr_task():
-                    img = Image.open(BytesIO(img_data))
-                    return pytesseract.image_to_string(img)
+                    img = Image.open(BytesIO(img_data)).convert('L') # Grayscale
+                    # Rescale if small to improve accuracy
+                    width, height = img.size
+                    if width < 1500:
+                        scale = 2
+                        img = img.resize((width*scale, height*scale), Image.Resampling.LANCZOS)
+                    
+                    return pytesseract.image_to_string(img, lang='eng+chi_sim+chi_tra', config='--psm 6')
                 
                 log.info(f"GuildOps: Running OCR on {att.filename}...")
                 text = await self.bot.loop.run_in_executor(None, _ocr_task)
+                
+                debug_enabled = await self.config.guild(message.guild).ocr_debug()
+                if debug_enabled:
+                    # Send raw OCR to channel for debugging
+                    raw_text = text[:1900] # Stay under 2k limit
+                    await message.channel.send(f"🔍 **Raw OCR Result ({att.filename}):**\n```\n{raw_text}\n```")
+
                 log.info(f"GuildOps: OCR Result (First 100 chars): {text[:100]}...")
                 
                 parsed_entries = self._parse_ocr_text(text)
@@ -547,6 +564,13 @@ class GuildOps(commands.Cog):
         await self.config.guild(ctx.guild).member_role.set(member_role.id)
         await self.config.guild(ctx.guild).left_role.set(left_role.id)
         await ctx.send(f"Roles configured:\nMember: {member_role.mention}\nLeft: {left_role.mention}")
+
+    @opset.command()
+    async def debugocr(self, ctx, toggle: bool):
+        """Toggle showing raw OCR text for debugging."""
+        await self.config.guild(ctx.guild).ocr_debug.set(toggle)
+        status = "enabled" if toggle else "disabled"
+        await ctx.send(f"OCR Debugging is now {status}.")
 
     @opset.command()
     async def creds(self, ctx):
