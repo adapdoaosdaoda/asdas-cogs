@@ -176,6 +176,41 @@ class GuildOps(commands.Cog):
 
         return await self.bot.loop.run_in_executor(None, _do_work)
 
+    def _extract_all_text(self, components: List[Any]) -> str:
+        """Recursively extracts all text from a list of components."""
+        text = ""
+        for comp in components:
+            # Check standard discord.py attributes
+            if hasattr(comp, 'label') and comp.label:
+                text += f" {comp.label}"
+            if hasattr(comp, 'placeholder') and comp.placeholder:
+                text += f" {comp.placeholder}"
+            if hasattr(comp, 'value') and comp.value:
+                text += f" {comp.value}"
+            
+            # Check for Select Menu options
+            if hasattr(comp, 'options') and comp.options:
+                for opt in comp.options:
+                    text += f" {opt.label} {opt.value}"
+
+            # Check raw dictionary for 'content' or nested 'components'
+            # This handles Type 10 and Type 17
+            try:
+                d = comp.to_dict() if hasattr(comp, 'to_dict') else comp
+                if isinstance(d, dict):
+                    if "content" in d:
+                        text += f"\n{d['content']}"
+                    if "components" in d:
+                        text += self._extract_all_text(d["components"])
+            except:
+                pass
+
+            # Recursively check children (ActionRows)
+            if hasattr(comp, 'children'):
+                text += self._extract_all_text(comp.children)
+                
+        return text
+
     def _parse_forms_message(self, message: discord.Message) -> Tuple[Optional[Dict[str, str]], List[str]]:
         """Parses a forms message and returns (data_dict, failure_reasons)."""
         reasons = []
@@ -183,7 +218,6 @@ class GuildOps(commands.Cog):
         # 1. Check for "Accepted by" status
         content_text = message.content or ""
         embed_text = ""
-        component_text = ""
         
         if message.embeds:
             for embed in message.embeds:
@@ -191,32 +225,7 @@ class GuildOps(commands.Cog):
                 for field in embed.fields:
                     embed_text += f" {field.name} {field.value}"
                     
-        # Check Components (Buttons, Select Menus, Text Displays, etc.)
-        if message.components:
-            for component in message.components:
-                # 1. Standard Children (ActionRows)
-                if hasattr(component, 'children'):
-                    for child in component.children:
-                        if hasattr(child, 'label') and child.label:
-                            component_text += f" {child.label}"
-                        if hasattr(child, 'placeholder') and child.placeholder:
-                            component_text += f" {child.placeholder}"
-                        if hasattr(child, 'value') and child.value:
-                            component_text += f" {child.value}"
-                        if hasattr(child, 'options') and child.options:
-                            for option in child.options:
-                                component_text += f" {option.label} {option.value} {option.description or ''}"
-                
-                # 2. Raw Component Data (For "Type 10" Text Displays)
-                # The user's JSON shows: "components": [{"type": 10, "content": ...}]
-                # discord.py might not map "content" to an attribute for this new type yet.
-                try:
-                    comp_dict = component.to_dict()
-                    if "content" in comp_dict:
-                        text_val = comp_dict["content"]
-                        component_text += f"\n{text_val}" # Add newline to separate headers
-                except:
-                    pass
+        component_text = self._extract_all_text(message.components)
         
         full_text = content_text + embed_text + component_text
         
@@ -226,23 +235,11 @@ class GuildOps(commands.Cog):
         
         # 2. Extract Discord ID
         discord_id = None
-        # Check all text sources for ID
-        match_id = re.search(r'<@!?(\d+)>', full_text) # CHANGED: Search full_text, not just content
+        # Search everywhere for the mention
+        match_id = re.search(r'<@!?(\d+)>', full_text)
         if match_id:
             discord_id = match_id.group(1)
         
-        if not discord_id:
-             # Fallback checks (Embed fields specific)
-             if message.embeds:
-                for embed in message.embeds:
-                    for field in embed.fields:
-                         if any(x in field.name.lower() for x in ["user", "applicant", "member"]):
-                            match_field = re.search(r'<@!?(\d+)>', field.value)
-                            if match_field:
-                                discord_id = match_field.group(1)
-                                break
-                    if discord_id: break
-
         if not discord_id:
             reasons.append("Discord User ID not found in content or embeds.")
         
@@ -260,12 +257,9 @@ class GuildOps(commands.Cog):
                 if ign:
                     break
         
-        # Strategy B: Check Message Content AND Component Content (Markdown Headers)
-        # We use full_text now because the text is likely in the component
+        # Strategy B: Check all text for Markdown headers
         if not ign:
-            # Look for lines starting with ### or ** containing IGN keywords
             pattern = r"(?:###|\*\*)\s*.*?(?:IGN|UID|In-Game).*?[\r\n]+(.+?)(?=\s*(?:###|\*\*)|$)"
-            # Search in full_text (Content + Embeds + Components)
             match_ign = re.search(pattern, full_text, re.IGNORECASE | re.DOTALL)
             if match_ign:
                 ign = match_ign.group(1).strip()
@@ -273,12 +267,9 @@ class GuildOps(commands.Cog):
         if not ign:
             reasons.append("IGN/UID not found (checked Embed fields and Markdown headers).")
             
-        # Return success only if we have everything (and no fatal reasons)
-        # Note: We check all 3 to report all missing parts.
         if reasons:
             return None, reasons
 
-        # Date Accepted
         date_acc = message.created_at.strftime("%Y-%m-%d")
         
         return {
