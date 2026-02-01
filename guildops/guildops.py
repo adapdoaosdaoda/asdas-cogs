@@ -372,6 +372,18 @@ class GuildOps(commands.Cog):
             # --- Debug Report ---
             report = [f"**Analysis of Message {message_id}**"]
             
+            # Fetch Raw JSON directly from API (Bypass cache/intents logic in d.py to see what API sends)
+            try:
+                raw_json = await self.bot.http.get_message(channel_id, message_id)
+                import json
+                # Truncate if too long
+                json_str = json.dumps(raw_json, indent=2)
+                if len(json_str) > 800:
+                    json_str = json_str[:800] + "... (truncated)"
+                report.append(f"**Raw API Response (Truncated):**\n```json\n{json_str}\n```")
+            except Exception as e:
+                report.append(f"**Failed to fetch raw JSON:** {e}")
+
             # 1. Content
             report.append(f"**Content:**\n`{message.content}`")
             if not message.content:
