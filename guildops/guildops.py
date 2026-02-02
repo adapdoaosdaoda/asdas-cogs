@@ -182,12 +182,12 @@ class GuildOps(commands.Cog):
                 if updates:
                     ws.batch_update(updates)
 
-                # Sort by Status (Asc) then Date Added (Des)
-                # This puts 'Active' at the top and 'Left' at the bottom
-                if status_col_idx is not None and date_col_idx is not None:
-                    ws.sort((status_col_idx + 1, 'asc'), (date_col_idx + 1, 'des'))
-                elif date_col_idx is not None:
-                    ws.sort((date_col_idx + 1, 'des'))
+                # Sort by Status (Asc) then IGN (Asc)
+                # This puts 'Active' at the top and 'Left' at the bottom, sorted alphabetically
+                if status_col_idx is not None and ign_col_idx is not None:
+                    ws.sort((status_col_idx + 1, 'asc'), (ign_col_idx + 1, 'asc'))
+                elif ign_col_idx is not None:
+                    ws.sort((ign_col_idx + 1, 'asc'))
                     
                 return True, f"Synced {len(appends)} new and {len(updates)//4} updated records."
 
@@ -238,14 +238,11 @@ class GuildOps(commands.Cog):
                         row_vals = ws.row_values(cell.row)
                         if len(row_vals) >= discord_id_col:
                             val = row_vals[discord_id_col - 1]
-                            if val:
-                                discord_id = str(val).strip()
-
-                    # Sort by Status (Asc) then Date Added (Des)
-                    if status_col > 0 and date_acc_col > 0:
-                        ws.sort((status_col, 'asc'), (date_acc_col, 'des'))
-                    elif date_acc_col > 0:
-                        ws.sort((date_acc_col, 'des'))
+                    # Sort by Status (Asc) then IGN (Asc)
+                    if status_col > 0 and ign_col > 0:
+                        ws.sort((status_col, 'asc'), (ign_col, 'asc'))
+                    elif ign_col > 0:
+                        ws.sort((ign_col, 'asc'))
                         
                     return True, discord_id, f"Updated {ign} to {status}."
                 else:
@@ -260,11 +257,11 @@ class GuildOps(commands.Cog):
                     
                     ws.append_row(new_row)
 
-                    # Sort by Status (Asc) then Date Added (Des)
-                    if status_col > 0 and date_acc_col > 0:
-                        ws.sort((status_col, 'asc'), (date_acc_col, 'des'))
-                    elif date_acc_col > 0:
-                        ws.sort((date_acc_col, 'des'))
+                    # Sort by Status (Asc) then IGN (Asc)
+                    if status_col > 0 and ign_col > 0:
+                        ws.sort((status_col, 'asc'), (ign_col, 'asc'))
+                    elif ign_col > 0:
+                        ws.sort((ign_col, 'asc'))
                         
                     return True, None, f"Added {ign} as {status} (Missing Discord ID)."
                 
