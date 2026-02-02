@@ -108,6 +108,8 @@ class GuildOps(commands.Cog):
                 date_col_idx = header_map["date added"]
                 status_col_idx = header_map.get("status")
                 import_col_idx = header_map.get("import")
+                uid_man_col_idx = header_map.get("uid (manual)")
+                roles_man_col_idx = header_map.get("roles (manual)")
                 
                 existing_map = {} # Discord ID -> Row Index
                 ign_map = {}      # IGN -> Row Index
@@ -224,6 +226,8 @@ class GuildOps(commands.Cog):
                 discord_id_col = header_map.get("discord id", -1) + 1
                 date_acc_col = header_map.get("date added", -1) + 1
                 import_col = header_map.get("import", -1) + 1
+                uid_man_col = header_map.get("uid (manual)", -1) + 1
+                roles_man_col = header_map.get("roles (manual)", -1) + 1
                 
                 # Find the cell with the IGN
                 cell = ws.find(ign, in_column=ign_col, case_sensitive=False)
@@ -233,6 +237,14 @@ class GuildOps(commands.Cog):
                 if cell:
                     # Update existing
                     ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, status_col)}", [[status]], value_input_option='USER_ENTERED')
+                    
+                    # If status changed to 'Left', clear manual columns
+                    if status.capitalize() == "Left":
+                        if uid_man_col > 0:
+                            ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, uid_man_col)}", [[""]], value_input_option='USER_ENTERED')
+                        if roles_man_col > 0:
+                            ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, roles_man_col)}", [[""]], value_input_option='USER_ENTERED')
+
                     # Fetch Discord ID if available
                     if discord_id_col > 0:
                         row_vals = ws.row_values(cell.row)
