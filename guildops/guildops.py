@@ -181,8 +181,11 @@ class GuildOps(commands.Cog):
                 if updates:
                     ws.batch_update(updates)
 
-                # Sort by Date Added (ascending)
-                if date_col_idx is not None:
+                # Sort by Status (Asc) then Date Added (Des)
+                # This puts 'Active' at the top and 'Left' at the bottom
+                if status_col_idx is not None and date_col_idx is not None:
+                    ws.sort((status_col_idx + 1, 'asc'), (date_col_idx + 1, 'des'))
+                elif date_col_idx is not None:
                     ws.sort((date_col_idx + 1, 'des'))
                     
                 return True, f"Synced {len(appends)} new and {len(updates)//4} updated records."
@@ -237,8 +240,10 @@ class GuildOps(commands.Cog):
                             if val:
                                 discord_id = str(val).strip()
 
-                    # Sort by Date Added (ascending)
-                    if date_acc_col > 0:
+                    # Sort by Status (Asc) then Date Added (Des)
+                    if status_col > 0 and date_acc_col > 0:
+                        ws.sort((status_col, 'asc'), (date_acc_col, 'des'))
+                    elif date_acc_col > 0:
                         ws.sort((date_acc_col, 'des'))
                         
                     return True, discord_id, f"Updated {ign} to {status}."
@@ -254,8 +259,10 @@ class GuildOps(commands.Cog):
                     
                     ws.append_row(new_row)
 
-                    # Sort by Date Added (ascending)
-                    if date_acc_col > 0:
+                    # Sort by Status (Asc) then Date Added (Des)
+                    if status_col > 0 and date_acc_col > 0:
+                        ws.sort((status_col, 'asc'), (date_acc_col, 'des'))
+                    elif date_acc_col > 0:
                         ws.sort((date_acc_col, 'des'))
                         
                     return True, None, f"Added {ign} as {status} (Missing Discord ID)."
