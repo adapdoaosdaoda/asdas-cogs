@@ -478,32 +478,7 @@ class GuildOps(commands.Cog):
         # 4. Clipping: Preserve original gray/white intensities for text, black out background
         mask = img.point(lambda x: x if x >= threshold else 0)
 
-        # 4b. Connectivity Filter (Seed Reconstruction)
-        if use_connectivity:
-            # Create a seed mask of bright pixels (white to gray #8c8c8c)
-            # These act as starting points for the connectivity growth.
-            seed = mask.point(lambda x: 255 if x >= 140 else 0)
-            # Create a candidate mask of all potential text pixels
-            candidate = mask.point(lambda x: 255 if x > 0 else 0)
-            
-            # Use morphological reconstruction to grow seeds into candidates
-            # We do 8 iterations of 3x3 dilation, which covers most anti-aliasing ranges
-            connected = seed
-            for _ in range(8):
-                # Dilate seeds
-                dilated = connected.filter(ImageFilter.MaxFilter(3))
-                # Intersect with candidate mask
-                new_connected = ImageChops.darker(dilated, candidate)
-                
-                # Check for convergence (no more growth)
-                if not ImageChops.difference(new_connected, connected).getbbox():
-                    break
-                connected = new_connected
-            
-            # Apply the connectivity mask back to our soft-thresholded image
-            mask = ImageChops.darker(mask, connected)
-        
-        # 5. Underline Removal (Horizontal Segment Eraser)
+        # 5. Underline Removal (Horizontal Segment Eraser) - Run this BEFORE connectivity
         if use_filter:
             width, height = mask.size
             # Heuristic for "2 characters" width based on image size
@@ -538,6 +513,31 @@ class GuildOps(commands.Cog):
                             new_pixels[row_start + i] = 0
             
             mask.putdata(new_pixels)
+
+        # 6. Connectivity Filter (Seed Reconstruction)
+        if use_connectivity:
+            # Create a seed mask of bright pixels (white to gray #8c8c8c)
+            # These act as starting points for the connectivity growth.
+            seed = mask.point(lambda x: 255 if x >= 140 else 0)
+            # Create a candidate mask of all potential text pixels
+            candidate = mask.point(lambda x: 255 if x > 0 else 0)
+            
+            # Use morphological reconstruction to grow seeds into candidates
+            # We do 8 iterations of 3x3 dilation, which covers most anti-aliasing ranges
+            connected = seed
+            for _ in range(8):
+                # Dilate seeds
+                dilated = connected.filter(ImageFilter.MaxFilter(3))
+                # Intersect with candidate mask
+                new_connected = ImageChops.darker(dilated, candidate)
+                
+                # Check for convergence (no more growth)
+                if not ImageChops.difference(new_connected, connected).getbbox():
+                    break
+                connected = new_connected
+            
+            # Apply the connectivity mask back to our soft-thresholded image
+            mask = ImageChops.darker(mask, connected)
         
         return mask
 
