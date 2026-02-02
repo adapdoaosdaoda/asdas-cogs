@@ -70,7 +70,7 @@ class GuildOps(commands.Cog):
         def _do_work():
             try:
                 sh = gc.open_by_key(sheet_id)
-                ws = sh.sheet1
+                ws = sh.worksheets()[-1]
                 
                 # ensure headers
                 headers = ws.row_values(1)
@@ -213,7 +213,7 @@ class GuildOps(commands.Cog):
         def _sheet_work():
             try:
                 sh = gc.open_by_key(sheet_id)
-                ws = sh.sheet1
+                ws = sh.worksheets()[-1]
                 
                 headers = ws.row_values(1)
                 header_map = {h.lower().strip(): i for i, h in enumerate(headers)}
@@ -954,7 +954,7 @@ class GuildOps(commands.Cog):
             def _do_sort():
                 try:
                     sh = gc.open_by_key(sheet_id)
-                    ws = sh.sheet1
+                    ws = sh.worksheets()[-1]
                     all_values = ws.get_all_values()
                     if not all_values:
                         return False, "Sheet is empty."
@@ -1032,7 +1032,7 @@ class GuildOps(commands.Cog):
             def _get_sheet_ids():
                 try:
                     sh = gc.open_by_key(sheet_id)
-                    ws = sh.sheet1
+                    ws = sh.worksheets()[-1]
                     all_values = ws.get_all_values()
                     if not all_values: return set()
                     
