@@ -49,7 +49,7 @@ class GuildOps(commands.Cog):
     async def _do_custom_sort(self, ws):
         """
         Performs a complex custom sort on the worksheet.
-        Order: Status (Active > Left), Roles (Manual) (Custom List), IGN (A-Z)
+        Order: Status (Active > Left), UID (None > Has), Roles (Manual) (Custom List), IGN (A-Z)
         """
         def _work():
             all_values = ws.get_all_values()
@@ -63,6 +63,10 @@ class GuildOps(commands.Cog):
                 status_idx = headers.index("status")
                 role_idx = headers.index("roles (manual)")
                 ign_idx = headers.index("ign")
+                try:
+                    uid_idx = headers.index("uid (manual)")
+                except ValueError:
+                    uid_idx = headers.index("uid")
             except ValueError:
                 # Fallback to basic sort if columns missing
                 ws.sort((1, 'asc')) 
@@ -83,19 +87,23 @@ class GuildOps(commands.Cog):
 
             def sort_key(row):
                 status = row[status_idx].strip().capitalize() if len(row) > status_idx else ""
+                uid = row[uid_idx].strip() if len(row) > uid_idx else ""
                 role = row[role_idx].strip().lower() if len(row) > role_idx else ""
                 ign = row[ign_idx].strip().lower() if len(row) > ign_idx else ""
                 
                 # 1. Status (Active first)
                 s_prio = 0 if status == "Active" else 1
                 
-                # 2. Role Priority
+                # 2. UID (No UID first)
+                u_prio = 0 if not uid else 1
+
+                # 3. Role Priority
                 if not role:
-                    r_prio = 12
+                    r_prio = 0
                 else:
                     r_prio = role_priority.get(role, 10) # 'other' is 10
                 
-                return (s_prio, r_prio, ign)
+                return (s_prio, u_prio, r_prio, ign)
 
             data.sort(key=sort_key)
             
