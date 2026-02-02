@@ -480,8 +480,9 @@ class GuildOps(commands.Cog):
 
         # 4b. Connectivity Filter (Seed Reconstruction)
         if use_connectivity:
-            # Create a seed mask of very bright pixels (likely core text)
-            seed = mask.point(lambda x: 255 if x >= 235 else 0)
+            # Create a seed mask of bright pixels (white to light gray #b3b3b3)
+            # These act as starting points for the connectivity growth.
+            seed = mask.point(lambda x: 255 if x >= 179 else 0)
             # Create a candidate mask of all potential text pixels
             candidate = mask.point(lambda x: 255 if x > 0 else 0)
             
