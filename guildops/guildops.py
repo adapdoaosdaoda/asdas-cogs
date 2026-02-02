@@ -1002,3 +1002,110 @@ class GuildOps(commands.Cog):
                 await ctx.send(f"✅ {msg}")
             else:
                 await ctx.send(f"❌ Sort failed: {msg}")
+
+    @guildops.command(name="checkmembers")
+    async def guildops_check_members(self, ctx):
+        """Check for users with the member role who are not in the sheet."""
+        conf = await self.config.guild(ctx.guild).all()
+        sheet_id = conf['sheet_id']
+        member_role_id = conf['member_role']
+        left_role_id = conf['left_role']
+
+        if not sheet_id or not member_role_id or not left_role_id:
+            await ctx.send("❌ Sheet ID and Roles must be configured first.")
+            return
+
+        member_role = ctx.guild.get_role(member_role_id)
+        left_role = ctx.guild.get_role(left_role_id)
+        
+        if not member_role or not left_role:
+            await ctx.send("❌ Configured roles not found in this server.")
+            return
+
+        gc = await self._get_gc()
+        if not gc:
+            await ctx.send("❌ Service account file not found.")
+            return
+
+        async with ctx.typing():
+            # 1. Get Discord IDs from Sheet
+            def _get_sheet_ids():
+                try:
+                    sh = gc.open_by_key(sheet_id)
+                    ws = sh.sheet1
+                    all_values = ws.get_all_values()
+                    if not all_values: return set()
+                    
+                    headers = [h.lower().strip() for h in all_values[0]]
+                    if "discord id" not in headers: return set()
+                    
+                    id_idx = headers.index("discord id")
+                    ids = set()
+                    for row in all_values[1:]:
+                        if len(row) > id_idx:
+                            val = str(row[id_idx]).strip()
+                            if val.isdigit():
+                                ids.add(int(val))
+                    return ids
+                except:
+                    return None
+
+            sheet_ids = await self.bot.loop.run_in_executor(None, _get_sheet_ids)
+            if sheet_ids is None:
+                await ctx.send("❌ Failed to read Discord IDs from the sheet.")
+                return
+
+            # 2. Find Discord members with role but NOT in sheet
+            missing_members = []
+            for m in member_role.members:
+                if m.id not in sheet_ids:
+                    missing_members.append(m)
+
+            if not missing_members:
+                await ctx.send("✅ All users with the Member role are listed in the sheet.")
+                return
+
+            # 3. Display results and provide action button
+            count = len(missing_members)
+            member_list = "\n".join([f"• {m.mention} ({m.display_name})" for m in missing_members[:20]])
+            if count > 20:
+                member_list += f"\n...and {count - 20} more."
+
+            embed = discord.Embed(
+                title="Member Role Audit",
+                description=f"Found **{count}** users with the {member_role.mention} role who are **not** in the Google Sheet:\n\n{member_list}",
+                color=discord.Color.orange()
+            )
+            
+            view = SyncView(missing_members, member_role, left_role)
+            await ctx.send(embed=embed, view=view)
+
+class SyncView(discord.ui.View):
+    def __init__(self, members: List[discord.Member], m_role: discord.Role, l_role: discord.Role):
+        super().__init__(timeout=60)
+        self.members = members
+        self.m_role = m_role
+        self.l_role = l_role
+
+    @discord.ui.button(label="Move all to Guest Role", style=discord.ButtonStyle.danger)
+    async def move_to_guest(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.permissions.manage_roles:
+            await interaction.response.send_message("You don't have permission to manage roles.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        
+        success_count = 0
+        fail_count = 0
+        
+        for member in self.members:
+            try:
+                await member.remove_roles(self.m_role, reason="GuildOps Audit: Not in sheet")
+                await member.add_roles(self.l_role, reason="GuildOps Audit: Not in sheet")
+                success_count += 1
+            except:
+                fail_count += 1
+        
+        button.disabled = True
+        await interaction.edit_original_response(view=self)
+        await interaction.followup.send(f"✅ Processed {len(self.members)} members.\n- Moved: {success_count}\n- Failed: {fail_count} (Check permissions)")
