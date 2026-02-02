@@ -177,10 +177,10 @@ class GuildOps(commands.Cog):
                         appends.append(new_row)
                 
                 if appends:
-                    ws.append_rows(appends)
+                    ws.append_rows(appends, value_input_option='USER_ENTERED')
                 
                 if updates:
-                    ws.batch_update(updates)
+                    ws.batch_update(updates, value_input_option='USER_ENTERED')
 
                 # Sort by Status (Asc) then IGN (Asc)
                 # This puts 'Active' at the top and 'Left' at the bottom, sorted alphabetically
@@ -232,12 +232,15 @@ class GuildOps(commands.Cog):
                 
                 if cell:
                     # Update existing
-                    ws.update_cell(cell.row, status_col, status)
+                    ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, status_col)}", [[status]], value_input_option='USER_ENTERED')
                     # Fetch Discord ID if available
                     if discord_id_col > 0:
                         row_vals = ws.row_values(cell.row)
                         if len(row_vals) >= discord_id_col:
                             val = row_vals[discord_id_col - 1]
+                            if val:
+                                discord_id = str(val).strip()
+
                     # Sort by Status (Asc) then IGN (Asc)
                     if status_col > 0 and ign_col > 0:
                         ws.sort((status_col, 'asc'), (ign_col, 'asc'))
@@ -255,7 +258,7 @@ class GuildOps(commands.Cog):
                     if import_col > 0:
                         new_row[import_col - 1] = "OCR"
                     
-                    ws.append_row(new_row)
+                    ws.append_row(new_row, value_input_option='USER_ENTERED')
 
                     # Sort by Status (Asc) then IGN (Asc)
                     if status_col > 0 and ign_col > 0:
