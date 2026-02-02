@@ -1003,6 +1003,23 @@ class GuildOps(commands.Cog):
             else:
                 await ctx.send(f"❌ Sort failed: {msg}")
 
+    @guildops.command(name="setleft")
+    async def guildops_set_left(self, ctx, *, ign: str):
+        """Manually set a member's status to 'Left' by IGN."""
+        sheet_id = await self.config.guild(ctx.guild).sheet_id()
+        if not sheet_id:
+            await ctx.send("❌ Sheet ID not configured.")
+            return
+
+        async with ctx.typing():
+            date_acc = datetime.now().strftime("%d/%m/%Y")
+            success, result_msg = await self._process_ocr_result(sheet_id, ign, "Left", ctx.guild, date_acc)
+            
+            if success:
+                await ctx.send(f"✅ {result_msg}")
+            else:
+                await ctx.send(f"❌ Failed to set {ign} to Left: {result_msg}")
+
     @guildops.command(name="checkmembers")
     async def guildops_check_members(self, ctx):
         """Check for users with the member role who are not in the sheet."""
