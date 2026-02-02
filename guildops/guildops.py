@@ -33,6 +33,7 @@ class GuildOps(commands.Cog):
             "ocr_debug": False,
             "ocr_threshold": 160,
             "ocr_filter": True,
+            "ocr_connectivity": True,
         }
         self.config.register_guild(**default_guild)
 
@@ -463,7 +464,7 @@ class GuildOps(commands.Cog):
             log.info(f"Form parsing failed: {', '.join(reasons)}")
             await message.add_reaction("❌")
 
-    def _get_processed_image(self, img_data: bytes, threshold: int, use_filter: bool) -> Image.Image:
+    def _get_processed_image(self, img_data: bytes, threshold: int, use_filter: bool, use_connectivity: bool = True) -> Image.Image:
         """Applies the processing pipeline to an image and returns the PIL Image object."""
         # 1. Load and Grayscale
         img = Image.open(BytesIO(img_data)).convert('L')
@@ -476,6 +477,30 @@ class GuildOps(commands.Cog):
         
         # 4. Clipping: Preserve original gray/white intensities for text, black out background
         mask = img.point(lambda x: x if x >= threshold else 0)
+
+        # 4b. Connectivity Filter (Seed Reconstruction)
+        if use_connectivity:
+            # Create a seed mask of very bright pixels (likely core text)
+            seed = mask.point(lambda x: 255 if x >= 235 else 0)
+            # Create a candidate mask of all potential text pixels
+            candidate = mask.point(lambda x: 255 if x > 0 else 0)
+            
+            # Use morphological reconstruction to grow seeds into candidates
+            # We do 8 iterations of 3x3 dilation, which covers most anti-aliasing ranges
+            connected = seed
+            for _ in range(8):
+                # Dilate seeds
+                dilated = connected.filter(ImageFilter.MaxFilter(3))
+                # Intersect with candidate mask
+                new_connected = ImageChops.darker(dilated, candidate)
+                
+                # Check for convergence (no more growth)
+                if not ImageChops.difference(new_connected, connected).getbbox():
+                    break
+                connected = new_connected
+            
+            # Apply the connectivity mask back to our soft-thresholded image
+            mask = ImageChops.darker(mask, connected)
         
         # 5. Underline Removal (Horizontal Segment Eraser)
         if use_filter:
@@ -542,10 +567,11 @@ class GuildOps(commands.Cog):
                 # Fetch OCR settings
                 threshold = await self.config.guild(message.guild).ocr_threshold()
                 use_filter = await self.config.guild(message.guild).ocr_filter()
+                use_connectivity = await self.config.guild(message.guild).ocr_connectivity()
                 debug_enabled = await self.config.guild(message.guild).ocr_debug()
 
                 def _ocr_task():
-                    processed_img = self._get_processed_image(img_data, threshold, use_filter)
+                    processed_img = self._get_processed_image(img_data, threshold, use_filter, use_connectivity)
                     return pytesseract.image_to_string(processed_img, lang='eng+chi_sim+chi_tra', config='--psm 6')
                 
                 log.info(f"GuildOps: Running OCR on {att.filename}...")
@@ -647,6 +673,13 @@ class GuildOps(commands.Cog):
         await self.config.guild(ctx.guild).ocr_filter.set(toggle)
         status = "enabled" if toggle else "disabled"
         await ctx.send(f"OCR underline filter is now {status}.")
+
+    @opset.command()
+    async def ocrconnectivity(self, ctx, toggle: bool):
+        """Toggle the connectivity filter (keeps gray pixels only if attached to white)."""
+        await self.config.guild(ctx.guild).ocr_connectivity.set(toggle)
+        status = "enabled" if toggle else "disabled"
+        await ctx.send(f"OCR connectivity filter is now {status}.")
 
     @opset.command()
     async def creds(self, ctx):
@@ -790,6 +823,7 @@ class GuildOps(commands.Cog):
 
         threshold = await self.config.guild(ctx.guild).ocr_threshold()
         use_filter = await self.config.guild(ctx.guild).ocr_filter()
+        use_connectivity = await self.config.guild(ctx.guild).ocr_connectivity()
 
         async with ctx.typing():
             for att in message.attachments:
@@ -799,7 +833,7 @@ class GuildOps(commands.Cog):
                 img_data = await att.read()
                 
                 def _process():
-                    processed_img = self._get_processed_image(img_data, threshold, use_filter)
+                    processed_img = self._get_processed_image(img_data, threshold, use_filter, use_connectivity)
                     final_io = BytesIO()
                     processed_img.save(final_io, format="PNG")
                     final_io.seek(0)
@@ -807,7 +841,7 @@ class GuildOps(commands.Cog):
 
                 final_io = await self.bot.loop.run_in_executor(None, _process)
                 file = discord.File(final_io, filename=f"debug_{att.filename}")
-                await ctx.send(f"🖼️ **Processed Image for {att.filename}:**\n(Threshold: {threshold}, Filter: {use_filter})", file=file)
+                await ctx.send(f"🖼️ **Processed Image for {att.filename}:**\n(Threshold: {threshold}, Filter: {use_filter}, Connectivity: {use_connectivity})", file=file)
 
     @guildops.command(name="synchistory")
     async def guildops_sync_history(self, ctx, channel_type: str, limit: int = 50):
