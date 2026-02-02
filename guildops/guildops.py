@@ -46,6 +46,68 @@ class GuildOps(commands.Cog):
         else:
             log.warning(f"GuildOps: Service account file not found at {self.creds_file}. Google Sheets sync will not work.")
 
+    async def _do_custom_sort(self, ws):
+        """
+        Performs a complex custom sort on the worksheet.
+        Order: Status (Active > Left), Roles (Manual) (Custom List), IGN (A-Z)
+        """
+        def _work():
+            all_values = ws.get_all_values()
+            if len(all_values) <= 1:
+                return
+            
+            headers = [h.lower().strip() for h in all_values[0]]
+            data = all_values[1:]
+            
+            try:
+                status_idx = headers.index("status")
+                role_idx = headers.index("roles (manual)")
+                ign_idx = headers.index("ign")
+            except ValueError:
+                # Fallback to basic sort if columns missing
+                ws.sort((1, 'asc')) 
+                return
+
+            role_priority = {
+                "guild leader": 1,
+                "vice master": 2,
+                "command": 3,
+                "halftime performer": 4,
+                "officer": 5,
+                "recruiter": 6,
+                "mascot": 7,
+                "mason": 8,
+                "members": 9,
+                "apprentice": 11,
+            }
+
+            def sort_key(row):
+                status = row[status_idx].strip().capitalize() if len(row) > status_idx else ""
+                role = row[role_idx].strip().lower() if len(row) > role_idx else ""
+                ign = row[ign_idx].strip().lower() if len(row) > ign_idx else ""
+                
+                # 1. Status (Active first)
+                s_prio = 0 if status == "Active" else 1
+                
+                # 2. Role Priority
+                if not role:
+                    r_prio = 12
+                else:
+                    r_prio = role_priority.get(role, 10) # 'other' is 10
+                
+                return (s_prio, r_prio, ign)
+
+            data.sort(key=sort_key)
+            
+            # Write back to sheet (Range: A2 to end)
+            num_rows = len(data)
+            num_cols = len(headers)
+            if num_rows > 0:
+                range_end = gspread.utils.rowcol_to_a1(num_rows + 1, num_cols)
+                ws.update(f"A2:{range_end}", data, value_input_option='USER_ENTERED')
+
+        await self.bot.loop.run_in_executor(None, _work)
+
     async def _get_gc(self):
         """
         Returns a gspread client, running in an executor to avoid blocking.
@@ -184,20 +246,17 @@ class GuildOps(commands.Cog):
                 if updates:
                     ws.batch_update(updates, value_input_option='USER_ENTERED')
 
-                # Sort by Status (Asc) then IGN (Asc)
-                # This puts 'Active' at the top and 'Left' at the bottom, sorted alphabetically
-                if status_col_idx is not None and ign_col_idx is not None:
-                    ws.sort((status_col_idx + 1, 'asc'), (ign_col_idx + 1, 'asc'))
-                elif ign_col_idx is not None:
-                    ws.sort((ign_col_idx + 1, 'asc'))
-                    
-                return True, f"Synced {len(appends)} new and {len(updates)//4} updated records."
-
+                # Sort by Status (Active > Left), Role (Custom), then IGN (A-Z)
+                return True, ws
             except Exception as e:
                 return False, str(e)
 
-        success, msg = await self.bot.loop.run_in_executor(None, _do_work)
-        return success, msg
+        success, result = await self.bot.loop.run_in_executor(None, _do_work)
+        if success:
+            await self._do_custom_sort(result)
+            # Find how many updates/appends happened for the message (bit hard to reconstruct here perfectly)
+            return True, "Synced and sorted sheet."
+        return False, result
 
     async def _process_ocr_result(self, sheet_id: str, ign: str, status: str, guild: discord.Guild, date_accepted: str):
         """
@@ -252,14 +311,8 @@ class GuildOps(commands.Cog):
                             val = row_vals[discord_id_col - 1]
                             if val:
                                 discord_id = str(val).strip()
-
-                    # Sort by Status (Asc) then IGN (Asc)
-                    if status_col > 0 and ign_col > 0:
-                        ws.sort((status_col, 'asc'), (ign_col, 'asc'))
-                    elif ign_col > 0:
-                        ws.sort((ign_col, 'asc'))
                         
-                    return True, discord_id, f"Updated {ign} to {status}."
+                    return True, discord_id, ws
                 else:
                     # Append new row
                     new_row = [""] * len(headers)
@@ -271,23 +324,21 @@ class GuildOps(commands.Cog):
                         new_row[import_col - 1] = "OCR"
                     
                     ws.append_row(new_row, value_input_option='USER_ENTERED')
-
-                    # Sort by Status (Asc) then IGN (Asc)
-                    if status_col > 0 and ign_col > 0:
-                        ws.sort((status_col, 'asc'), (ign_col, 'asc'))
-                    elif ign_col > 0:
-                        ws.sort((ign_col, 'asc'))
                         
-                    return True, None, f"Added {ign} as {status} (Missing Discord ID)."
+                    return True, None, ws
                 
             except Exception as e:
                 return False, None, str(e)
 
         # Run sheet update
-        success, discord_id, msg = await self.bot.loop.run_in_executor(None, _sheet_work)
+        success, discord_id, result = await self.bot.loop.run_in_executor(None, _sheet_work)
         
         if not success:
-            return False, msg
+            return False, result
+
+        # result is ws
+        await self._do_custom_sort(result)
+        msg = f"Processed {ign} -> {status}."
 
         # Handle Roles if Left and Discord ID known
         if status == "Left" and discord_id:
@@ -984,25 +1035,19 @@ class GuildOps(commands.Cog):
                                     except:
                                         continue
                         
-                        if date_updates:
-                            ws.batch_update(date_updates, value_input_option='USER_ENTERED')
-
-                    if ign_col_idx != -1:
-                        if status_col_idx != -1:
-                            ws.sort((status_col_idx + 1, 'asc'), (ign_col_idx + 1, 'asc'))
-                        else:
-                            ws.sort((ign_col_idx + 1, 'asc'))
-                        return True, f"Sheet sorted successfully (Converted {len(date_updates)} dates)."
-                    return False, "Could not find 'IGN' column to sort by."
-                except Exception as e:
-                    return False, str(e)
-
-            success, msg = await self.bot.loop.run_in_executor(None, _do_sort)
-            if success:
-                await ctx.send(f"✅ {msg}")
-            else:
-                await ctx.send(f"❌ Sort failed: {msg}")
-
+                                            if date_updates:
+                                                ws.batch_update(date_updates, value_input_option='USER_ENTERED')
+                        
+                                            return True, ws
+                                        except Exception as e:
+                                            return False, str(e)
+                        
+                                    success, result = await self.bot.loop.run_in_executor(None, _do_sort)
+                                    if success:
+                                        await self._do_custom_sort(result)
+                                        await ctx.send("✅ Sheet sorted and formatted (Active first, then by custom Role priority, then by IGN).")
+                                    else:
+                                        await ctx.send(f"❌ Sort failed: {result}")
     @guildops.command(name="setleft")
     async def guildops_set_left(self, ctx, *, ign: str):
         """Manually set a member's status to 'Left' by IGN."""
