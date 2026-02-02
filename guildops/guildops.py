@@ -297,10 +297,8 @@ class GuildOps(commands.Cog):
                     # Update existing
                     ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, status_col)}", [[status]], value_input_option='USER_ENTERED')
                     
-                    # If status changed to 'Left', clear manual columns
+                    # If status changed to 'Left', clear manual roles
                     if status.capitalize() == "Left":
-                        if uid_man_col > 0:
-                            ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, uid_man_col)}", [[""]], value_input_option='USER_ENTERED')
                         if roles_man_col > 0:
                             ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, roles_man_col)}", [[""]], value_input_option='USER_ENTERED')
 
