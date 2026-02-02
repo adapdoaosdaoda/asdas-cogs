@@ -475,17 +475,43 @@ class GuildOps(commands.Cog):
         img = img.filter(ImageFilter.SMOOTH_MORE)
         
         # 4. Clipping: Preserve original gray/white intensities for text, black out background
-        # This keeps the "gray" edges and details instead of forcing everything to pure white.
         mask = img.point(lambda x: x if x >= threshold else 0)
         
-        # 5. Underline Removal (2px shift)
+        # 5. Underline Removal (Horizontal Segment Eraser)
         if use_filter:
-            # With White text (255) on Black background (0), we use 'darker' (min)
-            # to eliminate horizontal white lines that lack vertical continuity.
-            shift = 2
-            m_up = ImageChops.offset(mask, 0, -shift)
-            m_dn = ImageChops.offset(mask, 0, shift)
-            mask = ImageChops.darker(mask, ImageChops.darker(m_up, m_dn))
+            width, height = mask.size
+            # Heuristic for "2 characters" width based on image size
+            line_threshold = max(40, width // 25) 
+            
+            pixels = list(mask.getdata())
+            new_pixels = list(pixels)
+            
+            for y in range(height):
+                row_start = y * width
+                start_x = -1
+                for x in range(width):
+                    idx = row_start + x
+                    if pixels[idx] > 0: # Non-black (text/line)
+                        if start_x == -1:
+                            start_x = x
+                    else:
+                        if start_x != -1:
+                            # We found the end of a white segment
+                            length = x - start_x
+                            if length > line_threshold:
+                                # This is likely an underline, wipe it
+                                for i in range(start_x, x):
+                                    new_pixels[row_start + i] = 0
+                            start_x = -1
+                
+                # Check if a segment went all the way to the right edge
+                if start_x != -1:
+                    length = width - start_x
+                    if length > line_threshold:
+                        for i in range(start_x, width):
+                            new_pixels[row_start + i] = 0
+            
+            mask.putdata(new_pixels)
         
         return mask
 
