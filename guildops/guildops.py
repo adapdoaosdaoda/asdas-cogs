@@ -921,3 +921,43 @@ class GuildOps(commands.Cog):
                     await asyncio.sleep(1) # Rate limit protection
             
             await ctx.send(f"✅ OCR Sync Complete. Processed {count} messages containing attachments.")
+
+    @guildops.command(name="sort")
+    async def guildops_sort(self, ctx):
+        """Manually sort the Google Sheet (Active top, A-Z by IGN)."""
+        sheet_id = await self.config.guild(ctx.guild).sheet_id()
+        if not sheet_id:
+            await ctx.send("❌ Sheet ID not configured.")
+            return
+
+        gc = await self._get_gc()
+        if not gc:
+            await ctx.send("❌ Service account file not found.")
+            return
+
+        async with ctx.typing():
+            def _do_sort():
+                try:
+                    sh = gc.open_by_key(sheet_id)
+                    ws = sh.sheet1
+                    headers = ws.row_values(1)
+                    header_map = {h.lower().strip(): i for i, h in enumerate(headers)}
+                    
+                    status_col = header_map.get("status", -1) + 1
+                    ign_col = header_map.get("ign", -1) + 1
+                    
+                    if ign_col > 0:
+                        if status_col > 0:
+                            ws.sort((status_col, 'asc'), (ign_col, 'asc'))
+                        else:
+                            ws.sort((ign_col, 'asc'))
+                        return True, "Sheet sorted successfully."
+                    return False, "Could not find 'IGN' column to sort by."
+                except Exception as e:
+                    return False, str(e)
+
+            success, msg = await self.bot.loop.run_in_executor(None, _do_sort)
+            if success:
+                await ctx.send(f"✅ {msg}")
+            else:
+                await ctx.send(f"❌ Sort failed: {msg}")
