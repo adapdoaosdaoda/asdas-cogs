@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Any, Tuple
 
 from redbot.core import commands, Config, data_manager, checks
 from redbot.core.bot import Red
+from discord.ext import tasks
 
 log = logging.getLogger("red.asdas-cogs.guildops")
 
@@ -34,6 +35,8 @@ class GuildOps(commands.Cog):
             "ocr_threshold": 160,
             "ocr_filter": True,
             "ocr_connectivity": True,
+            "auto_sort_interval": 30, # Minutes
+            "last_auto_sort": 0, # Timestamp
         }
         self.config.register_guild(**default_guild)
 
@@ -45,6 +48,47 @@ class GuildOps(commands.Cog):
             log.info("GuildOps: Service account file found.")
         else:
             log.warning(f"GuildOps: Service account file not found at {self.creds_file}. Google Sheets sync will not work.")
+
+        self.auto_sort_loop.start()
+
+    def cog_unload(self):
+        self.auto_sort_loop.cancel()
+
+    @tasks.loop(minutes=1)
+    async def auto_sort_loop(self):
+        """Background loop to periodically sort configured sheets."""
+        all_guilds = await self.config.all_guilds()
+        now = datetime.now().timestamp()
+        
+        for guild_id, settings in all_guilds.items():
+            sheet_id = settings.get("sheet_id")
+            interval = settings.get("auto_sort_interval", 30)
+            last_sort = settings.get("last_auto_sort", 0)
+            
+            if not sheet_id or interval <= 0:
+                continue
+
+            if now - last_sort >= (interval * 60):
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+                
+                gc = await self._get_gc()
+                if not gc:
+                    continue
+                
+                try:
+                    sh = await self.bot.loop.run_in_executor(None, lambda: gc.open_by_key(sheet_id))
+                    ws = await self.bot.loop.run_in_executor(None, lambda: sh.worksheets()[-1])
+                    await self._do_custom_sort(ws)
+                    await self.config.guild_from_id(guild_id).last_auto_sort.set(now)
+                    log.info(f"GuildOps: Auto-sorted sheet for guild {guild.name} ({guild_id})")
+                except Exception as e:
+                    log.error(f"GuildOps: Error in auto-sort for guild {guild_id}: {e}")
+
+    @auto_sort_loop.before_loop
+    async def before_auto_sort_loop(self):
+        await self.bot.wait_until_ready()
 
     async def _do_custom_sort(self, ws):
         """
@@ -752,6 +796,18 @@ class GuildOps(commands.Cog):
         await ctx.send(f"OCR connectivity filter is now {status}.")
 
     @opset.command()
+    async def sortinterval(self, ctx, minutes: int):
+        """Set the auto-sort interval in minutes (0 to disable)."""
+        if minutes < 0:
+            await ctx.send("❌ Minutes must be 0 or more.")
+            return
+        await self.config.guild(ctx.guild).auto_sort_interval.set(minutes)
+        if minutes == 0:
+            await ctx.send("Auto-sort disabled.")
+        else:
+            await ctx.send(f"Auto-sort interval set to {minutes} minutes.")
+
+    @opset.command()
     async def creds(self, ctx):
         """Instructions for setting up Google Sheets credentials."""
         msg = (
@@ -771,11 +827,14 @@ class GuildOps(commands.Cog):
         ocr = f"<#{conf['ocr_channel']}>" if conf['ocr_channel'] else "Not Set"
         m_role = f"<@&{conf['member_role']}>" if conf['member_role'] else "Not Set"
         l_role = f"<@&{conf['left_role']}>" if conf['left_role'] else "Not Set"
+        interval = conf['auto_sort_interval']
+        interval_str = f"{interval} mins" if interval > 0 else "Disabled"
         
         embed = discord.Embed(title="GuildOps Settings", color=discord.Color.blue())
         embed.add_field(name="Sheet ID", value=f"`{sheet}`", inline=False)
         embed.add_field(name="Channels", value=f"Forms: {forms}\nOCR: {ocr}", inline=True)
         embed.add_field(name="Roles", value=f"Member: {m_role}\nLeft: {l_role}", inline=True)
+        embed.add_field(name="Auto-Sort", value=interval_str, inline=True)
         
         if self.creds_file.exists():
             embed.set_footer(text="✅ Service Account File Found")
