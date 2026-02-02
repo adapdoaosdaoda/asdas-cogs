@@ -1033,19 +1033,19 @@ class GuildOps(commands.Cog):
                                     except:
                                         continue
                         
-                                            if date_updates:
-                                                ws.batch_update(date_updates, value_input_option='USER_ENTERED')
-                        
-                                            return True, ws
-                                        except Exception as e:
-                                            return False, str(e)
-                        
-                                    success, result = await self.bot.loop.run_in_executor(None, _do_sort)
-                                    if success:
-                                        await self._do_custom_sort(result)
-                                        await ctx.send("✅ Sheet sorted and formatted (Active first, then by custom Role priority, then by IGN).")
-                                    else:
-                                        await ctx.send(f"❌ Sort failed: {result}")
+                        if date_updates:
+                            ws.batch_update(date_updates, value_input_option='USER_ENTERED')
+
+                    return True, ws
+                except Exception as e:
+                    return False, str(e)
+
+            success, result = await self.bot.loop.run_in_executor(None, _do_sort)
+            if success:
+                await self._do_custom_sort(result)
+                await ctx.send("✅ Sheet sorted and formatted (Active first, then by custom Role priority, then by IGN).")
+            else:
+                await ctx.send(f"❌ Sort failed: {result}")
     @guildops.command(name="setleft")
     async def guildops_set_left(self, ctx, *, ign: str):
         """Manually set a member's status to 'Left' by IGN."""
