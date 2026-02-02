@@ -382,7 +382,7 @@ class GuildOps(commands.Cog):
         if reasons:
             return None, reasons
 
-        date_acc = message.created_at.strftime("%Y-%m-%d")
+        date_acc = message.created_at.strftime("%d/%m/%Y")
         
         return {
             "discord_id": discord_id,
@@ -588,7 +588,7 @@ class GuildOps(commands.Cog):
                 parsed_entries = self._parse_ocr_text(text)
                 processed_count = 0
                 results = []
-                date_acc = message.created_at.strftime("%Y-%m-%d")
+                date_acc = message.created_at.strftime("%d/%m/%Y")
                 
                 for ign, status in parsed_entries:
                     log.info(f"GuildOps: Found potential entry: {ign} -> {status}")
@@ -943,18 +943,44 @@ class GuildOps(commands.Cog):
                 try:
                     sh = gc.open_by_key(sheet_id)
                     ws = sh.sheet1
-                    headers = ws.row_values(1)
+                    all_values = ws.get_all_values()
+                    if not all_values:
+                        return False, "Sheet is empty."
+                        
+                    headers = all_values[0]
                     header_map = {h.lower().strip(): i for i, h in enumerate(headers)}
                     
-                    status_col = header_map.get("status", -1) + 1
-                    ign_col = header_map.get("ign", -1) + 1
+                    status_col_idx = header_map.get("status", -1)
+                    ign_col_idx = header_map.get("ign", -1)
+                    date_col_idx = header_map.get("date added", -1)
                     
-                    if ign_col > 0:
-                        if status_col > 0:
-                            ws.sort((status_col, 'asc'), (ign_col, 'asc'))
+                    # Retroactive Date Conversion (YYYY-MM-DD -> DD/MM/YYYY)
+                    if date_col_idx != -1:
+                        date_updates = []
+                        for row_idx, row in enumerate(all_values[1:], start=2):
+                            if len(row) > date_col_idx:
+                                val = row[date_col_idx].strip()
+                                # Check for YYYY-MM-DD pattern
+                                if re.match(r'^\d{4}-\d{2}-\d{2}$', val):
+                                    try:
+                                        dt = datetime.strptime(val, "%Y-%m-%d")
+                                        new_val = dt.strftime("%d/%m/%Y")
+                                        date_updates.append({
+                                            'range': f"{gspread.utils.rowcol_to_a1(row_idx, date_col_idx + 1)}",
+                                            'values': [[new_val]]
+                                        })
+                                    except:
+                                        continue
+                        
+                        if date_updates:
+                            ws.batch_update(date_updates, value_input_option='USER_ENTERED')
+
+                    if ign_col_idx != -1:
+                        if status_col_idx != -1:
+                            ws.sort((status_col_idx + 1, 'asc'), (ign_col_idx + 1, 'asc'))
                         else:
-                            ws.sort((ign_col, 'asc'))
-                        return True, "Sheet sorted successfully."
+                            ws.sort((ign_col_idx + 1, 'asc'))
+                        return True, f"Sheet sorted successfully (Converted {len(date_updates)} dates)."
                     return False, "Could not find 'IGN' column to sort by."
                 except Exception as e:
                     return False, str(e)
