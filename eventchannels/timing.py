@@ -78,18 +78,18 @@ def format_default_warning_message() -> str:
     )
 
 
-def format_extension_message(user_mention: str, hours_remaining: int, minutes_remaining: int) -> str:
+def format_extension_message(user_mention: str, delete_time: datetime) -> str:
     """Format the extension notification message.
 
     Args:
         user_mention: Discord mention string for the user who extended
-        hours_remaining: Hours until deletion
-        minutes_remaining: Minutes until deletion (remainder after hours)
+        delete_time: When channels will now be deleted (timezone-aware UTC)
 
     Returns:
         Formatted extension notification string
     """
+    timestamp = int(delete_time.timestamp())
     return (
-        f"\n\n **Extended by {user_mention}**: Deletion postponed by {EXTENSION_HOURS} hours. "
-        f"Channels will now be deleted in approximately {hours_remaining}h {minutes_remaining}m."
+        f"\n\n⏰ **Extended by {user_mention}**: Deletion postponed by {EXTENSION_HOURS} hours. "
+        f"Channels will now be deleted <t:{timestamp}:R>."
     )
