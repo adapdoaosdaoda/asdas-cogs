@@ -18,7 +18,11 @@ class HandlersMixin:
             creation_minutes = await self.config.guild(guild).creation_minutes()
             create_time = start_time - timedelta(minutes=creation_minutes)
             deletion_hours = await self.config.guild(guild).deletion_hours()
-            delete_time = calculate_delete_time(start_time, deletion_hours)
+            
+            # Use end_time for deletion calculation if available, otherwise start_time
+            base_time = event.end_time.astimezone(timezone.utc) if event.end_time else start_time
+            delete_time = calculate_delete_time(base_time, deletion_hours)
+            
             now = datetime.now(timezone.utc)
 
             # If this is a retry, adjust the create_time based on retry intervals
@@ -713,7 +717,10 @@ class HandlersMixin:
 
             # Now schedule the normal cleanup task (event start message, deletion warning, cleanup)
             deletion_hours = await self.config.guild(guild).deletion_hours()
-            delete_time = calculate_delete_time(start_time, deletion_hours)
+            
+            # Use end_time for deletion calculation if available, otherwise start_time
+            base_time = event.end_time.astimezone(timezone.utc) if event.end_time else start_time
+            delete_time = calculate_delete_time(base_time, deletion_hours)
 
             # Wait until event starts
             await asyncio.sleep(max(0, (start_time - datetime.now(timezone.utc)).total_seconds()))

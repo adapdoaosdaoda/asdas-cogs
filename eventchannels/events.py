@@ -20,12 +20,26 @@ class EventsMixin:
     @commands.Cog.listener()
     async def on_scheduled_event_delete(self, event: discord.ScheduledEvent):
         """Cancel task and clean up channels when event is deleted."""
+        # Check if deletion has been extended - if so, don't cancel task (keep channels open)
+        async with self._config_lock:
+            deletion_extensions = await self.config.guild(event.guild).deletion_extensions()
+            if str(event.id) in deletion_extensions:
+                log.info(f"Event '{event.name}' (ID: {event.id}) was deleted, but deletion is extended. Keeping channels open until extended deletion time.")
+                return
+
         self._cancel_event_tasks(event.id)
 
     @commands.Cog.listener()
     async def on_scheduled_event_update(self, before: discord.ScheduledEvent, after: discord.ScheduledEvent):
         """Cancel task and clean up if event is cancelled or start time changes significantly."""
         if after.status == discord.EventStatus.cancelled:
+            # Check if deletion has been extended
+            async with self._config_lock:
+                deletion_extensions = await self.config.guild(after.guild).deletion_extensions()
+                if str(after.id) in deletion_extensions:
+                    log.info(f"Event '{after.name}' (ID: {after.id}) was cancelled, but deletion is extended. Keeping channels open.")
+                    return
+
             self._cancel_event_tasks(after.id)
         elif before.start_time != after.start_time and after.status == discord.EventStatus.scheduled:
             # Start time changed - cancel old task and all retry tasks, create new one
@@ -114,9 +128,16 @@ class EventsMixin:
                     continue
 
                 except discord.Forbidden:
-                    log.error(f"Could not recreate role '{role.name}' - missing permissions. Channels will be cleaned up without role.")
-                    # Fall through to cleanup
-                    should_cleanup = True
+                    log.error(f"Could not recreate role '{role.name}' - missing permissions.")
+
+                    # Check if extended before deciding to cleanup
+                    deletion_extensions = await self.config.guild(guild).deletion_extensions()
+                    if str(event_id) in deletion_extensions:
+                        log.info(f"Deletion is extended for event {event_id}. Keeping channels despite role recreation failure (access may be limited).")
+                        should_cleanup = False
+                    else:
+                        log.info("Channels will be cleaned up without role.")
+                        should_cleanup = True
             else:
                 # No active task or no channels - need to clean up
                 should_cleanup = True
