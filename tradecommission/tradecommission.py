@@ -678,17 +678,18 @@ class TradeCommission(commands.Cog):
 
         config = await self.config.guild(guild).all()
 
-        # Delete previous week's message if it exists
-        if config["previous_message_id"]:
+        # Delete previous week's message (which is currently stored as current_message_id)
+        if config["current_message_id"]:
             try:
                 prev_channel = guild.get_channel(config["current_channel_id"]) or channel
-                prev_message = await prev_channel.fetch_message(config["previous_message_id"])
+                prev_message = await prev_channel.fetch_message(config["current_message_id"])
                 await prev_message.delete()
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass  # Message already deleted or no permission
 
         # Determine embed color using priority: ping role -> bot color -> default
         embed_color = await self._get_embed_color(guild, config["ping_role_id"])
+
 
         embed = discord.Embed(
             title=config["message_title"],
