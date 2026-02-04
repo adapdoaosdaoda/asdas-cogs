@@ -15,6 +15,7 @@ class UtilsMixin:
         # Run migration for all guilds
         for guild in self.bot.guilds:
             await self._migrate_deletion_warning_message(guild)
+            await self._refresh_member_permissions(guild)
             await self._schedule_existing_events(guild)
 
     async def _migrate_deletion_warning_message(self, guild: discord.Guild):
@@ -35,6 +36,80 @@ class UtilsMixin:
                 log.info(f"Migrated deletion warning message to new default for guild '{guild.name}'")
         except Exception as e:
             log.error(f"Error migrating deletion warning message for guild '{guild.name}': {e}")
+
+    async def _refresh_member_permissions(self, guild: discord.Guild):
+        """Refresh member permission overwrites for all active event channels.
+        
+        This ensures that members with the event role have explicit overwrites,
+        protecting their access if the role is deleted later.
+        """
+        try:
+            stored = await self.config.guild(guild).event_channels()
+            
+            for event_id, data in stored.items():
+                role_id = data.get("role")
+                if not role_id:
+                    continue
+                    
+                role = guild.get_role(role_id)
+                if not role:
+                    continue
+                
+                # Get all channels for this event
+                channels = []
+                
+                # Text channel
+                text_channel_id = data.get("text")
+                if text_channel_id:
+                    text_channel = guild.get_channel(text_channel_id)
+                    if text_channel:
+                        channels.append(text_channel)
+                
+                # Voice channels
+                voice_channel_ids = data.get("voice", [])
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+                    
+                for vc_id in voice_channel_ids:
+                    voice_channel = guild.get_channel(vc_id)
+                    if voice_channel:
+                        channels.append(voice_channel)
+                
+                if not channels:
+                    continue
+                    
+                log.info(f"Refreshing member permissions for event {event_id} (Role: {role.name}, {len(role.members)} members)")
+                
+                # Update each channel
+                for channel in channels:
+                    try:
+                        # We need to fetch overwrites to check existence, but checking explicitly 
+                        # for each member in the overwrite dict is faster than API calls
+                        current_overwrites = channel.overwrites
+                        overwrites_changed = False
+                        
+                        for member in role.members:
+                            if member not in current_overwrites:
+                                # Add overwrite if missing
+                                current_overwrites[member] = discord.PermissionOverwrite(
+                                    view_channel=True,
+                                    send_messages=True,
+                                    connect=True,
+                                    speak=True,
+                                )
+                                overwrites_changed = True
+                        
+                        if overwrites_changed:
+                            await channel.edit(overwrites=current_overwrites, reason="Refreshing event channel member permissions")
+                            log.info(f"Updated permissions for channel {channel.name}")
+                            
+                    except discord.Forbidden:
+                        log.warning(f"Could not update permissions for channel {channel.name} - missing permissions")
+                    except Exception as e:
+                        log.error(f"Error updating permissions for channel {channel.name}: {e}")
+                        
+        except Exception as e:
+            log.error(f"Error refreshing member permissions for guild '{guild.name}': {e}")
 
     async def _schedule_existing_events(self, guild: discord.Guild):
         try:
