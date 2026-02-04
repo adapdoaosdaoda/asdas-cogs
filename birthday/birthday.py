@@ -250,3 +250,5 @@ class Birthday(
             if await self.config.guild(guild).role_id() is None:
                 state["Role ID"] = f"Not set. Use `{p}bdset role`"
             return state, "Initial setup is not yet complete, so the cog won't work."
+
+# Force update

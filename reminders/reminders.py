@@ -1521,3 +1521,5 @@ class Reminders(DashboardIntegration, Cog):
             # "Next 5 existing user's Reminders": "\n" + "\n".join([f"• Reminder #{reminder.id}: {reminder.to_json(clean=True)}" for reminder in reminders]),
         }
         return [f"{key}: {value}\n" for key, value in data.items() if value is not None]
+
+# Force update

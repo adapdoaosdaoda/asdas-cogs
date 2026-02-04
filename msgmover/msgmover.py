@@ -326,3 +326,5 @@ class Msgmover(commands.Cog):
                                 await msgFormatter(self, webhook, endMsg, configJson, editMsgId=wf.get("whResult", None))
         finally:
             await session.close()
+
+# Force update

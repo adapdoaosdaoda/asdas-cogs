@@ -2107,3 +2107,5 @@ class TradeCommission(commands.Cog):
             await message.edit(embed=embed)
         except discord.Forbidden:
             pass
+
+# Force update

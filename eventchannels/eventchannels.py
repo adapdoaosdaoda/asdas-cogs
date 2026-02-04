@@ -307,3 +307,5 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
         for task in self.active_tasks.values():
             if not task.done():
                 task.cancel()
+
+# Force update

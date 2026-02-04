@@ -336,3 +336,4 @@ class ModalPatch(commands.Cog):
         """
         view = ModalLauncher()
         await ctx.send("To access the modal, please click the button below:", view=view)
+# Force update

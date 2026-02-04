@@ -1236,3 +1236,4 @@ class SyncView(discord.ui.View):
         button.disabled = True
         await interaction.edit_original_response(view=self)
         await interaction.followup.send(f"✅ Processed {len(self.members)} members.\n- Moved: {success_count}\n- Failed: {fail_count} (Check permissions)")
+# Force update

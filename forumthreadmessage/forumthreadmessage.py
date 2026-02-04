@@ -2278,3 +2278,5 @@ class ForumThreadMessage(commands.Cog):
 
         except Exception as e:
             log.error(f"Error in on_guild_channel_create: {e}", exc_info=True)
+
+# Force update

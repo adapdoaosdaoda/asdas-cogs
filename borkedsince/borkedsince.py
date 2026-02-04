@@ -793,3 +793,5 @@ class BorkedSince(commands.Cog):
             f"If another false reset occurs, you can undo that as well. "
             f"The crash record has been removed from history."
         )
+
+# Force update

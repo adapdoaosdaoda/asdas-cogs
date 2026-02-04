@@ -3649,3 +3649,5 @@ class EventPolling(commands.Cog):
                             return True, f"This conflicts with your {slot_label} selection on {existing_day}"
 
         return False, None
+
+# Force update

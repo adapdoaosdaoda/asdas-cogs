@@ -604,3 +604,5 @@ class RunManagerView(discord.ui.View):
             await interaction.message.edit(embed=embed, view=self)
         except:
             pass
+
+# Force update
