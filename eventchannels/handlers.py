@@ -128,8 +128,6 @@ class HandlersMixin:
 
             # Check if bot's role is higher than the event role
             bot_top_role = guild.me.top_role
-            log.info(f"Bot's top role: {bot_top_role.name} (position: {bot_top_role.position}), Event role: {role.name} (position: {role.position})")
-
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
                 guild.me: discord.PermissionOverwrite(
@@ -143,6 +141,16 @@ class HandlersMixin:
                     speak=True,
                 ),
             }
+
+            # Add explicit overwrites for all members with the role
+            # This ensures access persists even if the role is deleted
+            for member in role.members:
+                overwrites[member] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    connect=True,
+                    speak=True,
+                )
 
             # Add whitelisted roles to overwrites
             whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
@@ -599,6 +607,16 @@ class HandlersMixin:
                 ),
             }
 
+            # Add explicit overwrites for all members with the role
+            # This ensures access persists even if the role is deleted
+            for member in role.members:
+                overwrites[member] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    connect=True,
+                    speak=True,
+                )
+
             # Add whitelisted roles to overwrites
             whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
             for whitelisted_role_id in whitelisted_role_ids:
@@ -873,6 +891,15 @@ class HandlersMixin:
                     send_messages=False,
                     read_message_history=True,
                 )
+
+            # Preserve existing member overwrites but make them read-only
+            for target, overwrite in text_channel.overwrites.items():
+                if isinstance(target, discord.Member):
+                    archived_overwrites[target] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        read_message_history=True,
+                    )
 
             # Add whitelisted roles with read-only access
             whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
