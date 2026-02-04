@@ -35,6 +35,7 @@ class EventPolling(commands.Cog):
             polls={},  # poll_id -> poll data
             notification_channel_id=None,
             notification_message="{event} is starting at {timestamp}!",
+            notification_messages={},  # event_name -> message
             sent_notifications={},  # event_name -> last_notification_day_str (YYYY-MM-DD)
             event_roles={},  # event_name -> role_id
         )
@@ -447,7 +448,12 @@ class EventPolling(commands.Cog):
                                 
                                 if last_sent != today_str:
                                     # Send notification
-                                    msg_tmpl = guild_data.get("notification_message", "{event} is starting at {timestamp}!")
+                                    # Check for event-specific message first
+                                    custom_msgs = guild_data.get("notification_messages", {})
+                                    msg_tmpl = custom_msgs.get(event_name)
+                                    
+                                    if not msg_tmpl:
+                                        msg_tmpl = guild_data.get("notification_message", "{event} is starting at {timestamp}!")
                                     
                                     # Create timestamp
                                     event_dt = now.replace(second=0, microsecond=0)
@@ -1619,22 +1625,61 @@ class EventPolling(commands.Cog):
             await ctx.send("✅ Event notifications disabled")
 
     @eventpoll.command(name="setmessage")
-    async def eventpoll_setmessage(self, ctx: commands.Context, *, message: str = None):
+    async def eventpoll_setmessage(self, ctx: commands.Context, option: Optional[str] = None, *, message: str = None):
         """Set the notification message.
+        
+        You can set a specific message for an event (e.g. Party) or a default message for all events.
+        
+        Usage:
+        [p]eventpoll setmessage Party {event} is starting... (Set specifically for Party)
+        [p]eventpoll setmessage {event} is starting... (Set default for all events)
         
         Available placeholders:
         {event} - Event name
         {timestamp} - Discord timestamp of the event start
         {time_str} - Time string (e.g. 20:00)
         
-        Leave empty to reset to default.
+        Leave empty to reset default message.
+        To clear a specific event message, use: [p]eventpoll setmessage "Event Name"
         """
-        if message:
-            await self.config.guild(ctx.guild).notification_message.set(message)
-            await ctx.send(f"✅ Notification message set to:\n{message}")
+        # Check if the first argument matches a known event
+        target_event = None
+        full_message = ""
+        
+        if option:
+            # Check exact match or case-insensitive match against events
+            for event_name in self.events:
+                if option.lower() == event_name.lower():
+                    target_event = event_name
+                    break
+            
+            if not target_event:
+                # Not an event name, treat as part of the message
+                full_message = option
+                if message:
+                    full_message += " " + message
+            else:
+                # It is an event name, message is the rest
+                full_message = message or ""
+        
+        if target_event:
+            # Setting an event-specific message
+            async with self.config.guild(ctx.guild).notification_messages() as messages:
+                if full_message:
+                    messages[target_event] = full_message
+                    await ctx.send(f"✅ Notification message for **{target_event}** set to:\n{full_message}")
+                else:
+                    if target_event in messages:
+                        del messages[target_event]
+                    await ctx.send(f"✅ Notification message for **{target_event}** reset to default")
         else:
-            await self.config.guild(ctx.guild).notification_message.clear()
-            await ctx.send("✅ Notification message reset to default")
+            # Setting the default message
+            if full_message:
+                await self.config.guild(ctx.guild).notification_message.set(full_message)
+                await ctx.send(f"✅ Default notification message set to:\n{full_message}")
+            else:
+                await self.config.guild(ctx.guild).notification_message.clear()
+                await ctx.send("✅ Default notification message reset to default")
 
     @eventpoll.command(name="setrole")
     async def eventpoll_setrole(self, ctx: commands.Context, event_name: str, role: discord.Role = None):
@@ -1657,6 +1702,50 @@ class EventPolling(commands.Cog):
                 if event_name in roles:
                     del roles[event_name]
                 await ctx.send(f"✅ Cleared role for **{event_name}**")
+
+    @eventpoll.command(name="settings")
+    async def eventpoll_settings(self, ctx: commands.Context):
+        """View current eventpoll configuration settings."""
+        guild_data = await self.config.guild(ctx.guild).all()
+        
+        channel_id = guild_data.get("notification_channel_id")
+        channel = ctx.guild.get_channel(channel_id) if channel_id else None
+        
+        notif_msg = guild_data.get("notification_message")
+        custom_msgs = guild_data.get("notification_messages", {})
+        event_roles = guild_data.get("event_roles", {})
+        
+        embed = discord.Embed(
+            title="⚙️ EventPoll Settings",
+            color=self._get_embed_color(ctx.guild)
+        )
+        
+        embed.add_field(
+            name="Notification Channel",
+            value=channel.mention if channel else "Disabled",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Default Notification Message",
+            value=f"```\n{notif_msg}\n```",
+            inline=False
+        )
+        
+        if custom_msgs:
+            custom_msg_text = ""
+            for event, msg in custom_msgs.items():
+                custom_msg_text += f"**{event}**: {msg}\n"
+            embed.add_field(name="Custom Event Messages", value=custom_msg_text, inline=False)
+            
+        if event_roles:
+            role_text = ""
+            for event, role_id in event_roles.items():
+                role = ctx.guild.get_role(role_id)
+                role_text += f"**{event}**: {role.mention if role else f'Unknown ({role_id})'}\n"
+            embed.add_field(name="Event Roles", value=role_text, inline=False)
+            
+        await ctx.send(embed=embed)
 
     @eventpoll.command(name="export")
     async def export_backup(self, ctx: commands.Context):
