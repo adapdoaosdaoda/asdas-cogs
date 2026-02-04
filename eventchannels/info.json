@@ -12,6 +12,7 @@
         8,
         0
     ],
+    "version": "1.0.1",
     "name": "EventChannels",
     "requirements": [],
     "short": "Auto-create channels from Discord Scheduled Events with cleanup.",

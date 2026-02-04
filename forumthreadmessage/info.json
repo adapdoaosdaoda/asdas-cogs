@@ -1,4 +1,5 @@
 {
+    "version": "1.0.1",
     "name": "ForumThreadMessage",
     "short": "Automatically send messages in new forum threads",
     "description": "Monitors a configured forum channel for new threads and automatically sends a message that gets edited after 2 seconds and optionally deleted after another 2 seconds. All message content is configurable.",

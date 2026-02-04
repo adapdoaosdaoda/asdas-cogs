@@ -2,6 +2,7 @@
     "author": ["Assistant"],
     "description": "Enables Discord API v10 Rich Modal features (Selects, TextDisplay) via runtime monkey-patching.",
     "install_msg": "The ModalPatch cog has been installed. This cog monkey-patches discord.py to support Rich Modals.",
+    "version": "1.0.1",
     "name": "ModalPatch",
     "short": "Runtime patch for Rich Modal support",
     "min_bot_version": "3.5.0",

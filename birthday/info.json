@@ -12,6 +12,7 @@
         8,
         1
     ],
+    "version": "1.0.1",
     "name": "Birthday",
     "requirements": [],
     "short": "Birthday cog with customisable roles, messages and times.",
