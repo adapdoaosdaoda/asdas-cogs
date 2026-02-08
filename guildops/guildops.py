@@ -448,6 +448,10 @@ class GuildOps(commands.Cog):
         """Parses a forms message and returns (data_dict, failure_reasons)."""
         reasons = []
         
+        if not message.components:
+            reasons.append("Message has no components.")
+            return None, reasons
+
         content_text = message.content or ""
         embed_text = ""
         
@@ -548,17 +552,23 @@ class GuildOps(commands.Cog):
         if not message.guild or message.author.id == self.bot.user.id:
             return
 
-        # Check Forms Channel
-        forms_channel_id = await self.config.guild(message.guild).forms_channel()
-        if forms_channel_id and message.channel.id == forms_channel_id:
-             await self._handle_form_message(message)
-
         # Check OCR Channel
         ocr_channel_id = await self.config.guild(message.guild).ocr_channel()
         if ocr_channel_id and message.channel.id == ocr_channel_id:
             log.info(f"GuildOps: Message in OCR channel {ocr_channel_id} from {message.author} (Bot: {message.author.bot})")
             if not message.author.bot:
                  await self._handle_ocr_message(message)
+
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if not after.guild or after.author.id == self.bot.user.id:
+            return
+
+        # Check Forms Channel
+        forms_channel_id = await self.config.guild(after.guild).forms_channel()
+        if forms_channel_id and after.channel.id == forms_channel_id:
+            if after.components:
+                 await self._handle_form_message(after)
 
     async def _handle_form_message(self, message):
         data, reasons = self._parse_forms_message(message)
