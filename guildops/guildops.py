@@ -583,11 +583,18 @@ class GuildOps(commands.Cog):
                 try:
                     member = message.guild.get_member(int(data['discord_id']))
                     if member:
-                        new_nick = f"{member.display_name} ({data['ign']})"
-                        if len(new_nick) <= 32:
-                            await member.edit(nick=new_nick, reason="GuildOps: Form Accepted")
-                        else:
-                            log.warning(f"Nickname '{new_nick}' too long for {member}")
+                        display_name = member.display_name
+                        ign = data['ign']
+                        new_nick = f"{display_name} ({ign})"
+                        if len(new_nick) > 32:
+                            # space + ( + ) = 3 chars
+                            max_ign_len = 32 - len(display_name) - 3
+                            if max_ign_len > 0:
+                                new_nick = f"{display_name} ({ign[:max_ign_len]})"
+                            else:
+                                new_nick = display_name[:32]
+                        
+                        await member.edit(nick=new_nick, reason="GuildOps: Form Accepted")
                 except Exception as e:
                     log.error(f"Failed to update nickname for {data['discord_id']}: {e}")
             else:
