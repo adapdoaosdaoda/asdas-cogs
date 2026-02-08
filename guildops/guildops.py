@@ -745,7 +745,7 @@ class GuildOps(commands.Cog):
                 
                 log.info(f"GuildOps: Processed {processed_count} valid entries from {att.filename}")
                 if processed_count > 0:
-                    await message.add_reaction("👀")
+                    await message.add_reaction("✅")
                     # Send summary to channel
                     summary = f"**OCR Processing Results ({att.filename})**\n" + "\n".join(results)
                     await message.channel.send(summary)
