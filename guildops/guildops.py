@@ -580,6 +580,16 @@ class GuildOps(commands.Cog):
             success, msg = await self._sync_data_to_sheet(sheet_id, [data])
             if success:
                 await message.add_reaction("✅")
+                try:
+                    member = message.guild.get_member(int(data['discord_id']))
+                    if member:
+                        new_nick = f"{member.display_name} ({data['ign']})"
+                        if len(new_nick) <= 32:
+                            await member.edit(nick=new_nick, reason="GuildOps: Form Accepted")
+                        else:
+                            log.warning(f"Nickname '{new_nick}' too long for {member}")
+                except Exception as e:
+                    log.error(f"Failed to update nickname for {data['discord_id']}: {e}")
             else:
                 log.warning(f"Failed to sync form: {msg}")
                 await message.add_reaction("❌")
