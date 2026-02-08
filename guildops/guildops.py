@@ -582,7 +582,7 @@ class GuildOps(commands.Cog):
                 await message.add_reaction("✅")
                 try:
                     member = message.guild.get_member(int(data['discord_id']))
-                    if member:
+                    if member and member.nick is None:
                         display_name = member.display_name
                         ign = data['ign']
                         new_nick = f"{display_name} ({ign})"
