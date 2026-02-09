@@ -570,21 +570,38 @@ class ActivityDashboardView(discord.ui.View):
         total_vc = sum(p_vc.values())
         
         active_in_period = set()
-        user_scores = [] # (uid, msgs) for leaderboard
+        user_msg_scores = [] 
+        user_vc_scores = []
         
         for uid, d in users.items():
+            # Messages
             u_p_msgs = self.cog._get_period_data(d.get("daily_messages", {}), stats_months, 0)
-            score = sum(u_p_msgs.values())
-            if score > 0:
+            msg_score = sum(u_p_msgs.values())
+            if msg_score > 0:
                 active_in_period.add(uid)
-                user_scores.append((uid, score))
+                user_msg_scores.append((uid, msg_score))
+            
+            # VC
+            u_p_vc = self.cog._get_period_data(d.get("daily_vc_minutes", {}), stats_months, 0)
+            vc_score = sum(u_p_vc.values())
+            if vc_score > 0:
+                active_in_period.add(uid)
+                user_vc_scores.append((uid, vc_score))
         
-        user_scores.sort(key=lambda x: x[1], reverse=True)
-        top_3 = []
-        for uid, score in user_scores[:3]:
+        user_msg_scores.sort(key=lambda x: x[1], reverse=True)
+        user_vc_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        top_3_msgs = []
+        for uid, score in user_msg_scores[:3]:
             member = self.ctx.guild.get_member(int(uid))
             name = member.display_name if member else f"Left ({uid})"
-            top_3.append(f"• **{name}**: {score:,}")
+            top_3_msgs.append(f"• **{name}**: {score:,}")
+
+        top_3_vc = []
+        for uid, score in user_vc_scores[:3]:
+            member = self.ctx.guild.get_member(int(uid))
+            name = member.display_name if member else f"Left ({uid})"
+            top_3_vc.append(f"• **{name}**: {score:,.1f}m")
 
         # 2. Retention Calculation (Sliced)
         if self.months == 0:
@@ -662,7 +679,8 @@ class ActivityDashboardView(discord.ui.View):
         
         embed.add_field(name="📊 Period Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m\n**Active Users:** {len(active_in_period)}", inline=True)
         embed.add_field(name="📈 Retention ({})".format(ret_label), value=f"**Rate:** {retention:.1f}%\n**Window Active:** {ret_active_count}{coverage_warning}", inline=True)
-        embed.add_field(name="🏆 Top 3 Members", value="\n".join(top_3) or "No data", inline=False)
+        embed.add_field(name="💬 Top 3 Messages", value="\n".join(top_3_msgs) or "No data", inline=True)
+        embed.add_field(name="🎙️ Top 3 Voice", value="\n".join(top_3_vc) or "No data", inline=True)
         embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
         embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=False)
         
