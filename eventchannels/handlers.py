@@ -145,6 +145,9 @@ class HandlersMixin:
             # Add explicit overwrites for all members with the role
             # This ensures access persists even if the role is deleted
             for member in role.members:
+                if len(overwrites) >= 100:
+                    log.warning(f"Maximum number of overwrites (100) reached for event '{event.name}'. Some members may not have explicit overwrites.")
+                    break
                 overwrites[member] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True,
@@ -155,6 +158,8 @@ class HandlersMixin:
             # Add whitelisted roles to overwrites
             whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
             for whitelisted_role_id in whitelisted_role_ids:
+                if len(overwrites) >= 100:
+                    break
                 whitelisted_role = guild.get_role(whitelisted_role_id)
                 if whitelisted_role:
                     overwrites[whitelisted_role] = discord.PermissionOverwrite(
@@ -610,6 +615,9 @@ class HandlersMixin:
             # Add explicit overwrites for all members with the role
             # This ensures access persists even if the role is deleted
             for member in role.members:
+                if len(overwrites) >= 100:
+                    log.warning(f"Force create: Maximum number of overwrites (100) reached for event '{event.name}'. Some members may not have explicit overwrites.")
+                    break
                 overwrites[member] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True,
@@ -620,6 +628,8 @@ class HandlersMixin:
             # Add whitelisted roles to overwrites
             whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
             for whitelisted_role_id in whitelisted_role_ids:
+                if len(overwrites) >= 100:
+                    break
                 whitelisted_role = guild.get_role(whitelisted_role_id)
                 if whitelisted_role:
                     overwrites[whitelisted_role] = discord.PermissionOverwrite(
@@ -884,26 +894,11 @@ class HandlersMixin:
                 ),
             }
 
-            # If role still exists, give it read-only access
-            if role:
-                archived_overwrites[role] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=False,
-                    read_message_history=True,
-                )
-
-            # Preserve existing member overwrites but make them read-only
-            for target, overwrite in text_channel.overwrites.items():
-                if isinstance(target, discord.Member):
-                    archived_overwrites[target] = discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=False,
-                        read_message_history=True,
-                    )
-
             # Add whitelisted roles with read-only access
             whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
             for whitelisted_role_id in whitelisted_role_ids:
+                if len(archived_overwrites) >= 100:
+                    break
                 whitelisted_role = guild.get_role(whitelisted_role_id)
                 if whitelisted_role:
                     archived_overwrites[whitelisted_role] = discord.PermissionOverwrite(
@@ -911,6 +906,38 @@ class HandlersMixin:
                         send_messages=False,
                         read_message_history=True,
                     )
+
+            # Preserve existing member overwrites but make them read-only
+            for target, overwrite in text_channel.overwrites.items():
+                if len(archived_overwrites) >= 100:
+                    break
+                if isinstance(target, discord.Member):
+                    archived_overwrites[target] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        read_message_history=True,
+                    )
+
+            # If role still exists, give it read-only access and add all its members
+            # This ensures access persists even after the role is deleted
+            if role:
+                if len(archived_overwrites) < 100:
+                    archived_overwrites[role] = discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=False,
+                        read_message_history=True,
+                    )
+                
+                for member in role.members:
+                    if len(archived_overwrites) >= 100:
+                        log.warning(f"Maximum number of overwrites (100) reached for archived channel {text_channel.name}. Some members may lose access.")
+                        break
+                    if member not in archived_overwrites:
+                        archived_overwrites[member] = discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=False,
+                            read_message_history=True,
+                        )
 
             # Move channel to archive category and update permissions
             # Ensure archived name doesn't exceed Discord's 100-character limit

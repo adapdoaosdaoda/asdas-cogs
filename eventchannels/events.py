@@ -157,8 +157,8 @@ class EventsMixin:
                         # Since we don't have the full event object, extract from role name if possible
                         event_name = f"event-{event_id}"
 
-                        # Archive the channel (role is None since it was deleted)
-                        archived = await self._archive_text_channel(guild, text_channel, None, event_name, event_id)
+                        # Archive the channel (pass the role even though it was deleted)
+                        archived = await self._archive_text_channel(guild, text_channel, role, event_name, event_id)
                         if archived:
                             log.info(f"Archived text channel for event {event_id} after role deletion")
                         else:
@@ -216,6 +216,74 @@ class EventsMixin:
 
         # Check if divider should be deleted (no more event roles)
         await self._cleanup_divider_if_empty(guild)
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        """Grant individual overwrites when a member receives an event role.
+        
+        This ensures access is persistent even if they later lose the role 
+        or the role is deleted.
+        """
+        # Only check if roles changed
+        if before.roles == after.roles:
+            return
+
+        # Find roles that were added
+        added_roles = [role for role in after.roles if role not in before.roles]
+        if not added_roles:
+            return
+
+        guild = after.guild
+        stored = await self.config.guild(guild).event_channels()
+        if not stored:
+            return
+
+        # Check if any added role is an active event role
+        for event_id, data in stored.items():
+            role_id = data.get("role")
+            if not role_id:
+                continue
+
+            # If the member just got this event's role
+            if any(r.id == role_id for r in added_roles):
+                # Grant explicit overwrites for all channels associated with this event
+                channels = []
+                
+                # Text channel
+                text_channel_id = data.get("text")
+                if text_channel_id:
+                    text_channel = guild.get_channel(text_channel_id)
+                    if text_channel:
+                        channels.append(text_channel)
+                
+                # Voice channels
+                voice_channel_ids = data.get("voice", [])
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+                for vc_id in voice_channel_ids:
+                    vc = guild.get_channel(vc_id)
+                    if vc:
+                        channels.append(vc)
+
+                for channel in channels:
+                    try:
+                        # Check 100-overwrite limit
+                        if len(channel.overwrites) < 100 or after in channel.overwrites:
+                            await channel.set_permissions(
+                                after,
+                                view_channel=True,
+                                send_messages=True,
+                                connect=True,
+                                speak=True,
+                                reason="Member received event role (granting persistent access)"
+                            )
+                            log.info(f"Granted persistent access to {after.name} for channel {channel.name}")
+                        else:
+                            log.warning(f"Could not grant persistent access to {after.name} for channel {channel.name} - 100 overwrite limit reached")
+                    except discord.Forbidden:
+                        pass
+                    except Exception as e:
+                        log.error(f"Error granting persistent access to {after.name} for channel {channel.name}: {e}")
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):

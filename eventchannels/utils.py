@@ -91,6 +91,9 @@ class UtilsMixin:
                         for member in role.members:
                             if member not in current_overwrites:
                                 # Add overwrite if missing
+                                if len(current_overwrites) >= 100:
+                                    log.warning(f"Maximum number of overwrites (100) reached for channel {channel.name}. Skipping remaining members.")
+                                    break
                                 current_overwrites[member] = discord.PermissionOverwrite(
                                     view_channel=True,
                                     send_messages=True,
