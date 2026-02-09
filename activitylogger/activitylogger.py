@@ -23,6 +23,7 @@ class ActivityLogger(commands.Cog):
         default_guild = {
             "users": {}, 
             "backtracked_channels": [],
+            "staff_roles": [],
             "global_daily_messages": {},
             "global_daily_vc_minutes": {},
             "global_daily_hourly_messages": {}, # date -> [0]*24
@@ -240,10 +241,33 @@ class ActivityLogger(commands.Cog):
         """Activity logging commands."""
         pass
 
+    @activity.command(name="roles")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def activity_roles(self, ctx, role: discord.Role):
+        """Add/Remove a role that can view other users' stats and interact with any buttons."""
+        async with self.config.guild(ctx.guild).staff_roles() as roles:
+            if role.id in roles:
+                roles.remove(role.id)
+                await ctx.send(f"✅ Role `{role.name}` removed from staff roles.")
+            else:
+                roles.append(role.id)
+                await ctx.send(f"✅ Role `{role.name}` added to staff roles.")
+
     @activity.command(name="stats")
     async def activity_stats(self, ctx, member: Optional[discord.Member] = None):
         """View activity stats with interactive period switching."""
         member = member or ctx.author
+        
+        # Privacy Check
+        if member != ctx.author:
+            is_owner = await self.bot.is_owner(ctx.author)
+            staff_ids = await self.config.guild(ctx.guild).staff_roles()
+            has_staff_role = any(r.id in staff_ids for r in ctx.author.roles)
+            is_admin = ctx.author.guild_permissions.manage_guild
+            
+            if not (is_owner or is_admin or has_staff_role):
+                return await ctx.send("❌ You do not have permission to view other users' statistics.")
+
         users = await self.config.guild(ctx.guild).users()
         data = users.get(str(member.id))
         if not data: return await ctx.send("No data.")
@@ -429,6 +453,16 @@ class ActivityDashboardView(discord.ui.View):
         embed = await self.make_embed()
         self.message = await self.ctx.send(embed=embed, view=self)
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        is_owner = await self.cog.bot.is_owner(interaction.user)
+        staff_ids = await self.cog.config.guild(self.ctx.guild).staff_roles()
+        has_staff_role = any(r.id in staff_ids for r in interaction.user.roles)
+        is_admin = interaction.user.guild_permissions.manage_guild
+        if is_owner or is_admin or has_staff_role:
+            return True
+        await interaction.response.send_message("❌ Only staff can interact with the global dashboard.", ephemeral=True)
+        return False
+
     async def make_embed(self):
         conf = await self.cog.config.guild(self.ctx.guild).all()
         users, t, stats_months = conf.get("users", {}), date.today(), self.months
@@ -527,6 +561,18 @@ class ActivityUserStatsView(discord.ui.View):
     async def start(self):
         embed = await self.make_embed()
         self.message = await self.ctx.send(embed=embed, view=self)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.member.id:
+            return True
+        is_owner = await self.cog.bot.is_owner(interaction.user)
+        staff_ids = await self.cog.config.guild(self.ctx.guild).staff_roles()
+        has_staff_role = any(r.id in staff_ids for r in interaction.user.roles)
+        is_admin = interaction.user.guild_permissions.manage_guild
+        if is_owner or is_admin or has_staff_role:
+            return True
+        await interaction.response.send_message("❌ You can only interact with your own statistics.", ephemeral=True)
+        return False
 
     async def make_embed(self):
         m = self.months
