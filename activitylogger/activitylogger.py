@@ -522,61 +522,56 @@ class ActivityDashboardView(discord.ui.View):
         conf = await self.cog.config.guild(self.ctx.guild).all()
         users = conf.get("users", {})
         
-        # Mapping: button_id -> (months_in_window, offset_months)
-        period_map = {
-            1: (1, 0),    # 0-30 days
-            3: (3, 0),    # 0-90 days
-            6: (3, 3),    # 90-180 days (Months 4-6)
-            9: (3, 6),    # 180-270 days (Months 7-9)
-            0: (0, 0)     # Global
+        # Stats Period (Cumulative 0-X)
+        stats_months = self.months
+        
+        # Retention Period (Sliced Windows)
+        # Mapping: button_id -> (ret_offset, ret_window, prev_offset, prev_window)
+        ret_map = {
+            1: (0, 1, 1, 1),    # 0-30d vs 30-60d
+            3: (0, 3, 3, 3),    # 0-90d vs 90-180d
+            6: (3, 3, 6, 3),    # 90-180d (M4-6) vs 180-270d (M7-9)
+            9: (6, 3, 9, 3),    # 180-270d (M7-9) vs 270-360d (M10-12)
+            0: (0, 1, 1, 1)     # Default 1m for Global
         }
         
-        # Mapping for retention comparison: button_id -> (months_in_prev_window, offset_prev_months)
-        prev_map = {
-            1: (1, 1),    # 30-60 days
-            3: (3, 3),    # 90-180 days
-            6: (3, 6),    # 180-270 days
-            9: (3, 9),    # 270-360 days
-            0: (1, 1)     # Default 1 month comparison for global
-        }
+        r_off, r_win, p_off, p_win = ret_map[self.months]
         
-        m_win, m_off = period_map[self.months]
-        m_prev_win, m_prev_off = prev_map[self.months]
-        
-        # Period filtering
-        p_msgs = self.cog._get_period_data(conf["global_daily_messages"], m_win, m_off)
-        p_vc = self.cog._get_period_data(conf["global_daily_vc_minutes"], m_win, m_off)
+        # Period filtering for Stats (Cumulative)
+        p_msgs = self.cog._get_period_data(conf["global_daily_messages"], stats_months, 0)
+        p_vc = self.cog._get_period_data(conf["global_daily_vc_minutes"], stats_months, 0)
         
         total_msgs = sum(p_msgs.values())
         total_vc = sum(p_vc.values())
         
-        # Retention
+        # Retention Calculation (Sliced)
         t = date.today()
-        m1 = t - timedelta(days=m_off * 30)
-        m2 = t - timedelta(days=(m_off + m_win) * 30) if m_win > 0 else t - timedelta(days=30)
-        m3 = t - timedelta(days=(m_prev_off + m_prev_win) * 30)
+        # Current retention window
+        m_curr_start = t - timedelta(days=r_off * 30)
+        m_curr_end = t - timedelta(days=(r_off + r_win) * 30)
+        # Previous retention window
+        m_prev_start = m_curr_end
+        m_prev_end = t - timedelta(days=(p_off + p_win) * 30)
         
         # Check history coverage for warning
         history_dates = [date.fromisoformat(d) for d in conf.get("global_daily_messages", {}).keys()]
         oldest_data = min(history_dates) if history_dates else t
         coverage_warning = ""
-        if oldest_data > m3:
-            coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m3).days}d for full retention comparison)*"
+        if oldest_data > m_prev_end:
+            coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m_prev_end).days}d for full retention comparison)*"
         
-        # Active in current window
+        # Active in current retention window
         active_now = set()
         for uid, d in users.items():
             daily = d.get("daily_messages", {})
-            if any(m2 <= date.fromisoformat(ds) < m1 for ds in daily.keys()):
+            if any(m_curr_end <= date.fromisoformat(ds) < m_curr_start for ds in daily.keys()):
                 active_now.add(uid)
-        if self.months == 0: # Global optimization
-             active_now = {uid for uid, d in users.items() if d.get("last_active")}
 
-        # Active in previous window
+        # Active in previous retention window
         active_prev = set()
         for uid, d in users.items():
             daily = d.get("daily_messages", {})
-            if any(m3 <= date.fromisoformat(ds) < m2 for ds in daily.keys()):
+            if any(m_prev_end <= date.fromisoformat(ds) < m_prev_start for ds in daily.keys()):
                 active_prev.add(uid)
         
         retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
@@ -597,12 +592,13 @@ class ActivityDashboardView(discord.ui.View):
             suffix = " 🔥" if rank == 1 and msgs_by_day[i] > 0 else ""
             dist_lines.append(f"**{day_names[i]}:** {msgs_by_day[i]:,} `(#{rank})`{suffix}")
         
-        # Trends - Hourly breakdown
+        # Trends - Hourly breakdown (Cumulative)
         hourly_data = [0] * 24
         daily_hourly = conf.get("global_daily_hourly_messages", {})
+        cutoff = t - timedelta(days=stats_months * 30) if stats_months > 0 else None
+        
         for d_str, hours in daily_hourly.items():
-            d = date.fromisoformat(d_str)
-            if d <= m1 and (m_win == 0 or d > m2):
+            if cutoff is None or date.fromisoformat(d_str) >= cutoff:
                 for h in range(24):
                     hourly_data[h] += hours[h]
 
@@ -615,17 +611,17 @@ class ActivityDashboardView(discord.ui.View):
         heatmap_str = "\n".join(heatmap_lines)
 
         # Label logic
-        period_label = "Global"
-        if self.months == 1: period_label = "Last 1 Month"
-        elif self.months == 3: period_label = "Months 1-3"
-        elif self.months == 6: period_label = "Months 4-6"
-        elif self.months == 9: period_label = "Months 7-9"
+        period_label = "Global" if self.months == 0 else f"Last {self.months} Months"
+        ret_label = "Last 1 Month"
+        if self.months == 3: ret_label = "Months 1-3"
+        elif self.months == 6: ret_label = "Months 4-6"
+        elif self.months == 9: ret_label = "Months 7-9"
 
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
-        embed.set_footer(text=f"Period: {period_label}{coverage_warning.replace('⚠️ ', '')}")
+        embed.set_footer(text=f"Stats: {period_label} | Retention: {ret_label}{coverage_warning.replace('⚠️ ', '')}")
         
         embed.add_field(name="📊 Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m", inline=True)
-        embed.add_field(name="📈 Retention", value=f"**Period Rate:** {retention:.1f}%\n**Active Users:** {len(active_now)}{coverage_warning}", inline=True)
+        embed.add_field(name="📈 Retention ({})".format(ret_label), value=f"**Rate:** {retention:.1f}%\n**Active Users:** {len(active_now)}{coverage_warning}", inline=True)
         
         embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
         embed.add_field(name="⏰ Hourly Activity Breakdown", value=heatmap_str[:1024], inline=False)
@@ -637,17 +633,17 @@ class ActivityDashboardView(discord.ui.View):
         self.months = 1
         await self.update(interaction)
 
-    @discord.ui.button(label="1-3 Months", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="3 Months", style=discord.ButtonStyle.gray)
     async def three_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 3
         await self.update(interaction)
 
-    @discord.ui.button(label="4-6 Months", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="6 Months", style=discord.ButtonStyle.gray)
     async def six_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 6
         await self.update(interaction)
 
-    @discord.ui.button(label="7-9 Months", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="9 Months", style=discord.ButtonStyle.gray)
     async def nine_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 9
         await self.update(interaction)
@@ -666,9 +662,9 @@ class ActivityDashboardView(discord.ui.View):
                 child.style = discord.ButtonStyle.primary if (
                     (child.label == "Global" and self.months == 0) or 
                     (child.label == "1 Month" and self.months == 1) or
-                    (child.label == "1-3 Months" and self.months == 3) or
-                    (child.label == "4-6 Months" and self.months == 6) or
-                    (child.label == "7-9 Months" and self.months == 9)
+                    (child.label == "3 Months" and self.months == 3) or
+                    (child.label == "6 Months" and self.months == 6) or
+                    (child.label == "9 Months" and self.months == 9)
                 ) else discord.ButtonStyle.gray
                 
         embed = await self.make_embed()
