@@ -683,17 +683,16 @@ class ActivityDashboardView(discord.ui.View):
         # Row 1: Period Totals / Retention
         embed.add_field(name="📊 Period Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m\n**Active Users:** {len(active_in_period)}", inline=True)
         embed.add_field(name="📈 Retention ({})".format(ret_label), value=f"**Rate:** {retention:.1f}%\n**Window Active:** {ret_active_count}{coverage_warning}", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False) # Row break
 
         # Row 2: Top 3 Messages / Top 3 Voice
         embed.add_field(name="💬 Top 3 Messages", value="\n".join(top_3_msgs) or "No data", inline=True)
         embed.add_field(name="🎙️ Top 3 Voice", value="\n".join(top_3_vc) or "No data", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False) # Row break
 
         # Row 3: Daily Distribution / Hourly Breakdown
         embed.add_field(name="📅 Daily Distribution", value="\n".join(dist_lines), inline=True)
         embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
         
         return embed
 
