@@ -6,7 +6,6 @@ from typing import Dict, Any, Optional, Set, List, Tuple
 
 from redbot.core import commands, Config, checks
 from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import paginated_text_entry, box
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from discord.ext import tasks
 
