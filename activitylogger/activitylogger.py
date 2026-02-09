@@ -511,9 +511,13 @@ class ActivityDashboardView(discord.ui.View):
         total_msgs = sum(p_msgs.values())
         total_vc = sum(p_vc.values())
         
-        # Retention (always uses same logic but helpful context)
+        # Retention based on selected period
         t = date.today()
-        m1, m2 = t - timedelta(days=30), t - timedelta(days=60)
+        # Use 1 month as fallback for Global period retention context
+        r_months = self.months if self.months > 0 else 1
+        m1 = t - timedelta(days=r_months * 30)
+        m2 = t - timedelta(days=r_months * 60)
+        
         active_now = {uid for uid, d in users.items() if any(date.fromisoformat(ds) >= m1 for ds in d.get("daily_messages", {}))}
         active_prev = {uid for uid, d in users.items() if any(m2 <= date.fromisoformat(ds) < m1 for ds in d.get("daily_messages", {}))}
         retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
@@ -559,7 +563,7 @@ class ActivityDashboardView(discord.ui.View):
         embed.set_footer(text=f"Period: {period_label}")
         
         embed.add_field(name="📊 Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m", inline=True)
-        embed.add_field(name="📈 Retention", value=f"**Monthly:** {retention:.1f}%\n**Active Users:** {len(active_now)}", inline=True)
+        embed.add_field(name="📈 Retention", value=f"**Period Rate:** {retention:.1f}%\n**Active Users:** {len(active_now)}", inline=True)
         
         embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
         embed.add_field(name="⏰ Hourly Activity Breakdown", value=heatmap_str[:1024], inline=False)
