@@ -261,37 +261,15 @@ class ActivityLogger(commands.Cog):
         pass
 
     @activity.command(name="stats")
-    async def activity_stats(self, ctx, member: Optional[discord.Member] = None, months: int = 0):
-        """View activity stats with streaks and behavior tags."""
+    async def activity_stats(self, ctx, member: Optional[discord.Member] = None):
+        """View activity stats with interactive period switching."""
         member = member or ctx.author
         users = await self.config.guild(ctx.guild).users()
         data = users.get(str(member.id))
         if not data: return await ctx.send("No data.")
-
-        period_msgs = self._get_period_data(data.get("daily_messages", {}), months)
-        period_vc = self._get_period_data(data.get("daily_vc_minutes", {}), months)
-        total_msgs = sum(period_msgs.values())
-        total_vc_min = sum(period_vc.values())
-
-        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        msgs_by_day = [0] * 7
-        for d_str, count in period_msgs.items():
-            msgs_by_day[date.fromisoformat(d_str).weekday()] += count
         
-        # Tagging
-        hourly_msgs = data.get("hourly_messages", [0]*24)
-        night_msgs = sum(hourly_msgs[0:6]) + sum(hourly_msgs[22:24])
-        behavior = "Consistent"
-        if total_msgs > 0:
-            if night_msgs / total_msgs > 0.6: behavior = "Night Owl"
-            elif (msgs_by_day[5] + msgs_by_day[6]) / total_msgs > 0.6: behavior = "Weekend Warrior"
-
-        embed = discord.Embed(title=f"Activity Stats: {member.display_name}", color=member.color)
-        embed.add_field(name="💬 Messaging", value=f"**Total:** {total_msgs}\n**Peak:** {day_names[msgs_by_day.index(max(msgs_by_day))] if total_msgs > 0 else 'N/A'}\n**Behavior:** {behavior}", inline=True)
-        embed.add_field(name="🔥 Streaks", value=f"**Current:** {data.get('current_streak', 0)}d\n**Best:** {data.get('best_streak', 0)}d", inline=True)
-        embed.add_field(name="🎙️ Voice", value=f"**Total:** {total_vc_min:.1f}m\n**Days:** {len(period_vc)}", inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await ctx.send(embed=embed)
+        view = ActivityUserStatsView(self, ctx, member, data)
+        await view.start()
 
     @activity.command(name="trends")
     async def activity_trends(self, ctx, months: int = 0):
@@ -686,8 +664,9 @@ class ActivityDashboardView(discord.ui.View):
         embed.add_field(name="\u200b", value="\u200b", inline=False) # Row break
 
         # Row 2: Top 3 Messages / Top 3 Voice
-        embed.add_field(name="💬 Top 3 Messages", value="\n".join(top_3_msgs) or "No data", inline=True)
-        embed.add_field(name="🎙️ Top 3 Voice", value="\n".join(top_3_vc) or "No data", inline=True)
+        top_label = " (Past 12 Months)" if self.months == 0 else ""
+        embed.add_field(name=f"💬 Top 3 Messages{top_label}", value="\n".join(top_3_msgs) or "No data", inline=True)
+        embed.add_field(name=f"🎙️ Top 3 Voice{top_label}", value="\n".join(top_3_vc) or "No data", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=False) # Row break
 
         # Row 3: Daily Distribution / Hourly Breakdown
@@ -732,5 +711,190 @@ class ActivityDashboardView(discord.ui.View):
                     (child.label == "9 Months" and self.months == 9)
                 ) else discord.ButtonStyle.gray
                 
-        embed = await self.make_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+                embed = await self.make_embed()
+                
+                await interaction.response.edit_message(embed=embed, view=self)
+                
+        
+                
+        class ActivityUserStatsView(discord.ui.View):
+                
+            def __init__(self, cog, ctx, member, data):
+                
+                super().__init__(timeout=120)
+                
+                self.cog = cog
+                
+                self.ctx = ctx
+                
+                self.member = member
+                
+                self.data = data
+                
+                self.months = 1
+                
+                self.message = None
+                
+        
+                
+            async def on_timeout(self):
+                
+                if self.message:
+                
+                    try:
+                
+                        await self.message.edit(view=None)
+                
+                    except discord.HTTPException:
+                
+                        pass
+                
+        
+                
+            async def start(self):
+                
+                embed = await self.make_embed()
+                
+                self.message = await self.ctx.send(embed=embed, view=self)
+                
+        
+                
+            async def make_embed(self):
+                
+                months = self.months
+                
+                period_msgs = self.cog._get_period_data(self.data.get("daily_messages", {}), months)
+                
+                period_vc = self.cog._get_period_data(self.data.get("daily_vc_minutes", {}), months)
+                
+                total_msgs = sum(period_msgs.values())
+                
+                total_vc_min = sum(period_vc.values())
+                
+        
+                
+                day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                
+                msgs_by_day = [0] * 7
+                
+                for d_str, count in period_msgs.items():
+                
+                    msgs_by_day[date.fromisoformat(d_str).weekday()] += count
+                
+                
+                
+                # Tagging
+                
+                hourly_msgs = self.data.get("hourly_messages", [0]*24)
+                
+                night_msgs = sum(hourly_msgs[0:6]) + sum(hourly_msgs[22:24])
+                
+                behavior = "Consistent"
+                
+                if total_msgs > 0:
+                
+                    if night_msgs / (total_msgs + 1) > 0.6: behavior = "Night Owl"
+                
+                    elif (msgs_by_day[5] + msgs_by_day[6]) / (total_msgs + 1) > 0.6: behavior = "Weekend Warrior"
+                
+        
+                
+                period_label = "Past 12 Months" if months == 0 else f"Last {months} Months"
+                
+                embed = discord.Embed(title=f"Activity Stats: {self.member.display_name}", color=self.member.color)
+                
+                embed.set_thumbnail(url=self.member.display_avatar.url)
+                
+                embed.set_footer(text=f"Period: {period_label}")
+                
+        
+                
+                embed.add_field(name="💬 Messaging", value=f"**Total:** {total_msgs:,}\n**Peak:** {day_names[msgs_by_day.index(max(msgs_by_day))] if total_msgs > 0 else 'N/A'}\n**Behavior:** {behavior}", inline=True)
+                
+                embed.add_field(name="🔥 Streaks", value=f"**Current:** {self.data.get('current_streak', 0)}d\n**Best:** {self.data.get('best_streak', 0)}d", inline=True)
+                
+                embed.add_field(name="🎙️ Voice", value=f"**Total:** {total_vc_min:,.1f}m\n**Days Active:** {len(period_vc)}", inline=False)
+                
+                
+                
+                return embed
+                
+        
+                
+            @discord.ui.button(label="1 Month", style=discord.ButtonStyle.primary)
+                
+            async def one_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+                
+                self.months = 1
+                
+                await self.update(interaction)
+                
+        
+                
+            @discord.ui.button(label="3 Months", style=discord.ButtonStyle.gray)
+                
+            async def three_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+                
+                self.months = 3
+                
+                await self.update(interaction)
+                
+        
+                
+            @discord.ui.button(label="6 Months", style=discord.ButtonStyle.gray)
+                
+            async def six_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+                
+                self.months = 6
+                
+                await self.update(interaction)
+                
+        
+                
+            @discord.ui.button(label="9 Months", style=discord.ButtonStyle.gray)
+                
+            async def nine_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+                
+                self.months = 9
+                
+                await self.update(interaction)
+                
+        
+                
+            @discord.ui.button(label="Total", style=discord.ButtonStyle.gray)
+                
+            async def global_period(self, interaction: discord.Interaction, button: discord.ui.Button):
+                
+                self.months = 0
+                
+                await self.update(interaction)
+                
+        
+                
+            async def update(self, interaction: discord.Interaction):
+                
+                for child in self.children:
+                
+                    if isinstance(child, discord.ui.Button):
+                
+                        child.style = discord.ButtonStyle.primary if (
+                
+                            (child.label == "Total" and self.months == 0) or 
+                
+                            (child.label == "1 Month" and self.months == 1) or
+                
+                            (child.label == "3 Months" and self.months == 3) or
+                
+                            (child.label == "6 Months" and self.months == 6) or
+                
+                            (child.label == "9 Months" and self.months == 9)
+                
+                        ) else discord.ButtonStyle.gray
+                
+                        
+                
+                embed = await self.make_embed()
+                
+                await interaction.response.edit_message(embed=embed, view=self)
+                
+        
