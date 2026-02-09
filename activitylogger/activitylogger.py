@@ -41,10 +41,10 @@ class ActivityLogger(commands.Cog):
 
     @tasks.loop(hours=24)
     async def cleanup_task(self):
-        """Daily task to anonymize/purge data older than 2 years (to support long-period retention), and remove users who left 30+ days ago."""
+        """Daily task to anonymize/purge data older than 1 year, and remove users who left 30+ days ago."""
         all_guilds = await self.config.all_guilds()
         now_date = date.today()
-        purge_cutoff = now_date - timedelta(days=730) # 2 years
+        purge_cutoff = now_date - timedelta(days=365) # 1 year
         leave_cutoff = now_date - timedelta(days=30)
         
         for guild_id, settings in all_guilds.items():
@@ -232,10 +232,21 @@ class ActivityLogger(commands.Cog):
                     gdhvc = conf.setdefault("global_daily_hourly_vc_minutes", {})
                     gdhvc.setdefault(today_str, [0.0] * 24)[hour] += mins
 
-    def _get_period_data(self, daily_dict: Dict[str, Any], months: int) -> Dict[str, Any]:
-        if months <= 0: return daily_dict
-        cutoff = date.today() - timedelta(days=months * 30)
-        return {d: c for d, c in daily_dict.items() if date.fromisoformat(d) >= cutoff}
+    def _get_period_data(self, daily_dict: Dict[str, Any], months: int, start_offset_months: int = 0) -> Dict[str, Any]:
+        """Get data within a range. months=0 means until infinity."""
+        if months <= 0 and start_offset_months == 0: return daily_dict
+        today = date.today()
+        # Newer limit (offset)
+        t_limit_new = today - timedelta(days=start_offset_months * 30)
+        # Older limit (offset + months)
+        t_limit_old = today - timedelta(days=(start_offset_months + months) * 30) if months > 0 else None
+        
+        res = {}
+        for d_str, count in daily_dict.items():
+            d = date.fromisoformat(d_str)
+            if d <= t_limit_new and (t_limit_old is None or d > t_limit_old):
+                res[d_str] = count
+        return res
 
     @commands.group(aliases=["act"])
     @commands.guild_only()
@@ -493,7 +504,7 @@ class ActivityDashboardView(discord.ui.View):
         super().__init__(timeout=60)
         self.cog = cog
         self.ctx = ctx
-        self.months = 1 # Default to 1 Month
+        self.months = 1 # Button ID representing period
         self.message = None
 
     async def start(self):
@@ -504,35 +515,61 @@ class ActivityDashboardView(discord.ui.View):
         conf = await self.cog.config.guild(self.ctx.guild).all()
         users = conf.get("users", {})
         
+        # Mapping: button_id -> (months_in_window, offset_months)
+        period_map = {
+            1: (1, 0),    # 0-30 days
+            3: (3, 0),    # 0-90 days
+            6: (3, 3),    # 90-180 days (Months 4-6)
+            9: (3, 6),    # 180-270 days (Months 7-9)
+            0: (0, 0)     # Global
+        }
+        
+        # Mapping for retention comparison: button_id -> (months_in_prev_window, offset_prev_months)
+        prev_map = {
+            1: (1, 1),    # 30-60 days
+            3: (3, 3),    # 90-180 days
+            6: (3, 6),    # 180-270 days
+            9: (3, 9),    # 270-360 days
+            0: (1, 1)     # Default 1 month comparison for global
+        }
+        
+        m_win, m_off = period_map[self.months]
+        m_prev_win, m_prev_off = prev_map[self.months]
+        
         # Period filtering
-        p_msgs = self.cog._get_period_data(conf["global_daily_messages"], self.months)
-        p_vc = self.cog._get_period_data(conf["global_daily_vc_minutes"], self.months)
+        p_msgs = self.cog._get_period_data(conf["global_daily_messages"], m_win, m_off)
+        p_vc = self.cog._get_period_data(conf["global_daily_vc_minutes"], m_win, m_off)
         
         total_msgs = sum(p_msgs.values())
         total_vc = sum(p_vc.values())
         
-        # Retention based on selected period
+        # Retention
         t = date.today()
-        # Use 1 month as fallback for Global period retention context
-        r_months = self.months if self.months > 0 else 1
-        m1 = t - timedelta(days=r_months * 30)
-        m2 = t - timedelta(days=r_months * 60)
+        m1 = t - timedelta(days=m_off * 30)
+        m2 = t - timedelta(days=(m_off + m_win) * 30) if m_win > 0 else t - timedelta(days=30)
+        m3 = t - timedelta(days=(m_prev_off + m_prev_win) * 30)
         
-        # Check history coverage
+        # Check history coverage for warning
         history_dates = [date.fromisoformat(d) for d in conf.get("global_daily_messages", {}).keys()]
         oldest_data = min(history_dates) if history_dates else t
         coverage_warning = ""
-        if oldest_data > m2:
-            coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m2).days}d for full retention comparison)*"
+        if oldest_data > m3:
+            coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m3).days}d for full retention comparison)*"
         
-        # Optimized active sets
-        active_now = {uid for uid, d in users.items() if d.get("last_active") and date.fromisoformat(d["last_active"]) >= m1}
-        
-        # For active_prev we still need to check the daily keys as last_active only tracks the absolute latest
-        active_prev = set()
+        # Active in current window
+        active_now = set()
         for uid, d in users.items():
             daily = d.get("daily_messages", {})
             if any(m2 <= date.fromisoformat(ds) < m1 for ds in daily.keys()):
+                active_now.add(uid)
+        if self.months == 0: # Global optimization
+             active_now = {uid for uid, d in users.items() if d.get("last_active")}
+
+        # Active in previous window
+        active_prev = set()
+        for uid, d in users.items():
+            daily = d.get("daily_messages", {})
+            if any(m3 <= date.fromisoformat(ds) < m2 for ds in daily.keys()):
                 active_prev.add(uid)
         
         retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
@@ -555,15 +592,12 @@ class ActivityDashboardView(discord.ui.View):
         
         # Trends - Hourly breakdown
         hourly_data = [0] * 24
-        if self.months == 0:
-            hourly_data = conf["global_hourly_messages"]
-        else:
-            daily_hourly = conf.get("global_daily_hourly_messages", {})
-            cutoff = date.today() - timedelta(days=self.months * 30)
-            for d_str, hours in daily_hourly.items():
-                if date.fromisoformat(d_str) >= cutoff:
-                    for h in range(24):
-                        hourly_data[h] += hours[h]
+        daily_hourly = conf.get("global_daily_hourly_messages", {})
+        for d_str, hours in daily_hourly.items():
+            d = date.fromisoformat(d_str)
+            if d <= m1 and (m_win == 0 or d > m2):
+                for h in range(24):
+                    hourly_data[h] += hours[h]
 
         m_h = max(hourly_data) if any(hourly_data) else 1
         heatmap_lines = []
@@ -573,7 +607,13 @@ class ActivityDashboardView(discord.ui.View):
         
         heatmap_str = "\n".join(heatmap_lines)
 
-        period_label = "Global" if self.months == 0 else f"Last {self.months} Month{'s' if self.months > 1 else ''}"
+        # Label logic
+        period_label = "Global"
+        if self.months == 1: period_label = "Last 1 Month"
+        elif self.months == 3: period_label = "Months 1-3"
+        elif self.months == 6: period_label = "Months 4-6"
+        elif self.months == 9: period_label = "Months 7-9"
+
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
         embed.set_footer(text=f"Period: {period_label}{coverage_warning.replace('⚠️ ', '')}")
         
@@ -590,17 +630,17 @@ class ActivityDashboardView(discord.ui.View):
         self.months = 1
         await self.update(interaction)
 
-    @discord.ui.button(label="3 Months", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="1-3 Months", style=discord.ButtonStyle.gray)
     async def three_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 3
         await self.update(interaction)
 
-    @discord.ui.button(label="6 Months", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="4-6 Months", style=discord.ButtonStyle.gray)
     async def six_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 6
         await self.update(interaction)
 
-    @discord.ui.button(label="9 Months", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="7-9 Months", style=discord.ButtonStyle.gray)
     async def nine_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 9
         await self.update(interaction)
@@ -618,7 +658,10 @@ class ActivityDashboardView(discord.ui.View):
             if isinstance(child, discord.ui.Button):
                 child.style = discord.ButtonStyle.primary if (
                     (child.label == "Global" and self.months == 0) or 
-                    (child.label == f"{self.months} Month{'s' if self.months > 1 else ''}")
+                    (child.label == "1 Month" and self.months == 1) or
+                    (child.label == "1-3 Months" and self.months == 3) or
+                    (child.label == "4-6 Months" and self.months == 6) or
+                    (child.label == "7-9 Months" and self.months == 9)
                 ) else discord.ButtonStyle.gray
                 
         embed = await self.make_embed()
