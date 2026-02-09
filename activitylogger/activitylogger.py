@@ -353,12 +353,22 @@ class ActivityLogger(commands.Cog):
         rate = (len(a1 & a2) / len(a2) * 100) if a2 else 0
         await ctx.send(embed=discord.Embed(title="Retention", description=f"**Active (0-30d):** {len(a1)}\n**Active (30-60d):** {len(a2)}\n**Retention:** {rate:.1f}%", color=discord.Color.green()))
 
+    @activity.command(name="resetall")
+    @checks.is_owner()
+    async def activity_reset_all(self, ctx, confirm: bool = False):
+        """DANGEROUS: Wipe all activity data for this server and reset backtrack."""
+        if not confirm:
+            return await ctx.send("⚠️ This will permanently delete all logged activity data and streaks for this server. Use `[p]activity resetall true` to confirm.")
+        
+        await self.config.guild(ctx.guild).clear()
+        await ctx.send("✅ All activity data for this server has been wiped. Backtrack status has been reset.")
+
     @activity.command(name="resetbacktrack")
     @checks.admin_or_permissions(manage_guild=True)
     async def activity_reset_backtrack(self, ctx):
-        """Reset backtrack status to allow re-syncing of all channels."""
+        """Reset backtrack status. Note: re-running backtrack without wiping data will double-count existing stats."""
         await self.config.guild(ctx.guild).backtracked_channels.set([])
-        await ctx.send("✅ Backtrack history has been reset. You can now run `[p]activity backtrack` again.")
+        await ctx.send("✅ Backtrack history has been reset. **Warning:** If you run backtrack again, existing message counts will be doubled. Use `resetall` if you want a clean start.")
 
     @activity.command(name="dashboard", aliases=["dash", "all"])
     async def activity_dashboard(self, ctx):
@@ -589,18 +599,36 @@ class ActivityDashboardView(discord.ui.View):
             m_curr_start, m_curr_end = t - timedelta(days=r_off * 30), t - timedelta(days=(r_off + r_win) * 30)
             m_prev_start, m_prev_end = m_curr_end, t - timedelta(days=(p_off + p_win) * 30)
             
+            # Check history coverage
             history_dates = [date.fromisoformat(d) for d in conf.get("global_daily_messages", {}).keys()]
             oldest_data = min(history_dates) if history_dates else t
+            guild_created = self.ctx.guild.created_at.date()
+            
             coverage_warning = ""
             if oldest_data > m_prev_end:
-                coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m_prev_end).days}d for comparison)*"
+                missing_days = (oldest_data - m_prev_end).days
+                if guild_created > m_prev_end:
+                    coverage_warning = f"\n⚠️ *Server too young for full comparison (missing {missing_days}d history)*"
+                else:
+                    coverage_warning = f"\n⚠️ *Partial history (missing {missing_days}d for comparison - try [p]activity backtrack)*"
             
             active_now_slice = set()
             active_prev_slice = set()
+            
+            # Optimized active sets
             for uid, d in users.items():
-                daily = d.get("daily_messages", {})
-                if any(m_curr_end <= date.fromisoformat(ds) < m_curr_start for ds in daily.keys()):
+                # Check last_active for a quick "active now" boost if window is current
+                if r_off == 0 and d.get("last_active") and date.fromisoformat(d["last_active"]) >= m_curr_end:
                     active_now_slice.add(uid)
+                
+                daily = d.get("daily_messages", {})
+                if not daily: continue
+                
+                # If not already added by last_active
+                if uid not in active_now_slice:
+                    if any(m_curr_end <= date.fromisoformat(ds) < m_curr_start for ds in daily.keys()):
+                        active_now_slice.add(uid)
+                
                 if any(m_prev_end <= date.fromisoformat(ds) < m_prev_start for ds in daily.keys()):
                     active_prev_slice.add(uid)
             
