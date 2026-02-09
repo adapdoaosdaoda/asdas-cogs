@@ -528,121 +528,106 @@ class ActivityDashboardView(discord.ui.View):
     async def make_embed(self):
         conf = await self.cog.config.guild(self.ctx.guild).all()
         users = conf.get("users", {})
+        t = date.today()
         
         # Stats Period (Cumulative 0-X)
         stats_months = self.months
         
         # Retention Period (Sliced Windows)
-        # Mapping: button_id -> (ret_offset, ret_window, prev_offset, prev_window)
         ret_map = {
             1: (0, 1, 1, 1),    # 0-30d vs 30-60d
             3: (0, 3, 3, 3),    # 0-90d vs 90-180d
             6: (3, 3, 6, 3),    # 90-180d (M4-6) vs 180-270d (M7-9)
             9: (6, 3, 9, 3),    # 180-270d (M7-9) vs 270-360d (M10-12)
-            0: (0, 1, 1, 1)     # Default 1m for Global
+            0: (0, 1, 1, 1)     # Default 1m for Total
         }
-        
         r_off, r_win, p_off, p_win = ret_map[self.months]
         
-        # Period filtering for Stats (Cumulative)
+        # 1. Period Totals & Active Members (Cumulative 0-X)
         p_msgs = self.cog._get_period_data(conf["global_daily_messages"], stats_months, 0)
         p_vc = self.cog._get_period_data(conf["global_daily_vc_minutes"], stats_months, 0)
-        
         total_msgs = sum(p_msgs.values())
         total_vc = sum(p_vc.values())
         
-        # Retention Calculation (Sliced)
-        t = date.today()
+        active_in_period = set()
+        user_scores = [] # (uid, msgs) for leaderboard
         
+        for uid, d in users.items():
+            u_p_msgs = self.cog._get_period_data(d.get("daily_messages", {}), stats_months, 0)
+            score = sum(u_p_msgs.values())
+            if score > 0:
+                active_in_period.add(uid)
+                user_scores.append((uid, score))
+        
+        user_scores.sort(key=lambda x: x[1], reverse=True)
+        top_3 = []
+        for uid, score in user_scores[:3]:
+            member = self.ctx.guild.get_member(int(uid))
+            name = member.display_name if member else f"Left ({uid})"
+            top_3.append(f"• **{name}**: {score:,}")
+
+        # 2. Retention Calculation (Sliced)
         if self.months == 0:
-            # Special case for Total Participation
-            active_now = {uid for uid, d in users.items() if d.get("daily_messages")}
+            # Total Participation: % of current members who have ever spoken
+            active_ever = {uid for uid, d in users.items() if d.get("daily_messages") and self.ctx.guild.get_member(int(uid))}
             total_members = self.ctx.guild.member_count
-            retention = (len(active_now) / total_members * 100) if total_members > 0 else 0
+            retention = (len(active_ever) / total_members * 100) if total_members > 0 else 0
             coverage_warning = ""
             ret_label = "Total Participation"
+            ret_active_count = len(active_ever)
         else:
-            # Current retention window
-            m_curr_start = t - timedelta(days=r_off * 30)
-            m_curr_end = t - timedelta(days=(r_off + r_win) * 30)
-            # Previous retention window
-            m_prev_start = m_curr_end
-            m_prev_end = t - timedelta(days=(p_off + p_win) * 30)
+            m_curr_start, m_curr_end = t - timedelta(days=r_off * 30), t - timedelta(days=(r_off + r_win) * 30)
+            m_prev_start, m_prev_end = m_curr_end, t - timedelta(days=(p_off + p_win) * 30)
             
-            # Check history coverage for warning
             history_dates = [date.fromisoformat(d) for d in conf.get("global_daily_messages", {}).keys()]
             oldest_data = min(history_dates) if history_dates else t
             coverage_warning = ""
             if oldest_data > m_prev_end:
-                coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m_prev_end).days}d for full retention comparison)*"
+                coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m_prev_end).days}d for comparison)*"
             
-            # Active in current retention window
-            active_now = set()
+            active_now_slice = set()
+            active_prev_slice = set()
             for uid, d in users.items():
                 daily = d.get("daily_messages", {})
                 if any(m_curr_end <= date.fromisoformat(ds) < m_curr_start for ds in daily.keys()):
-                    active_now.add(uid)
-
-            # Active in previous retention window
-            active_prev = set()
-            for uid, d in users.items():
-                daily = d.get("daily_messages", {})
+                    active_now_slice.add(uid)
                 if any(m_prev_end <= date.fromisoformat(ds) < m_prev_start for ds in daily.keys()):
-                    active_prev.add(uid)
+                    active_prev_slice.add(uid)
             
-            retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
-            
-            # Label logic for sliced retention
-            ret_label = "Last 1 Month"
-            if self.months == 3: ret_label = "Months 1-3"
-            elif self.months == 6: ret_label = "Months 4-6"
-            elif self.months == 9: ret_label = "Months 7-9"
+            retention = (len(active_now_slice & active_prev_slice) / len(active_prev_slice) * 100) if active_prev_slice else 0
+            ret_active_count = len(active_now_slice)
+            ret_label = "Last 1 Month" if self.months == 1 else f"Months {self.months-2}-{self.months}" if self.months > 1 else ""
 
-        # Trends - Daily Distribution
+        # 3. Trends - Daily Distribution
         day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         msgs_by_day = [0] * 7
         for d_str, count in p_msgs.items():
             msgs_by_day[date.fromisoformat(d_str).weekday()] += count
-        
-        # Ranking for daily
         day_ranks = sorted(range(7), key=lambda i: msgs_by_day[i], reverse=True)
         rank_map = {day_idx: rank + 1 for rank, day_idx in enumerate(day_ranks)}
+        dist_lines = [f"**{day_names[i]}:** {msgs_by_day[i]:,} `(#{rank_map[i]})`{' 🔥' if rank_map[i]==1 and msgs_by_day[i]>0 else ''}" for i in range(7)]
         
-        dist_lines = []
-        for i in range(7):
-            rank = rank_map[i]
-            suffix = " 🔥" if rank == 1 and msgs_by_day[i] > 0 else ""
-            dist_lines.append(f"**{day_names[i]}:** {msgs_by_day[i]:,} `(#{rank})`{suffix}")
-        
-        # Trends - Hourly breakdown (Cumulative)
+        # 4. Trends - Hourly breakdown (Cumulative)
         hourly_data = [0] * 24
         daily_hourly = conf.get("global_daily_hourly_messages", {})
         cutoff = t - timedelta(days=stats_months * 30) if stats_months > 0 else None
-        
         for d_str, hours in daily_hourly.items():
             if cutoff is None or date.fromisoformat(d_str) >= cutoff:
-                for h in range(24):
-                    hourly_data[h] += hours[h]
-
+                for h in range(24): hourly_data[h] += hours[h]
         m_h = max(hourly_data) if any(hourly_data) else 1
-        heatmap_lines = []
-        for h in range(24):
-            bar_len = int(hourly_data[h] / m_h * 10) if m_h > 0 else 0
-            heatmap_lines.append(f"`{h:02d}h`: {'█' * bar_len}{'░' * (10-bar_len)} ({hourly_data[h]:,})")
-        
-        heatmap_str = "\n".join(heatmap_lines)
+        heatmap_lines = [f"`{h:02d}h`: {'█' * int(hourly_data[h]/m_h*10)}{'░' * (10-int(hourly_data[h]/m_h*10))} ({hourly_data[h]:,})" for h in range(24)]
 
-        # Period Label logic
+        # Labels & Embed
         period_label = "Total" if self.months == 0 else f"Last {self.months} Months"
-
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
         embed.set_footer(text=f"Stats: {period_label} | Retention: {ret_label}{coverage_warning.replace('⚠️ ', '')}")
         
-        embed.add_field(name="📊 Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m", inline=True)
-        embed.add_field(name="📈 Retention ({})".format(ret_label), value=f"**Rate:** {retention:.1f}%\n**Active Users:** {len(active_now)}{coverage_warning}", inline=True)
-        
-        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
-        embed.add_field(name="⏰ Hourly Activity Breakdown", value=heatmap_str[:1024], inline=False)
+        embed.add_field(name="📊 Period Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m\n**Active Users:** {len(active_in_period)}", inline=True)
+        embed.add_field(name="📈 Retention ({})".format(ret_label), value=f"**Rate:** {retention:.1f}%\n**Window Active:** {ret_active_count}{coverage_warning}", inline=True)
+        embed.add_field(name="🏆 Top 3 Members", value="\n".join(top_3) or "No data", inline=False)
+        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=True)
+        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines[:12]), inline=True)
+        embed.add_field(name="⏰ Breakdown (cont.)", value="\n".join(heatmap_lines[12:]), inline=True)
         
         return embed
 
