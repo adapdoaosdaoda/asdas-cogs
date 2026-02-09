@@ -41,10 +41,10 @@ class ActivityLogger(commands.Cog):
 
     @tasks.loop(hours=24)
     async def cleanup_task(self):
-        """Daily task to anonymize/purge data older than 1 year, and remove users who left 30+ days ago."""
+        """Daily task to anonymize/purge data older than 2 years (to support long-period retention), and remove users who left 30+ days ago."""
         all_guilds = await self.config.all_guilds()
         now_date = date.today()
-        purge_cutoff = now_date - timedelta(days=365)
+        purge_cutoff = now_date - timedelta(days=730) # 2 years
         leave_cutoff = now_date - timedelta(days=30)
         
         for guild_id, settings in all_guilds.items():
@@ -518,8 +518,23 @@ class ActivityDashboardView(discord.ui.View):
         m1 = t - timedelta(days=r_months * 30)
         m2 = t - timedelta(days=r_months * 60)
         
-        active_now = {uid for uid, d in users.items() if any(date.fromisoformat(ds) >= m1 for ds in d.get("daily_messages", {}))}
-        active_prev = {uid for uid, d in users.items() if any(m2 <= date.fromisoformat(ds) < m1 for ds in d.get("daily_messages", {}))}
+        # Check history coverage
+        history_dates = [date.fromisoformat(d) for d in conf.get("global_daily_messages", {}).keys()]
+        oldest_data = min(history_dates) if history_dates else t
+        coverage_warning = ""
+        if oldest_data > m2:
+            coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m2).days}d for full retention comparison)*"
+        
+        # Optimized active sets
+        active_now = {uid for uid, d in users.items() if d.get("last_active") and date.fromisoformat(d["last_active"]) >= m1}
+        
+        # For active_prev we still need to check the daily keys as last_active only tracks the absolute latest
+        active_prev = set()
+        for uid, d in users.items():
+            daily = d.get("daily_messages", {})
+            if any(m2 <= date.fromisoformat(ds) < m1 for ds in daily.keys()):
+                active_prev.add(uid)
+        
         retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
 
         # Trends - Daily Distribution
@@ -560,10 +575,10 @@ class ActivityDashboardView(discord.ui.View):
 
         period_label = "Global" if self.months == 0 else f"Last {self.months} Month{'s' if self.months > 1 else ''}"
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
-        embed.set_footer(text=f"Period: {period_label}")
+        embed.set_footer(text=f"Period: {period_label}{coverage_warning.replace('⚠️ ', '')}")
         
         embed.add_field(name="📊 Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m", inline=True)
-        embed.add_field(name="📈 Retention", value=f"**Period Rate:** {retention:.1f}%\n**Active Users:** {len(active_now)}", inline=True)
+        embed.add_field(name="📈 Retention", value=f"**Period Rate:** {retention:.1f}%\n**Active Users:** {len(active_now)}{coverage_warning}", inline=True)
         
         embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
         embed.add_field(name="⏰ Hourly Activity Breakdown", value=heatmap_str[:1024], inline=False)
