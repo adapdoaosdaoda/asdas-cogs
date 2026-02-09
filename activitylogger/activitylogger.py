@@ -318,101 +318,6 @@ class ActivityLogger(commands.Cog):
         view = ActivityDashboardView(self, ctx)
         await view.start()
 
-class ActivityDashboardView(discord.ui.View):
-    def __init__(self, cog, ctx):
-        super().__init__(timeout=60)
-        self.cog = cog
-        self.ctx = ctx
-        self.months = 0 # Default Global
-        self.message = None
-
-    async def start(self):
-        embed = await self.make_embed()
-        self.message = await self.ctx.send(embed=embed, view=self)
-
-    async def make_embed(self):
-        conf = await self.cog.config.guild(self.ctx.guild).all()
-        users = conf.get("users", {})
-        
-        # Period filtering
-        p_msgs = self.cog._get_period_data(conf["global_daily_messages"], self.months)
-        p_vc = self.cog._get_period_data(conf["global_daily_vc_minutes"], self.months)
-        
-        total_msgs = sum(p_msgs.values())
-        total_vc = sum(p_vc.values())
-        
-        # Retention (always uses same logic but helpful context)
-        t = date.today()
-        m1, m2 = t - timedelta(days=30), t - timedelta(days=60)
-        active_now = {uid for uid, d in users.items() if any(date.fromisoformat(ds) >= m1 for ds in d.get("daily_messages", {}))}
-        active_prev = {uid for uid, d in users.items() if any(m2 <= date.fromisoformat(ds) < m1 for ds in d.get("daily_messages", {}))}
-        retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
-
-        # Trends
-        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        msgs_by_day = [0] * 7
-        for d_str, count in p_msgs.items():
-            msgs_by_day[date.fromisoformat(d_str).weekday()] += count
-        
-        peak_day = day_names[msgs_by_day.index(max(msgs_by_day))] if total_msgs > 0 else "N/A"
-        
-        period_label = "Global" if self.months == 0 else f"Last {self.months} Months"
-        embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
-        embed.set_footer(text=f"Period: {period_label}")
-        
-        embed.add_field(name="📊 Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m", inline=True)
-        embed.add_field(name="📈 Retention", value=f"**Monthly:** {retention:.1f}%\n**Active Users:** {len(active_now)}", inline=True)
-        
-        # Hourly Heatmap (Global only)
-        gh = conf["global_hourly_messages"]
-        m_h = max(gh) if any(gh) else 1
-        heatmap = "".join(["█" if gh[h] > m_h * 0.8 else "▆" if gh[h] > m_h * 0.5 else "▄" if gh[h] > m_h * 0.2 else " " for h in range(24)])
-        
-        dist_str = "\n".join([f"**{day_names[i]}:** {msgs_by_day[i]:,}" for i in range(7)])
-        embed.add_field(name="📅 Daily Distribution", value=dist_str, inline=False)
-        embed.add_field(name="⏰ Hourly Peak Rhythm (Global)", value=f"`00h` {heatmap} `23h`", inline=False)
-        
-        return embed
-
-    @discord.ui.button(label="1M", style=discord.ButtonStyle.gray)
-    async def one_m(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.months = 1
-        await self.update(interaction)
-
-    @discord.ui.button(label="3M", style=discord.ButtonStyle.gray)
-    async def three_m(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.months = 3
-        await self.update(interaction)
-
-    @discord.ui.button(label="6M", style=discord.ButtonStyle.gray)
-    async def six_m(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.months = 6
-        await self.update(interaction)
-
-    @discord.ui.button(label="9M", style=discord.ButtonStyle.gray)
-    async def nine_m(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.months = 9
-        await self.update(interaction)
-
-    @discord.ui.button(label="Global", style=discord.ButtonStyle.primary)
-    async def global_period(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.months = 0
-        await self.update(interaction)
-
-    async def update(self, interaction: discord.Interaction):
-        if interaction.user.id != self.ctx.author.id:
-            return await interaction.response.send_message("You cannot use these buttons.", ephemeral=True)
-        
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.style = discord.ButtonStyle.primary if (
-                    (child.label == "Global" and self.months == 0) or 
-                    (child.label == f"{self.months}M")
-                ) else discord.ButtonStyle.gray
-                
-        embed = await self.make_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-
     @activity.command(name="backtrack")
     @checks.admin_or_permissions(manage_guild=True)
     async def activity_backtrack(self, ctx):
@@ -550,3 +455,98 @@ class ActivityDashboardView(discord.ui.View):
                 pass
         finally:
             self.backtracking_guilds.discard(guild.id)
+
+class ActivityDashboardView(discord.ui.View):
+    def __init__(self, cog, ctx):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.ctx = ctx
+        self.months = 0 # Default Global
+        self.message = None
+
+    async def start(self):
+        embed = await self.make_embed()
+        self.message = await self.ctx.send(embed=embed, view=self)
+
+    async def make_embed(self):
+        conf = await self.cog.config.guild(self.ctx.guild).all()
+        users = conf.get("users", {})
+        
+        # Period filtering
+        p_msgs = self.cog._get_period_data(conf["global_daily_messages"], self.months)
+        p_vc = self.cog._get_period_data(conf["global_daily_vc_minutes"], self.months)
+        
+        total_msgs = sum(p_msgs.values())
+        total_vc = sum(p_vc.values())
+        
+        # Retention (always uses same logic but helpful context)
+        t = date.today()
+        m1, m2 = t - timedelta(days=30), t - timedelta(days=60)
+        active_now = {uid for uid, d in users.items() if any(date.fromisoformat(ds) >= m1 for ds in d.get("daily_messages", {}))}
+        active_prev = {uid for uid, d in users.items() if any(m2 <= date.fromisoformat(ds) < m1 for ds in d.get("daily_messages", {}))}
+        retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
+
+        # Trends
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        msgs_by_day = [0] * 7
+        for d_str, count in p_msgs.items():
+            msgs_by_day[date.fromisoformat(d_str).weekday()] += count
+        
+        peak_day = day_names[msgs_by_day.index(max(msgs_by_day))] if total_msgs > 0 else "N/A"
+        
+        period_label = "Global" if self.months == 0 else f"Last {self.months} Months"
+        embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
+        embed.set_footer(text=f"Period: {period_label}")
+        
+        embed.add_field(name="📊 Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m", inline=True)
+        embed.add_field(name="📈 Retention", value=f"**Monthly:** {retention:.1f}%\n**Active Users:** {len(active_now)}", inline=True)
+        
+        # Hourly Heatmap (Global only)
+        gh = conf["global_hourly_messages"]
+        m_h = max(gh) if any(gh) else 1
+        heatmap = "".join(["█" if gh[h] > m_h * 0.8 else "▆" if gh[h] > m_h * 0.5 else "▄" if gh[h] > m_h * 0.2 else " " for h in range(24)])
+        
+        dist_str = "\n".join([f"**{day_names[i]}:** {msgs_by_day[i]:,}" for i in range(7)])
+        embed.add_field(name="📅 Daily Distribution", value=dist_str, inline=False)
+        embed.add_field(name="⏰ Hourly Peak Rhythm (Global)", value=f"`00h` {heatmap} `23h`", inline=False)
+        
+        return embed
+
+    @discord.ui.button(label="1M", style=discord.ButtonStyle.gray)
+    async def one_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.months = 1
+        await self.update(interaction)
+
+    @discord.ui.button(label="3M", style=discord.ButtonStyle.gray)
+    async def three_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.months = 3
+        await self.update(interaction)
+
+    @discord.ui.button(label="6M", style=discord.ButtonStyle.gray)
+    async def six_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.months = 6
+        await self.update(interaction)
+
+    @discord.ui.button(label="9M", style=discord.ButtonStyle.gray)
+    async def nine_m(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.months = 9
+        await self.update(interaction)
+
+    @discord.ui.button(label="Global", style=discord.ButtonStyle.primary)
+    async def global_period(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.months = 0
+        await self.update(interaction)
+
+    async def update(self, interaction: discord.Interaction):
+        if interaction.user.id != self.ctx.author.id:
+            return await interaction.response.send_message("You cannot use these buttons.", ephemeral=True)
+        
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.style = discord.ButtonStyle.primary if (
+                    (child.label == "Global" and self.months == 0) or 
+                    (child.label == f"{self.months}M")
+                ) else discord.ButtonStyle.gray
+                
+        embed = await self.make_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
