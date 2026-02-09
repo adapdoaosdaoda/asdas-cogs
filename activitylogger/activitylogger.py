@@ -654,9 +654,6 @@ class ActivityDashboardView(discord.ui.View):
         await self.update(interaction)
 
     async def update(self, interaction: discord.Interaction):
-        if interaction.user.id != self.ctx.author.id:
-            return await interaction.response.send_message("You cannot use these buttons.", ephemeral=True)
-        
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.style = discord.ButtonStyle.primary if (
