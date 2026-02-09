@@ -164,7 +164,13 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if not message.guild or message.author.bot: return
+        if not message.guild or message.author.bot or message.webhook_id: return
+        
+        # Ignore commands
+        prefixes = await self.bot.get_valid_prefixes(message.guild)
+        if any(message.content.startswith(p) for p in prefixes):
+            return
+
         u_id = str(message.author.id)
         now = datetime.now()
         today_str = now.date().isoformat()
@@ -423,8 +429,12 @@ class ActivityLogger(commands.Cog):
                     temp_global_aggregate_hourly = [0] * 24
                     
                     count = 0
+                    prefixes = await self.bot.get_valid_prefixes(guild)
                     async for m in channel.history(limit=None, oldest_first=True):
-                        if m.author.bot:
+                        if m.author.bot or m.webhook_id:
+                            continue
+                        
+                        if any(m.content.startswith(p) for p in prefixes):
                             continue
                         
                         u_id = str(m.author.id)
@@ -625,9 +635,8 @@ class ActivityDashboardView(discord.ui.View):
         embed.add_field(name="📊 Period Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m\n**Active Users:** {len(active_in_period)}", inline=True)
         embed.add_field(name="📈 Retention ({})".format(ret_label), value=f"**Rate:** {retention:.1f}%\n**Window Active:** {ret_active_count}{coverage_warning}", inline=True)
         embed.add_field(name="🏆 Top 3 Members", value="\n".join(top_3) or "No data", inline=False)
-        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=True)
-        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines[:12]), inline=True)
-        embed.add_field(name="⏰ Breakdown (cont.)", value="\n".join(heatmap_lines[12:]), inline=True)
+        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
+        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=False)
         
         return embed
 
