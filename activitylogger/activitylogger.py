@@ -690,9 +690,10 @@ class ActivityDashboardView(discord.ui.View):
         embed.add_field(name="🎙️ Top 3 Voice", value="\n".join(top_3_vc) or "No data", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
 
-        # Row 3: Hourly Breakdown / Daily Distribution
-        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=True)
+        # Row 3: Daily Distribution / Hourly Breakdown
         embed.add_field(name="📅 Daily Distribution", value="\n".join(dist_lines), inline=True)
+        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
         
         return embed
 
