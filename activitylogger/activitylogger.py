@@ -546,35 +546,50 @@ class ActivityDashboardView(discord.ui.View):
         
         # Retention Calculation (Sliced)
         t = date.today()
-        # Current retention window
-        m_curr_start = t - timedelta(days=r_off * 30)
-        m_curr_end = t - timedelta(days=(r_off + r_win) * 30)
-        # Previous retention window
-        m_prev_start = m_curr_end
-        m_prev_end = t - timedelta(days=(p_off + p_win) * 30)
         
-        # Check history coverage for warning
-        history_dates = [date.fromisoformat(d) for d in conf.get("global_daily_messages", {}).keys()]
-        oldest_data = min(history_dates) if history_dates else t
-        coverage_warning = ""
-        if oldest_data > m_prev_end:
-            coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m_prev_end).days}d for full retention comparison)*"
-        
-        # Active in current retention window
-        active_now = set()
-        for uid, d in users.items():
-            daily = d.get("daily_messages", {})
-            if any(m_curr_end <= date.fromisoformat(ds) < m_curr_start for ds in daily.keys()):
-                active_now.add(uid)
+        if self.months == 0:
+            # Special case for Total Participation
+            active_now = {uid for uid, d in users.items() if d.get("daily_messages")}
+            total_members = self.ctx.guild.member_count
+            retention = (len(active_now) / total_members * 100) if total_members > 0 else 0
+            coverage_warning = ""
+            ret_label = "Total Participation"
+        else:
+            # Current retention window
+            m_curr_start = t - timedelta(days=r_off * 30)
+            m_curr_end = t - timedelta(days=(r_off + r_win) * 30)
+            # Previous retention window
+            m_prev_start = m_curr_end
+            m_prev_end = t - timedelta(days=(p_off + p_win) * 30)
+            
+            # Check history coverage for warning
+            history_dates = [date.fromisoformat(d) for d in conf.get("global_daily_messages", {}).keys()]
+            oldest_data = min(history_dates) if history_dates else t
+            coverage_warning = ""
+            if oldest_data > m_prev_end:
+                coverage_warning = f"\n⚠️ *Partial history (missing {(oldest_data - m_prev_end).days}d for full retention comparison)*"
+            
+            # Active in current retention window
+            active_now = set()
+            for uid, d in users.items():
+                daily = d.get("daily_messages", {})
+                if any(m_curr_end <= date.fromisoformat(ds) < m_curr_start for ds in daily.keys()):
+                    active_now.add(uid)
 
-        # Active in previous retention window
-        active_prev = set()
-        for uid, d in users.items():
-            daily = d.get("daily_messages", {})
-            if any(m_prev_end <= date.fromisoformat(ds) < m_prev_start for ds in daily.keys()):
-                active_prev.add(uid)
-        
-        retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
+            # Active in previous retention window
+            active_prev = set()
+            for uid, d in users.items():
+                daily = d.get("daily_messages", {})
+                if any(m_prev_end <= date.fromisoformat(ds) < m_prev_start for ds in daily.keys()):
+                    active_prev.add(uid)
+            
+            retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
+            
+            # Label logic for sliced retention
+            ret_label = "Last 1 Month"
+            if self.months == 3: ret_label = "Months 1-3"
+            elif self.months == 6: ret_label = "Months 4-6"
+            elif self.months == 9: ret_label = "Months 7-9"
 
         # Trends - Daily Distribution
         day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -610,12 +625,8 @@ class ActivityDashboardView(discord.ui.View):
         
         heatmap_str = "\n".join(heatmap_lines)
 
-        # Label logic
+        # Period Label logic
         period_label = "Total" if self.months == 0 else f"Last {self.months} Months"
-        ret_label = "Last 1 Month"
-        if self.months == 3: ret_label = "Months 1-3"
-        elif self.months == 6: ret_label = "Months 4-6"
-        elif self.months == 9: ret_label = "Months 7-9"
 
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
         embed.set_footer(text=f"Stats: {period_label} | Retention: {ret_label}{coverage_warning.replace('⚠️ ', '')}")
