@@ -31,6 +31,7 @@ class ActivityLogger(commands.Cog):
         self.config.register_guild(**default_guild)
         
         self.vc_joins: Dict[tuple, float] = {}
+        self.backtracking_guilds: Set[int] = set()
         self.cleanup_task.start()
 
     def cog_unload(self):
@@ -114,13 +115,14 @@ class ActivityLogger(commands.Cog):
         }
 
     async def _update_global(self, guild: discord.Guild, date_str: str, hour: int, msg_count: int = 0, vc_mins: float = 0.0):
+        # Optimized to be called separately if needed, but listeners now use combined updates
         async with self.config.guild(guild).all() as conf:
             if msg_count:
-                conf["global_daily_messages"][date_str] = conf["global_daily_messages"].get(date_str, 0) + msg_count
-                conf["global_hourly_messages"][hour] += msg_count
+                conf.setdefault("global_daily_messages", {})[date_str] = conf.get("global_daily_messages", {}).get(date_str, 0) + msg_count
+                conf.setdefault("global_hourly_messages", [0] * 24)[hour] += msg_count
             if vc_mins:
-                conf["global_daily_vc_minutes"][date_str] = conf["global_daily_vc_minutes"].get(date_str, 0.0) + vc_mins
-                conf["global_hourly_vc_minutes"][hour] += vc_mins
+                conf.setdefault("global_daily_vc_minutes", {})[date_str] = conf.get("global_daily_vc_minutes", {}).get(date_str, 0.0) + vc_mins
+                conf.setdefault("global_hourly_vc_minutes", [0.0] * 24)[hour] += vc_mins
 
     def _update_streak(self, user_record: dict, today: date):
         user_record["left_at"] = None # Ensure left_at is cleared if active
@@ -148,13 +150,19 @@ class ActivityLogger(commands.Cog):
         today_str = now.date().isoformat()
         hour = now.hour
 
-        async with self.config.guild(message.guild).users() as users:
+        async with self.config.guild(message.guild).all() as conf:
+            # User update
+            users = conf.setdefault("users", {})
             u_data = users.setdefault(u_id, self._get_user_template())
             u_data["daily_messages"][today_str] = u_data["daily_messages"].get(today_str, 0) + 1
-            u_data["hourly_messages"][hour] += 1
+            u_data.setdefault("hourly_messages", [0] * 24)[hour] += 1
             self._update_streak(u_data, now.date())
-        
-        await self._update_global(message.guild, today_str, hour, msg_count=1)
+            
+            # Global update
+            gdm = conf.setdefault("global_daily_messages", {})
+            gdm[today_str] = gdm.get(today_str, 0) + 1
+            ghm = conf.setdefault("global_hourly_messages", [0] * 24)
+            ghm[hour] += 1
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
@@ -186,12 +194,19 @@ class ActivityLogger(commands.Cog):
             join_time = self.vc_joins.pop((guild.id, member.id), None)
             if join_time:
                 mins = (now.timestamp() - join_time) / 60
-                async with self.config.guild(guild).users() as users:
+                async with self.config.guild(guild).all() as conf:
+                    # User update
+                    users = conf.setdefault("users", {})
                     u_data = users.setdefault(u_id, self._get_user_template())
                     u_data["daily_vc_minutes"][today_str] = u_data["daily_vc_minutes"].get(today_str, 0.0) + mins
-                    u_data["hourly_vc_minutes"][hour] += mins
+                    u_data.setdefault("hourly_vc_minutes", [0.0] * 24)[hour] += mins
                     self._update_streak(u_data, now.date())
-                await self._update_global(guild, today_str, hour, vc_mins=mins)
+                    
+                    # Global update
+                    gdvc = conf.setdefault("global_daily_vc_minutes", {})
+                    gdvc[today_str] = gdvc.get(today_str, 0.0) + mins
+                    ghvc = conf.setdefault("global_hourly_vc_minutes", [0.0] * 24)
+                    ghvc[hour] += mins
 
     def _get_period_data(self, daily_dict: Dict[str, Any], months: int) -> Dict[str, Any]:
         if months <= 0: return daily_dict
@@ -301,28 +316,136 @@ class ActivityLogger(commands.Cog):
     @checks.admin_or_permissions(manage_guild=True)
     async def activity_backtrack(self, ctx):
         """Sync historical message data."""
-        await ctx.send("🔄 Syncing historical message data...")
+        if ctx.guild.id in self.backtracking_guilds:
+            return await ctx.send("❌ A backtrack is already in progress for this server.")
+        
+        self.backtracking_guilds.add(ctx.guild.id)
         asyncio.create_task(self._do_backtrack(ctx))
 
     async def _do_backtrack(self, ctx):
         guild = ctx.guild
-        bc = await self.config.guild(guild).backtracked_channels()
-        channels = [c for c in guild.text_channels if c.id not in bc]
-        for channel in channels:
-            if not channel.permissions_for(guild.me).read_message_history: continue
+        msg = await ctx.send("🔄 Gathering channels for backtracking...")
+        
+        try:
+            bc = await self.config.guild(guild).backtracked_channels()
+            bc_set = set(bc)
+            
+            channels_to_scan = []
+            
+            # Text & Voice channels
+            for c in (guild.text_channels + guild.voice_channels):
+                if c.id not in bc_set:
+                    channels_to_scan.append(c)
+            
+            # Active Threads
+            for t in guild.threads:
+                if t.id not in bc_set:
+                    channels_to_scan.append(t)
+            
+            # Forum Channels & Archived Threads
+            forums = getattr(guild, "forum_channels", [])
+            for c in (guild.text_channels + forums):
+                if not c.permissions_for(guild.me).read_message_history:
+                    continue
+                try:
+                    async for t in c.archived_threads(limit=None):
+                        if t.id not in bc_set:
+                            channels_to_scan.append(t)
+                except Exception:
+                    continue
+
+            total_channels = len(channels_to_scan)
+            if total_channels == 0:
+                await msg.edit(content="✅ All messageable channels have already been backtracked.")
+                return
+
+            await msg.edit(content=f"🔄 Syncing {total_channels} channels. This may take a while...")
+            
+            for i, channel in enumerate(channels_to_scan, 1):
+                if not channel.permissions_for(guild.me).read_message_history:
+                    continue
+                
+                await msg.edit(content=f"🔄 Syncing channel {i}/{total_channels}: {channel.name}...")
+                
+                try:
+                    # u_id -> {"daily": {date: count}, "hourly": [0]*24}
+                    temp_u = {} 
+                    temp_global_daily = {} 
+                    temp_global_hourly = [0] * 24
+                    
+                    count = 0
+                    async for m in channel.history(limit=None, oldest_first=True):
+                        if m.author.bot:
+                            continue
+                        
+                        u_id = str(m.author.id)
+                        d_str = m.created_at.date().isoformat()
+                        hour = m.created_at.hour
+                        
+                        # Accumulate user data
+                        if u_id not in temp_u:
+                            temp_u[u_id] = {"daily": {}, "hourly": [0] * 24}
+                        
+                        temp_u[u_id]["daily"][d_str] = temp_u[u_id]["daily"].get(d_str, 0) + 1
+                        temp_u[u_id]["hourly"][hour] += 1
+                        
+                        # Accumulate global data
+                        temp_global_daily[d_str] = temp_global_daily.get(d_str, 0) + 1
+                        temp_global_hourly[hour] += 1
+                        
+                        count += 1
+                        if count % 5000 == 0:
+                            try:
+                                await msg.edit(content=f"🔄 Syncing channel {i}/{total_channels}: {channel.name} ({count} messages processed)...")
+                            except discord.HTTPException:
+                                pass
+
+                    if count > 0:
+                        async with self.config.guild(guild).all() as conf:
+                            # Update global stats
+                            g_daily = conf.setdefault("global_daily_messages", {})
+                            for d_str, c in temp_global_daily.items():
+                                g_daily[d_str] = g_daily.get(d_str, 0) + c
+                            
+                            g_hourly = conf.setdefault("global_hourly_messages", [0] * 24)
+                            for h in range(24):
+                                g_hourly[h] += temp_global_hourly[h]
+                                
+                            # Update user stats
+                            users = conf.setdefault("users", {})
+                            for u_id, data in temp_u.items():
+                                ud = users.setdefault(u_id, self._get_user_template())
+                                for d_str, c in data["daily"].items():
+                                    ud["daily_messages"][d_str] = ud["daily_messages"].get(d_str, 0) + c
+                                
+                                # Fix: check if hourly_messages exists
+                                if "hourly_messages" not in ud:
+                                    ud["hourly_messages"] = [0] * 24
+                                for h in range(24):
+                                    ud["hourly_messages"][h] += data["hourly"][h]
+                                
+                                latest_in_batch = max(data["daily"].keys())
+                                if not ud["last_active"] or latest_in_batch > ud["last_active"]:
+                                    ud["last_active"] = latest_in_batch
+                        
+                        log.info(f"ActivityLogger: Backtracked {count} messages in {channel.name} ({channel.id})")
+                    
+                    # Mark channel as backtracked
+                    async with self.config.guild(guild).backtracked_channels() as bcl:
+                        if channel.id not in bcl:
+                            bcl.append(channel.id)
+
+                except Exception as e:
+                    log.error(f"Error backtracking {channel.id}: {e}")
+                    continue
+            
+            await msg.edit(content=f"✅ Historical sync complete. Processed {total_channels} channels.")
+            
+        except Exception as e:
+            log.error(f"Critical error in backtrack: {e}")
             try:
-                temp_u = {} # u_id -> {date: count}
-                async for m in channel.history(limit=None, oldest_first=True):
-                    if m.author.bot: continue
-                    u_id, d_str = str(m.author.id), m.created_at.date().isoformat()
-                    temp_u.setdefault(u_id, {})[d_str] = temp_u[u_id].get(d_str, 0) + 1
-                    await self._update_global(guild, d_str, m.created_at.hour, msg_count=1)
-                async with self.config.guild(guild).users() as users:
-                    for uid, counts in temp_u.items():
-                        ud = users.setdefault(uid, self._get_user_template())
-                        for d, c in counts.items(): ud["daily_messages"][d] = ud["daily_messages"].get(d, 0) + c
-                        latest = max(counts.keys())
-                        if not ud["last_active"] or latest > ud["last_active"]: ud["last_active"] = latest
-                async with self.config.guild(guild).backtracked_channels() as bcl: bcl.append(channel.id)
-            except: continue
-        await ctx.send("✅ Historical sync complete.")
+                await ctx.send(f"❌ A critical error occurred during backtracking.")
+            except:
+                pass
+        finally:
+            self.backtracking_guilds.discard(guild.id)
