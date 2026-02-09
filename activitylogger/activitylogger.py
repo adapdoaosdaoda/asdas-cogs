@@ -674,12 +674,10 @@ class ActivityDashboardView(discord.ui.View):
 
         # Labels & Embed
         period_label = "Total" if self.months == 0 else f"Last {self.months} Months"
-        clean_warning = coverage_warning.replace("\n", "").replace("⚠️ ", "")
-        footer_text = f"Stats: {period_label} | Retention: {ret_label}"
-        if clean_warning:
-            footer_text += f" | {clean_warning}"
+        clean_warning = " | Partial history" if coverage_warning else ""
+        footer_text = f"Stats: {period_label} | Retention: {ret_label}{clean_warning}"
 
-        embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
+        embed = discord.Embed(title="Activity Dashboard", color=discord.Color.blue())
         embed.set_footer(text=footer_text)
         
         # Row 1: Period Totals / Retention
@@ -694,7 +692,7 @@ class ActivityDashboardView(discord.ui.View):
 
         # Row 3: Hourly Breakdown / Daily Distribution
         embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=True)
-        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=True)
+        embed.add_field(name="📅 Daily Distribution", value="\n".join(dist_lines), inline=True)
         
         return embed
 
