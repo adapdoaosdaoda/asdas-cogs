@@ -347,6 +347,13 @@ class ActivityLogger(commands.Cog):
         rate = (len(a1 & a2) / len(a2) * 100) if a2 else 0
         await ctx.send(embed=discord.Embed(title="Retention", description=f"**Active (0-30d):** {len(a1)}\n**Active (30-60d):** {len(a2)}\n**Retention:** {rate:.1f}%", color=discord.Color.green()))
 
+    @activity.command(name="resetbacktrack")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def activity_reset_backtrack(self, ctx):
+        """Reset backtrack status to allow re-syncing of all channels."""
+        await self.config.guild(ctx.guild).backtracked_channels.set([])
+        await ctx.send("✅ Backtrack history has been reset. You can now run `[p]activity backtrack` again.")
+
     @activity.command(name="dashboard", aliases=["dash", "all"])
     async def activity_dashboard(self, ctx):
         """Interactive dashboard with period-switching buttons."""
