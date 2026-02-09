@@ -38,32 +38,64 @@ class ActivityLogger(commands.Cog):
 
     @tasks.loop(hours=24)
     async def cleanup_task(self):
-        """Daily task to anonymize/purge data older than 1 year."""
+        """Daily task to anonymize/purge data older than 1 year, and remove users who left 30+ days ago."""
         all_guilds = await self.config.all_guilds()
-        cutoff = date.today() - timedelta(days=365)
+        now_date = date.today()
+        purge_cutoff = now_date - timedelta(days=365)
+        leave_cutoff = now_date - timedelta(days=30)
         
         for guild_id, settings in all_guilds.items():
+            guild = self.bot.get_guild(int(guild_id))
             users = settings.get("users", {})
             changed = False
+            to_delete = []
             
             for u_id, u_data in users.items():
+                # Check if user has left
+                if guild:
+                    member = guild.get_member(int(u_id))
+                    if not member:
+                        left_at_str = u_data.get("left_at")
+                        if left_at_str:
+                            if date.fromisoformat(left_at_str) < leave_cutoff:
+                                to_delete.append(u_id)
+                                continue
+                        else:
+                            # Legacy support: if they are gone but no left_at, check last_active
+                            last_active_str = u_data.get("last_active")
+                            if last_active_str and date.fromisoformat(last_active_str) < leave_cutoff:
+                                to_delete.append(u_id)
+                                continue
+                            else:
+                                # Set left_at to start the countdown
+                                u_data["left_at"] = now_date.isoformat()
+                                changed = True
+                    elif u_data.get("left_at"):
+                        # User rejoined
+                        u_data["left_at"] = None
+                        changed = True
+
                 # Clean daily messages
                 daily_msgs = u_data.get("daily_messages", {})
-                old_keys = [d for d in daily_msgs if date.fromisoformat(d) < cutoff]
+                old_keys = [d for d in daily_msgs if date.fromisoformat(d) < purge_cutoff]
                 if old_keys:
                     for k in old_keys: del daily_msgs[k]
                     changed = True
                 
                 # Clean daily VC
                 daily_vc = u_data.get("daily_vc_minutes", {})
-                old_vc_keys = [d for d in daily_vc if date.fromisoformat(d) < cutoff]
+                old_vc_keys = [d for d in daily_vc if date.fromisoformat(d) < purge_cutoff]
                 if old_vc_keys:
                     for k in old_vc_keys: del daily_vc[k]
                     changed = True
             
+            for u_id in to_delete:
+                del users[u_id]
+                changed = True
+
             if changed:
                 await self.config.guild_from_id(guild_id).users.set(users)
-                log.info(f"ActivityLogger: Purged data older than {cutoff} for guild {guild_id}")
+                log.info(f"ActivityLogger: Cleaned up data for guild {guild_id}")
 
     @cleanup_task.before_loop
     async def before_cleanup_task(self):
@@ -77,7 +109,8 @@ class ActivityLogger(commands.Cog):
             "hourly_vc_minutes": [0.0] * 24,
             "last_active": None,
             "current_streak": 0,
-            "best_streak": 0
+            "best_streak": 0,
+            "left_at": None
         }
 
     async def _update_global(self, guild: discord.Guild, date_str: str, hour: int, msg_count: int = 0, vc_mins: float = 0.0):
@@ -90,6 +123,7 @@ class ActivityLogger(commands.Cog):
                 conf["global_hourly_vc_minutes"][hour] += vc_mins
 
     def _update_streak(self, user_record: dict, today: date):
+        user_record["left_at"] = None # Ensure left_at is cleared if active
         last_active_str = user_record.get("last_active")
         if not last_active_str:
             user_record["current_streak"] = 1
@@ -121,6 +155,18 @@ class ActivityLogger(commands.Cog):
             self._update_streak(u_data, now.date())
         
         await self._update_global(message.guild, today_str, hour, msg_count=1)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        async with self.config.guild(member.guild).users() as users:
+            if str(member.id) in users:
+                users[str(member.id)]["left_at"] = date.today().isoformat()
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        async with self.config.guild(member.guild).users() as users:
+            if str(member.id) in users:
+                users[str(member.id)]["left_at"] = None
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
