@@ -25,8 +25,10 @@ class ActivityLogger(commands.Cog):
             "backtracked_channels": [],
             "global_daily_messages": {},
             "global_daily_vc_minutes": {},
-            "global_hourly_messages": [0] * 24,
-            "global_hourly_vc_minutes": [0.0] * 24,
+            "global_daily_hourly_messages": {}, # date -> [0]*24
+            "global_daily_hourly_vc_minutes": {}, # date -> [0.0]*24
+            "global_hourly_messages": [0] * 24, # Legacy/Aggregate
+            "global_hourly_vc_minutes": [0.0] * 24, # Legacy/Aggregate
         }
         self.config.register_guild(**default_guild)
         
@@ -94,8 +96,22 @@ class ActivityLogger(commands.Cog):
                 del users[u_id]
                 changed = True
 
+            # Clean global daily breakdowns
+            for key in ["global_daily_messages", "global_daily_vc_minutes", "global_daily_hourly_messages", "global_daily_hourly_vc_minutes"]:
+                data = settings.get(key, {})
+                old_keys = [d for d in data if date.fromisoformat(d) < purge_cutoff]
+                if old_keys:
+                    for k in old_keys: del data[k]
+                    changed = True
+
             if changed:
                 await self.config.guild_from_id(guild_id).users.set(users)
+                # Note: other keys need manual setting if changed
+                guild_conf = self.config.guild_from_id(guild_id)
+                await guild_conf.global_daily_messages.set(settings.get("global_daily_messages", {}))
+                await guild_conf.global_daily_vc_minutes.set(settings.get("global_daily_vc_minutes", {}))
+                await guild_conf.global_daily_hourly_messages.set(settings.get("global_daily_hourly_messages", {}))
+                await guild_conf.global_daily_hourly_vc_minutes.set(settings.get("global_daily_hourly_vc_minutes", {}))
                 log.info(f"ActivityLogger: Cleaned up data for guild {guild_id}")
 
     @cleanup_task.before_loop
@@ -120,9 +136,13 @@ class ActivityLogger(commands.Cog):
             if msg_count:
                 conf.setdefault("global_daily_messages", {})[date_str] = conf.get("global_daily_messages", {}).get(date_str, 0) + msg_count
                 conf.setdefault("global_hourly_messages", [0] * 24)[hour] += msg_count
+                gdhm = conf.setdefault("global_daily_hourly_messages", {})
+                gdhm.setdefault(date_str, [0] * 24)[hour] += msg_count
             if vc_mins:
                 conf.setdefault("global_daily_vc_minutes", {})[date_str] = conf.get("global_daily_vc_minutes", {}).get(date_str, 0.0) + vc_mins
                 conf.setdefault("global_hourly_vc_minutes", [0.0] * 24)[hour] += vc_mins
+                gdhvc = conf.setdefault("global_daily_hourly_vc_minutes", {})
+                gdhvc.setdefault(date_str, [0.0] * 24)[hour] += vc_mins
 
     def _update_streak(self, user_record: dict, today: date):
         user_record["left_at"] = None # Ensure left_at is cleared if active
@@ -163,6 +183,8 @@ class ActivityLogger(commands.Cog):
             gdm[today_str] = gdm.get(today_str, 0) + 1
             ghm = conf.setdefault("global_hourly_messages", [0] * 24)
             ghm[hour] += 1
+            gdhm = conf.setdefault("global_daily_hourly_messages", {})
+            gdhm.setdefault(today_str, [0] * 24)[hour] += 1
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
@@ -207,6 +229,8 @@ class ActivityLogger(commands.Cog):
                     gdvc[today_str] = gdvc.get(today_str, 0.0) + mins
                     ghvc = conf.setdefault("global_hourly_vc_minutes", [0.0] * 24)
                     ghvc[hour] += mins
+                    gdhvc = conf.setdefault("global_daily_hourly_vc_minutes", {})
+                    gdhvc.setdefault(today_str, [0.0] * 24)[hour] += mins
 
     def _get_period_data(self, daily_dict: Dict[str, Any], months: int) -> Dict[str, Any]:
         if months <= 0: return daily_dict
@@ -377,7 +401,8 @@ class ActivityLogger(commands.Cog):
                     # u_id -> {"daily": {date: count}, "hourly": [0]*24}
                     temp_u = {} 
                     temp_global_daily = {} 
-                    temp_global_hourly = [0] * 24
+                    temp_global_hourly_daily = {} # date -> [0]*24
+                    temp_global_aggregate_hourly = [0] * 24
                     
                     count = 0
                     async for m in channel.history(limit=None, oldest_first=True):
@@ -397,7 +422,8 @@ class ActivityLogger(commands.Cog):
                         
                         # Accumulate global data
                         temp_global_daily[d_str] = temp_global_daily.get(d_str, 0) + 1
-                        temp_global_hourly[hour] += 1
+                        temp_global_hourly_daily.setdefault(d_str, [0]*24)[hour] += 1
+                        temp_global_aggregate_hourly[hour] += 1
                         
                         count += 1
                         if count % 5000 == 0:
@@ -415,7 +441,13 @@ class ActivityLogger(commands.Cog):
                             
                             g_hourly = conf.setdefault("global_hourly_messages", [0] * 24)
                             for h in range(24):
-                                g_hourly[h] += temp_global_hourly[h]
+                                g_hourly[h] += temp_global_aggregate_hourly[h]
+                            
+                            g_daily_hourly = conf.setdefault("global_daily_hourly_messages", {})
+                            for d_str, hours in temp_global_hourly_daily.items():
+                                current_hours = g_daily_hourly.setdefault(d_str, [0]*24)
+                                for h in range(24):
+                                    current_hours[h] += hours[h]
                                 
                             # Update user stats
                             users = conf.setdefault("users", {})
@@ -461,7 +493,7 @@ class ActivityDashboardView(discord.ui.View):
         super().__init__(timeout=60)
         self.cog = cog
         self.ctx = ctx
-        self.months = 0 # Default Global
+        self.months = 1 # Default to 1 Month
         self.message = None
 
     async def start(self):
@@ -486,53 +518,75 @@ class ActivityDashboardView(discord.ui.View):
         active_prev = {uid for uid, d in users.items() if any(m2 <= date.fromisoformat(ds) < m1 for ds in d.get("daily_messages", {}))}
         retention = (len(active_now & active_prev) / len(active_prev) * 100) if active_prev else 0
 
-        # Trends
+        # Trends - Daily Distribution
         day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         msgs_by_day = [0] * 7
         for d_str, count in p_msgs.items():
             msgs_by_day[date.fromisoformat(d_str).weekday()] += count
         
-        peak_day = day_names[msgs_by_day.index(max(msgs_by_day))] if total_msgs > 0 else "N/A"
+        # Ranking for daily
+        day_ranks = sorted(range(7), key=lambda i: msgs_by_day[i], reverse=True)
+        rank_map = {day_idx: rank + 1 for rank, day_idx in enumerate(day_ranks)}
         
-        period_label = "Global" if self.months == 0 else f"Last {self.months} Months"
+        dist_lines = []
+        for i in range(7):
+            rank = rank_map[i]
+            suffix = " 🔥" if rank == 1 and msgs_by_day[i] > 0 else ""
+            dist_lines.append(f"**{day_names[i]}:** {msgs_by_day[i]:,} `(#{rank})`{suffix}")
+        
+        # Trends - Hourly breakdown
+        hourly_data = [0] * 24
+        if self.months == 0:
+            hourly_data = conf["global_hourly_messages"]
+        else:
+            daily_hourly = conf.get("global_daily_hourly_messages", {})
+            cutoff = date.today() - timedelta(days=self.months * 30)
+            for d_str, hours in daily_hourly.items():
+                if date.fromisoformat(d_str) >= cutoff:
+                    for h in range(24):
+                        hourly_data[h] += hours[h]
+
+        m_h = max(hourly_data) if any(hourly_data) else 1
+        heatmap_lines = []
+        for h in range(24):
+            bar_len = int(hourly_data[h] / m_h * 10) if m_h > 0 else 0
+            heatmap_lines.append(f"`{h:02d}h`: {'█' * bar_len}{'░' * (10-bar_len)} ({hourly_data[h]:,})")
+        
+        heatmap_str = "\n".join(heatmap_lines)
+
+        period_label = "Global" if self.months == 0 else f"Last {self.months} Month{'s' if self.months > 1 else ''}"
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
         embed.set_footer(text=f"Period: {period_label}")
         
         embed.add_field(name="📊 Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m", inline=True)
         embed.add_field(name="📈 Retention", value=f"**Monthly:** {retention:.1f}%\n**Active Users:** {len(active_now)}", inline=True)
         
-        # Hourly Heatmap (Global only)
-        gh = conf["global_hourly_messages"]
-        m_h = max(gh) if any(gh) else 1
-        heatmap = "".join(["█" if gh[h] > m_h * 0.8 else "▆" if gh[h] > m_h * 0.5 else "▄" if gh[h] > m_h * 0.2 else " " for h in range(24)])
-        
-        dist_str = "\n".join([f"**{day_names[i]}:** {msgs_by_day[i]:,}" for i in range(7)])
-        embed.add_field(name="📅 Daily Distribution", value=dist_str, inline=False)
-        embed.add_field(name="⏰ Hourly Peak Rhythm (Global)", value=f"`00h` {heatmap} `23h`", inline=False)
+        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
+        embed.add_field(name="⏰ Hourly Activity Breakdown", value=heatmap_str[:1024], inline=False)
         
         return embed
 
-    @discord.ui.button(label="1M", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="1 Month", style=discord.ButtonStyle.primary)
     async def one_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 1
         await self.update(interaction)
 
-    @discord.ui.button(label="3M", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="3 Months", style=discord.ButtonStyle.gray)
     async def three_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 3
         await self.update(interaction)
 
-    @discord.ui.button(label="6M", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="6 Months", style=discord.ButtonStyle.gray)
     async def six_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 6
         await self.update(interaction)
 
-    @discord.ui.button(label="9M", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="9 Months", style=discord.ButtonStyle.gray)
     async def nine_m(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 9
         await self.update(interaction)
 
-    @discord.ui.button(label="Global", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Global", style=discord.ButtonStyle.gray)
     async def global_period(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 0
         await self.update(interaction)
@@ -545,7 +599,7 @@ class ActivityDashboardView(discord.ui.View):
             if isinstance(child, discord.ui.Button):
                 child.style = discord.ButtonStyle.primary if (
                     (child.label == "Global" and self.months == 0) or 
-                    (child.label == f"{self.months}M")
+                    (child.label == f"{self.months} Month{'s' if self.months > 1 else ''}")
                 ) else discord.ButtonStyle.gray
                 
         embed = await self.make_embed()
