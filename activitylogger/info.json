@@ -1,0 +1,11 @@
+{
+    "author": ["Gemini"],
+    "description": "Logs simple activity data (messages, VC time) without storing content. Supports historical backtracking for messages.",
+    "install_msg": "ActivityLogger installed. Use `[p]activity backtrack` to sync history or `[p]activity stats` to view data.",
+    "name": "ActivityLogger",
+    "short": "User activity tracker.",
+    "version": "1.0.0",
+    "min_bot_version": "3.5.0",
+    "requirements": [],
+    "tags": ["activity", "logging", "utility"]
+}
