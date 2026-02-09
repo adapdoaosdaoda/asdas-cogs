@@ -501,11 +501,18 @@ class ActivityLogger(commands.Cog):
 
 class ActivityDashboardView(discord.ui.View):
     def __init__(self, cog, ctx):
-        super().__init__(timeout=60)
+        super().__init__(timeout=120) # Increased to 2 minutes
         self.cog = cog
         self.ctx = ctx
         self.months = 1 # Button ID representing period
         self.message = None
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                await self.message.edit(view=None)
+            except discord.HTTPException:
+                pass
 
     async def start(self):
         embed = await self.make_embed()
