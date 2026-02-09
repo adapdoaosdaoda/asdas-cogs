@@ -611,7 +611,7 @@ class ActivityDashboardView(discord.ui.View):
         heatmap_str = "\n".join(heatmap_lines)
 
         # Label logic
-        period_label = "Global" if self.months == 0 else f"Last {self.months} Months"
+        period_label = "Total" if self.months == 0 else f"Last {self.months} Months"
         ret_label = "Last 1 Month"
         if self.months == 3: ret_label = "Months 1-3"
         elif self.months == 6: ret_label = "Months 4-6"
@@ -648,7 +648,7 @@ class ActivityDashboardView(discord.ui.View):
         self.months = 9
         await self.update(interaction)
 
-    @discord.ui.button(label="Global", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="Total", style=discord.ButtonStyle.gray)
     async def global_period(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.months = 0
         await self.update(interaction)
@@ -657,7 +657,7 @@ class ActivityDashboardView(discord.ui.View):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.style = discord.ButtonStyle.primary if (
-                    (child.label == "Global" and self.months == 0) or 
+                    (child.label == "Total" and self.months == 0) or 
                     (child.label == "1 Month" and self.months == 1) or
                     (child.label == "3 Months" and self.months == 3) or
                     (child.label == "6 Months" and self.months == 6) or
