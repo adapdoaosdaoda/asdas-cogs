@@ -354,6 +354,14 @@ class ActivityLogger(commands.Cog):
     @activity.command(name="dashboard", aliases=["dash", "all"])
     async def activity_dashboard(self, ctx):
         """Interactive dashboard."""
+        is_owner = await self.bot.is_owner(ctx.author)
+        staff_ids = await self.config.guild(ctx.guild).staff_roles()
+        has_staff_role = any(r.id in staff_ids for r in ctx.author.roles)
+        is_admin = ctx.author.guild_permissions.manage_guild
+        
+        if not (is_owner or is_admin or has_staff_role):
+            return await ctx.send("❌ Only staff can view the activity dashboard.")
+
         view = ActivityDashboardView(self, ctx)
         await view.start()
 
