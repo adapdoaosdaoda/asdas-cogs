@@ -677,12 +677,19 @@ class ActivityDashboardView(discord.ui.View):
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
         embed.set_footer(text=f"Stats: {period_label} | Retention: {ret_label}{coverage_warning.replace('⚠️ ', '')}")
         
+        # Row 1: Period Totals / Retention
         embed.add_field(name="📊 Period Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m\n**Active Users:** {len(active_in_period)}", inline=True)
         embed.add_field(name="📈 Retention ({})".format(ret_label), value=f"**Rate:** {retention:.1f}%\n**Window Active:** {ret_active_count}{coverage_warning}", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
+
+        # Row 2: Top 3 Messages / Top 3 Voice
         embed.add_field(name="💬 Top 3 Messages", value="\n".join(top_3_msgs) or "No data", inline=True)
         embed.add_field(name="🎙️ Top 3 Voice", value="\n".join(top_3_vc) or "No data", inline=True)
-        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=False)
-        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=False)
+        embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
+
+        # Row 3: Hourly Breakdown / Daily Distribution
+        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=True)
+        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=True)
         
         return embed
 
