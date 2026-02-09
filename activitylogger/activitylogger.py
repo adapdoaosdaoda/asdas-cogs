@@ -625,9 +625,9 @@ class ActivityDashboardView(discord.ui.View):
             if oldest_data > m_prev_end:
                 missing_days = (oldest_data - m_prev_end).days
                 if guild_created > m_prev_end:
-                    coverage_warning = f"\n⚠️ *Server too young for full comparison (missing {missing_days}d history)*"
+                    coverage_warning = "\n⚠️ Partial history"
                 else:
-                    coverage_warning = f"\n⚠️ *Partial history (missing {missing_days}d for comparison - try [p]activity backtrack)*"
+                    coverage_warning = "\n⚠️ Partial history"
             
             active_now_slice = set()
             active_prev_slice = set()
@@ -674,8 +674,13 @@ class ActivityDashboardView(discord.ui.View):
 
         # Labels & Embed
         period_label = "Total" if self.months == 0 else f"Last {self.months} Months"
+        clean_warning = coverage_warning.replace("\n", "").replace("⚠️ ", "")
+        footer_text = f"Stats: {period_label} | Retention: {ret_label}"
+        if clean_warning:
+            footer_text += f" | {clean_warning}"
+
         embed = discord.Embed(title=f"Activity Dashboard: {self.ctx.guild.name}", color=discord.Color.blue())
-        embed.set_footer(text=f"Stats: {period_label} | Retention: {ret_label}{coverage_warning.replace('⚠️ ', '')}")
+        embed.set_footer(text=footer_text)
         
         # Row 1: Period Totals / Retention
         embed.add_field(name="📊 Period Totals", value=f"**Messages:** {total_msgs:,}\n**Voice:** {total_vc:,.1f}m\n**Active Users:** {len(active_in_period)}", inline=True)
@@ -687,6 +692,10 @@ class ActivityDashboardView(discord.ui.View):
         embed.add_field(name="🎙️ Top 3 Voice", value="\n".join(top_3_vc) or "No data", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True) # Column 3 spacer
 
+        # Row 3: Hourly Breakdown / Daily Distribution
+        embed.add_field(name="⏰ Hourly Breakdown", value="\n".join(heatmap_lines), inline=True)
+        embed.add_field(name="📅 Daily Distribution (Mon-Sun)", value="\n".join(dist_lines), inline=True)
+        
         return embed
 
     @discord.ui.button(label="1 Month", style=discord.ButtonStyle.primary)
