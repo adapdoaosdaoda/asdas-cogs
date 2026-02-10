@@ -144,7 +144,15 @@ class BreakingArmy(commands.Cog):
             if not channel: return
             msg = await channel.fetch_message(live["message_id"])
             embeds = await self._generate_season_status_embeds(guild)
-            await msg.edit(embeds=embeds)
+            
+            # Add Link Button
+            poll_data = await self.config.guild(guild).active_poll()
+            view = None
+            if poll_data.get("message_id"):
+                url = f"https://discord.com/channels/{guild.id}/{poll_data['channel_id']}/{poll_data['message_id']}"
+                view = SeasonLiveView(url)
+                
+            await msg.edit(embeds=embeds, view=view)
         except: pass
 
     async def _generate_season_status_embeds(self, guild: discord.Guild) -> List[discord.Embed]:
@@ -368,7 +376,15 @@ class BreakingArmy(commands.Cog):
     @ba_season.command(name="live")
     async def season_live(self, ctx: commands.Context):
         embeds = await self._generate_season_status_embeds(ctx.guild)
-        msg = await ctx.send(embeds=embeds)
+        
+        # Add Link Button
+        poll_data = await self.config.guild(ctx.guild).active_poll()
+        view = None
+        if poll_data.get("message_id"):
+            url = f"https://discord.com/channels/{ctx.guild.id}/{poll_data['channel_id']}/{poll_data['message_id']}"
+            view = SeasonLiveView(url)
+            
+        msg = await ctx.send(embeds=embeds, view=view)
         async with self.config.guild(ctx.guild).season_data() as s:
             s["live_season_message"] = {"message_id": msg.id, "channel_id": msg.channel.id}
 
@@ -442,6 +458,11 @@ class BreakingArmy(commands.Cog):
             elif i == current_index and is_running: desc += f"⚔️ **__ {e} {b} __** (Target)\n"
             else: desc += f"⏳ {e} {b}\n"
         return discord.Embed(title=f"Breaking Army Run - {'Active' if is_running else 'Queued'}", description=desc, color=discord.Color.green())
+
+class SeasonLiveView(discord.ui.View):
+    def __init__(self, url: str):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(label="Go to Poll", style=discord.ButtonStyle.link, url=url))
 
 class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
     def __init__(self, cog, guild, user_id, pool, current_votes):
