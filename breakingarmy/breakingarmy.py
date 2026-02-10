@@ -2,10 +2,10 @@ import discord
 from redbot.core import commands, Config
 from redbot.core.bot import Red
 from discord.ext import tasks
-from typing import Optional, List, Dict, Union, Any
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Optional, List, Dict, Union, Any
 
 # Import modalpatch components
 try:
@@ -101,7 +101,6 @@ class BreakingArmy(commands.Cog):
             if not channel: return
             msg = await channel.fetch_message(poll["message_id"])
             embed = await self._generate_poll_embed(guild)
-            # Re-attach the view to ensure it uses the latest code
             view = BossPollView(self)
             await msg.edit(embed=embed, view=view)
         except Exception as e:
@@ -160,7 +159,6 @@ class BreakingArmy(commands.Cog):
             msg = await channel.fetch_message(live["message_id"])
             embeds = await self._generate_season_status_embeds(guild)
             
-            # Add Link Button
             poll_data = await self.config.guild(guild).active_poll()
             view = None
             if poll_data.get("message_id"):
@@ -204,11 +202,20 @@ class BreakingArmy(commands.Cog):
         sched_embed.description = sched
         
         embeds = [sched_embed]
-        if run["is_running"]:
-            run_embed = await self._generate_run_embed(guild, run["boss_order"], run["current_index"], True)
-            run_embed.title = "🔥 Current Active Run"
+        # Always show run dashboard if season is active
+        if season["is_active"] and (run["boss_order"] or run["is_running"]):
+            run_embed = await self._generate_run_embed(guild, run["boss_order"], run["current_index"], run["is_running"])
+            run_embed.title = f"Week {season['current_week']}"
             embeds.append(run_embed)
         return embeds
+
+    def _get_bosses_for_week(self, season: Dict, week: int) -> List[str]:
+        if not season["anchors"] or not season["guests"]: return []
+        a = season["anchors"]; g = season["guests"]
+        matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
+        if 1 <= week <= 6:
+            return list(matrix[week-1])
+        return []
 
     @tasks.loop(minutes=1)
     async def schedule_checker(self):
@@ -229,16 +236,31 @@ class BreakingArmy(commands.Cog):
                     if datetime.now(timezone.utc) >= start + timedelta(hours=1):
                         await self._advance_run(guild)
 
-                # 2. Season Reset (Sunday 22:00)
+                # 2. Season Reset / Week Advancement (Sunday 22:00)
                 if day_name == "Sunday" and time_str == "22:00":
+                    async with self.config.guild(guild).season_data() as s:
+                        if s["is_active"]:
+                            s["current_week"] += 1
+                            if s["current_week"] > 6:
+                                s["is_active"] = False
+                        
+                        # Trigger New Season Setup if cycle ended
+                        if not s["is_active"] and s.get("current_week", 1) > 6:
+                            setup_embed = await self._setup_new_season_logic(guild)
+                            if setup_embed:
+                                poll_data = await self.config.guild(guild).active_poll()
+                                channel = guild.get_channel(poll_data["channel_id"])
+                                if channel: await channel.send(embed=setup_embed)
+                    
+                    # Pre-populate active_run for the upcoming week
                     season = await self.config.guild(guild).season_data()
-                    if not season["is_active"] and season.get("current_week", 1) > 6:
-                        setup_embed = await self._setup_new_season_logic(guild)
-                        if setup_embed:
-                            poll_data = await self.config.guild(guild).active_poll()
-                            channel = guild.get_channel(poll_data["channel_id"])
-                            if channel: await channel.send(embed=setup_embed)
-                            await self._refresh_live_season_view(guild)
+                    if season["is_active"]:
+                        bosses = self._get_bosses_for_week(season, season["current_week"])
+                        await self.config.guild(guild).active_run.set({
+                            "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
+                        })
+                    
+                    await self._refresh_live_season_view(guild)
 
                 # 3. Schedule Trigger
                 polling_cog = self.bot.get_cog("EventPolling")
@@ -302,37 +324,16 @@ class BreakingArmy(commands.Cog):
         season = await self.config.guild(guild).season_data()
         if not season["is_active"]:
             setup_embed = await self._setup_new_season_logic(guild)
-            if not setup_embed:
-                poll_data = await self.config.guild(guild).active_poll()
-                chan = guild.get_channel(poll_data["channel_id"])
-                if chan: await chan.send("⚠️ **Season failed:** Need 8 bosses with votes.")
-                return
-            poll_data = await self.config.guild(guild).active_poll()
-            chan = guild.get_channel(poll_data["channel_id"])
-            if chan: await chan.send(embed=setup_embed)
+            if not setup_embed: return
             season = await self.config.guild(guild).season_data()
             
-        week = season["current_week"]; a = season["anchors"]; g = season["guests"]
-        if week == 1: boss_list = [a[0], g[0]]
-        elif week == 2: boss_list = [a[1], g[1]]
-        elif week == 3: boss_list = [a[2], g[2]]
-        elif week == 4: boss_list = [a[0], g[0]]
-        elif week == 5: boss_list = [a[1], g[3]]
-        elif week == 6: boss_list = [a[2], g[4]]
-        
+        boss_list = self._get_bosses_for_week(season, season["current_week"])
         now_utc = datetime.now(timezone.utc).isoformat()
-        await self.config.guild(guild).active_run.set({"boss_order": boss_list, "current_index": 0, "is_running": True, "start_time": now_utc})
+        await self.config.guild(guild).active_run.set({
+            "boss_order": boss_list, "current_index": 0, "is_running": True, "start_time": now_utc
+        })
         
-        poll_data = await self.config.guild(guild).active_poll()
-        chan = guild.get_channel(poll_data["channel_id"])
-        if chan:
-            embed = await self._generate_run_embed(guild, boss_list, 0, True)
-            msg = await chan.send(content=f"⚔️ **Breaking Army Active: Week {week}**", embed=embed)
-            async with self.config.guild(guild).active_run() as run:
-                run["message_id"] = msg.id; run["channel_id"] = chan.id
-        async with self.config.guild(guild).season_data() as s:
-            s["current_week"] += 1
-            if s["current_week"] > 6: s["is_active"] = False
+        # No longer sending standalone run messages automatically
         await self._refresh_live_season_view(guild)
 
     async def _advance_run(self, guild: discord.Guild):
@@ -341,12 +342,6 @@ class BreakingArmy(commands.Cog):
             run["current_index"] += 1
             if run["current_index"] >= len(run["boss_order"]):
                 run["is_running"] = False
-            try:
-                channel = guild.get_channel(run["channel_id"])
-                msg = await channel.fetch_message(run["message_id"])
-                embed = await self._generate_run_embed(guild, run["boss_order"], run["current_index"], run["is_running"])
-                await msg.edit(embed=embed)
-            except: pass
         await self._refresh_live_season_view(guild)
 
     async def _get_current_boss_info(self, guild: discord.Guild) -> str:
@@ -373,28 +368,13 @@ class BreakingArmy(commands.Cog):
 
     @ba.command(name="refresh")
     async def ba_refresh(self, ctx: commands.Context):
-        """Force update all active embeds (Poll, Season Live View, and Run Dashboard)."""
+        """Force update all active embeds (Poll and Season Live View)."""
         if not await self.is_ba_admin(ctx.author):
             return await ctx.send("Permission denied.")
 
-        # 1. Refresh Poll
         await self._update_poll_embed(ctx.guild)
-
-        # 2. Refresh Season Live View
         await self._refresh_live_season_view(ctx.guild)
-
-        # 3. Refresh Standalone Run Dashboard
-        run = await self.config.guild(ctx.guild).active_run()
-        if run.get("message_id") and run.get("is_running"):
-            try:
-                channel = ctx.guild.get_channel(run["channel_id"])
-                if channel:
-                    msg = await channel.fetch_message(run["message_id"])
-                    embed = await self._generate_run_embed(ctx.guild, run["boss_order"], run["current_index"], run["is_running"])
-                    await msg.edit(embed=embed)
-            except: pass
-
-        await ctx.send("✅ **Refreshed:** All active embeds have been updated with the latest data.")
+        await ctx.send("✅ **Refreshed:** Active embeds have been updated.")
 
     @ba.command(name="clearall")
     async def ba_clear_all(self, ctx: commands.Context):
@@ -441,33 +421,26 @@ class BreakingArmy(commands.Cog):
             del pool[old_name]
             pool[new_name] = emote
 
-        # Migrate seen_bosses
         async with self.config.guild(ctx.guild).seen_bosses() as seen:
             if old_name in seen:
                 seen[seen.index(old_name)] = new_name
 
-        # Migrate votes
         async with self.config.guild(ctx.guild).active_poll.votes() as votes:
             for uid, ballot in votes.items():
                 if not isinstance(ballot, list): continue
-                # Anchors
                 if isinstance(ballot[0], list):
                     votes[uid][0] = [new_name if b == old_name else b for b in ballot[0]]
                 elif ballot[0] == old_name:
                     votes[uid][0] = new_name
-                # Encore
                 if ballot[1] == old_name: votes[uid][1] = new_name
-                # Guests
                 if isinstance(ballot[2], list):
                     votes[uid][2] = [new_name if b == old_name else b for b in ballot[2]]
 
-        # Migrate Season Data
         async with self.config.guild(ctx.guild).season_data() as s:
             s["anchors"] = [new_name if b == old_name else b for b in s["anchors"]]
             s["guests"] = [new_name if b == old_name else b for b in s["guests"]]
             s["priority_bosses"] = [new_name if b == old_name else b for b in s["priority_bosses"]]
 
-        # Migrate Active Run
         async with self.config.guild(ctx.guild).active_run() as r:
             r["boss_order"] = [new_name if b == old_name else b for b in r["boss_order"]]
 
@@ -485,6 +458,12 @@ class BreakingArmy(commands.Cog):
         embed = await self._setup_new_season_logic(ctx.guild)
         if embed: 
             await ctx.send(embed=embed)
+            # Queued upcoming run
+            season = await self.config.guild(ctx.guild).season_data()
+            bosses = self._get_bosses_for_week(season, season["current_week"])
+            await self.config.guild(ctx.guild).active_run.set({
+                "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
+            })
             await self._refresh_live_season_view(ctx.guild)
         else: await ctx.send("Failed setup. Need 8 unique bosses with votes.")
 
@@ -493,6 +472,14 @@ class BreakingArmy(commands.Cog):
         if not (1 <= week <= 6): return await ctx.send("Week must be between 1 and 6.")
         async with self.config.guild(ctx.guild).season_data() as s:
             s["current_week"] = week; s["is_active"] = True
+        
+        # Populate run for this specific week
+        season = await self.config.guild(ctx.guild).season_data()
+        bosses = self._get_bosses_for_week(season, week)
+        await self.config.guild(ctx.guild).active_run.set({
+            "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
+        })
+        
         await ctx.send(f"✅ **Success:** Current week set to **Week {week}**.")
         await self._refresh_live_season_view(ctx.guild)
 
@@ -572,21 +559,38 @@ class BreakingArmy(commands.Cog):
     async def _start_run_display(self, ctx, boss_list):
         embed = await self._generate_run_embed(ctx.guild, boss_list, -1, False)
         msg = await ctx.send(embed=embed)
-        async with self.config.guild(ctx.guild).active_run() as r:
-            r["message_id"] = msg.id; r["channel_id"] = msg.channel.id
+        # Note: Standalone run messages are no longer tracked for auto-updates
+        # This remains as a manual utility only.
 
     async def _generate_run_embed(self, guild, boss_list, current_index, is_running):
         pool = await self.config.guild(guild).boss_pool(); desc = ""
         new_emote = await self.config.guild(guild).new_boss_emote()
         season = await self.config.guild(guild).season_data()
         priority = season.get("priority_bosses", [])
+        
+        # Get Scheduled Days from Polling Cog
+        days_str = ""
+        polling_cog = self.bot.get_cog("EventPolling")
+        if polling_cog:
+            polls = await polling_cog.config.guild(guild).polls()
+            if polls:
+                latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+                poll_data = polls[latest_poll_id]
+                snap = poll_data.get("weekly_snapshot_winning_times")
+                winners = snap if snap else polling_cog._calculate_winning_times_weighted(poll_data.get("selections", {}))
+                ba_winners = winners.get("Breaking Army", {})
+                days = sorted(list(set(slot[0][0][:3] for slot in ba_winners.values())))
+                if days: days_str = f" [{ ' & '.join(days) }]"
+
         for i, b in enumerate(boss_list):
             e = pool.get(b, "⚔️")
             suffix = f" {new_emote}" if b in priority else ""
-            if i < current_index: desc += f"💀 ~~{e} {b}{suffix}~~\n"
-            elif i == current_index and is_running: desc += f"⚔️ **__ {e} {b}{suffix} __** (Target)\n"
-            else: desc += f"⏳ {e} {b}{suffix}\n"
-        return discord.Embed(title=f"Breaking Army Run - {'Active' if is_running else 'Queued'}", description=desc, color=discord.Color.green())
+            if i < current_index: desc += f"💀 ~~{e}{days_str} {b}{suffix}~~\n"
+            elif i == current_index and is_running: desc += f"⚔️ **__ {e}{days_str} {b}{suffix} __** (Target)\n"
+            else: desc += f"⏳ {e}{days_str} {b}{suffix}\n"
+        
+        title = f"Breaking Army Run - {'Active' if is_running else 'Queued'}"
+        return discord.Embed(title=title, description=desc, color=discord.Color.green())
 
 class SeasonLiveView(discord.ui.View):
     def __init__(self, url: str):
@@ -615,7 +619,6 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
             self.add_item(self.anchor); self.add_item(self.encore); self.add_item(self.guests)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        # Use the latest cog instance from the bot
         actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
         choices = [self.anchor.values if self.anchor.values else [], self.encore.values[0] if self.encore.values else None, self.guests.values if self.guests.values else []]
         async with actual_cog.config.guild(interaction.guild).active_poll() as p: p["votes"][str(interaction.user.id)] = choices
@@ -625,7 +628,6 @@ class BossPollView(discord.ui.View):
     def __init__(self, cog): super().__init__(timeout=None); self.cog = cog
     @discord.ui.button(label="Vote", style=discord.ButtonStyle.primary, emoji="🗳️", custom_id="ba_vote")
     async def vote(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Use the latest cog instance from the bot
         actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
         pool = await actual_cog.config.guild(interaction.guild).boss_pool()
         poll_data = await actual_cog.config.guild(interaction.guild).active_poll()
@@ -633,7 +635,6 @@ class BossPollView(discord.ui.View):
         await interaction.response.send_modal(BossVoteModal(actual_cog, interaction.guild, interaction.user.id, pool, cur_votes))
     @discord.ui.button(label="Total Results", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="ba_results")
     async def results(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Use the latest cog instance from the bot
         actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
         poll = await actual_cog.config.guild(interaction.guild).active_poll()
         boss_pool = await actual_cog.config.guild(interaction.guild).boss_pool()
