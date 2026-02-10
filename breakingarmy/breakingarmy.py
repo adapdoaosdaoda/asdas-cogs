@@ -27,7 +27,8 @@ class BreakingArmy(commands.Cog):
 
     def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=984328743209, force_registration=True)
+        # Changed identifier to resolve Structural KeyError from List -> Dict migration
+        self.config = Config.get_conf(self, identifier=202601221001, force_registration=True)
         
         default_guild = {
             "boss_pool": {}, # Dict[name, emote]
@@ -39,19 +40,19 @@ class BreakingArmy(commands.Cog):
                 "message_id": None,
                 "channel_id": None,
                 "votes": {},  # user_id: [boss_names]
-                "live_view_message": None  # {channel_id, message_id}
+                "live_view_message": {} # {channel_id, message_id}
             },
             "active_run": {
                 "message_id": None,
                 "channel_id": None,
-                "boss_order": [], # List[str]
-                "current_index": -1, # -1 = not started, 0 = first boss, etc.
+                "boss_order": [], 
+                "current_index": -1,
                 "is_running": False
             },
             "season_data": {
                 "current_week": 1,
-                "anchors": [], # List of 4 names
-                "guests": [],  # List of 4 names
+                "anchors": [], 
+                "guests": [],
                 "is_active": False
             }
         }
@@ -59,13 +60,7 @@ class BreakingArmy(commands.Cog):
         self.config.register_guild(**default_guild)
 
     async def cog_load(self):
-        # Migration check for boss_pool
-        all_guilds = await self.config.all_guilds()
-        for guild_id, data in all_guilds.items():
-            pool = data.get("boss_pool")
-            if isinstance(pool, list):
-                new_pool = {name: "⚔️" for name in pool}
-                await self.config.guild_from_id(guild_id).boss_pool.set(new_pool)
+        pass
 
     async def is_ba_admin(self, member: discord.Member) -> bool:
         """Checks if a member is a BA admin (Manage Guild or specific role)."""
@@ -82,10 +77,10 @@ class BreakingArmy(commands.Cog):
     async def _update_live_view(self, guild):
         """Updates the live view message with current vote counts."""
         poll_data = await self.config.guild(guild).active_poll()
-        live_view = poll_data.get("live_view_message")
+        live_view = poll_data.get("live_view_message", {})
         boss_pool = await self.config.guild(guild).boss_pool()
         
-        if not live_view or not live_view.get("message_id"):
+        if not live_view.get("message_id"):
             return
 
         # Tally votes
@@ -95,10 +90,7 @@ class BreakingArmy(commands.Cog):
             for boss in user_votes:
                 tally[boss] = tally.get(boss, 0) + 1
         
-        # Sort by count (desc)
         sorted_tally = sorted(tally.items(), key=lambda x: x[1], reverse=True)
-        
-        # Build Description
         desc = ""
         total_voters = len(votes)
         
@@ -109,25 +101,16 @@ class BreakingArmy(commands.Cog):
                 emote = boss_pool.get(boss, "⚔️")
                 desc += f"{emote} **{boss}**: {count} votes\n"
         
-        embed = discord.Embed(
-            title="📊 Live Poll Results",
-            description=desc,
-            color=discord.Color.blue()
-        )
+        embed = discord.Embed(title="📊 Live Poll Results", description=desc, color=discord.Color.blue())
         embed.set_footer(text=f"Total Voters: {total_voters}")
 
-        # Update Message
         try:
             channel = guild.get_channel(live_view["channel_id"])
             if channel:
                 msg = await channel.fetch_message(live_view["message_id"])
                 await msg.edit(embed=embed)
-            else:
-                async with self.config.guild(guild).active_poll() as p:
-                    p["live_view_message"] = None
         except:
-            async with self.config.guild(guild).active_poll() as p:
-                p["live_view_message"] = None
+            pass
 
     @commands.group(name="ba")
     @commands.guild_only()
@@ -173,14 +156,8 @@ class BreakingArmy(commands.Cog):
         """List all BA admin roles."""
         role_ids = await self.config.guild(ctx.guild).admin_roles()
         if not role_ids:
-            await ctx.send("No custom admin roles configured.")
-            return
-        
-        roles = []
-        for rid in role_ids:
-            r = ctx.guild.get_role(rid)
-            roles.append(r.name if r else f"Deleted Role ({rid})")
-            
+            await ctx.send("No custom admin roles configured."); return
+        roles = [ctx.guild.get_role(rid).name if ctx.guild.get_role(rid) else str(rid) for rid in role_ids]
         await ctx.send(f"**Breaking Army Admin Roles:**\n" + "\n".join([f"- {r}" for r in roles]))
 
     @ba_config.command(name="addboss")
@@ -188,11 +165,9 @@ class BreakingArmy(commands.Cog):
         """Add a boss to the available pool with an optional emote."""
         async with self.config.guild(ctx.guild).boss_pool() as pool:
             if boss_name in pool:
-                await ctx.send(f"'{boss_name}' is already in the boss pool.")
-                return
+                await ctx.send(f"'{boss_name}' is already in the boss pool."); return
             if len(pool) >= 25:
-                await ctx.send("Boss pool is full (max 25). Remove one first.")
-                return
+                await ctx.send("Boss pool is full (max 25)."); return
             pool[boss_name] = emoji
         await ctx.send(f"Added {emoji} '{boss_name}' to the boss pool.")
 
@@ -201,8 +176,7 @@ class BreakingArmy(commands.Cog):
         """Set or update the emote for an existing boss."""
         async with self.config.guild(ctx.guild).boss_pool() as pool:
             if boss_name not in pool:
-                await ctx.send(f"'{boss_name}' not found in pool.")
-                return
+                await ctx.send(f"'{boss_name}' not found."); return
             pool[boss_name] = emoji
         await ctx.send(f"Updated {boss_name} emote to: {emoji}")
 
@@ -211,8 +185,7 @@ class BreakingArmy(commands.Cog):
         """Remove a boss from the pool."""
         async with self.config.guild(ctx.guild).boss_pool() as pool:
             if boss_name not in pool:
-                await ctx.send(f"'{boss_name}' is not in the boss pool.")
-                return
+                await ctx.send(f"'{boss_name}' not found."); return
             del pool[boss_name]
         await ctx.send(f"Removed '{boss_name}' from the boss pool.")
 
@@ -221,29 +194,20 @@ class BreakingArmy(commands.Cog):
         """List all configured bosses."""
         pool = await self.config.guild(ctx.guild).boss_pool()
         if not pool:
-            await ctx.send("No bosses configured.")
-            return
-        
+            await ctx.send("No bosses configured."); return
         pool_str = "\n".join([f"{emote} {name}" for name, emote in pool.items()])
-        embed = discord.Embed(title="Breaking Army Boss Pool", description=pool_str, color=discord.Color.blue())
-        await ctx.send(embed=embed)
+        await ctx.send(embed=discord.Embed(title="Breaking Army Boss Pool", description=pool_str, color=discord.Color.blue()))
 
     @ba_config.command(name="limit")
     async def config_set_limit(self, ctx: commands.Context, limit: int):
         """Set the maximum number of bosses to include in a run."""
-        if limit < 1:
-            await ctx.send("Limit must be at least 1.")
-            return
-        await self.config.guild(ctx.guild).max_bosses_in_run.set(limit)
+        await self.config.guild(ctx.guild).max_bosses_in_run.set(max(1, limit))
         await ctx.send(f"Max bosses per run set to {limit}.")
 
     @ba_config.command(name="threshold")
     async def config_set_threshold(self, ctx: commands.Context, threshold: int):
         """Set the minimum votes required for a boss to be included."""
-        if threshold < 0:
-            await ctx.send("Threshold cannot be negative.")
-            return
-        await self.config.guild(ctx.guild).min_vote_threshold.set(threshold)
+        await self.config.guild(ctx.guild).min_vote_threshold.set(max(0, threshold))
         await ctx.send(f"Minimum vote threshold set to {threshold}.")
 
     @ba.group(name="season")
@@ -251,66 +215,41 @@ class BreakingArmy(commands.Cog):
     async def ba_season(self, ctx: commands.Context):
         """Season Management Commands"""
         if not await self.is_ba_admin(ctx.author):
-             raise commands.CheckFailure("You do not have permission to manage Breaking Army seasons.")
+             raise commands.CheckFailure("Permission denied.")
         pass
 
     @ba_season.command(name="setup")
     async def season_setup(self, ctx: commands.Context):
-        """
-        Setup a new season using the Top 8 bosses from the Active Poll.
-        
-        Priority logic:
-        - Anchor 1: 1st New Boss
-        - Anchor 2: 2nd New Boss
-        - Anchor 4: 3rd New Boss
-        """
-        # Fetch Data
+        """Setup a new season automatically using the Top 8 bosses."""
         poll_data = await self.config.guild(ctx.guild).active_poll()
         boss_pool = await self.config.guild(ctx.guild).boss_pool()
         votes = poll_data.get("votes", {})
         seen_bosses = await self.config.guild(ctx.guild).seen_bosses()
         
         if not votes:
-            await ctx.send("No votes found in the active poll!")
-            return
+            await ctx.send("No votes found in the active poll!"); return
 
-        # Tally and Rank
         tally = {}
         for user_votes in votes.values():
-            for boss in user_votes:
-                tally[boss] = tally.get(boss, 0) + 1
+            for boss in user_votes: tally[boss] = tally.get(boss, 0) + 1
         ranked_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
         
         if len(ranked_names) < 8:
-            await ctx.send(f"Need at least 8 unique bosses with votes. (Currently: {len(ranked_names)})")
-            return
+            await ctx.send(f"Need at least 8 unique bosses with votes. (Currently: {len(ranked_names)})"); return
 
-        # Identify New Bosses
         new_bosses = [b for b in ranked_names if b not in seen_bosses]
-        
-        # 4 Anchors, 4 Guests
-        anchors = [None, None, None, None]
-        guests = [None, None, None, None]
-        used = []
+        anchors = [None, None, None, None]; guests = [None, None, None, None]; used = []
 
-        # Priority Slots
-        if len(new_bosses) >= 1:
-            anchors[0] = new_bosses[0]; used.append(new_bosses[0])
-        if len(new_bosses) >= 2:
-            anchors[1] = new_bosses[1]; used.append(new_bosses[1]) # Anchor 2 was Guest 1
-        if len(new_bosses) >= 3:
-            anchors[3] = new_bosses[2]; used.append(new_bosses[2]) # Anchor 4 was Anchor 3
+        if len(new_bosses) >= 1: anchors[0] = new_bosses[0]; used.append(new_bosses[0])
+        if len(new_bosses) >= 2: anchors[1] = new_bosses[1]; used.append(new_bosses[1])
+        if len(new_bosses) >= 3: anchors[3] = new_bosses[2]; used.append(new_bosses[2])
             
-        # Fill remaining
         remaining = [b for b in ranked_names if b not in used]
         for i in range(4):
-            if anchors[i] is None:
-                anchors[i] = remaining.pop(0); used.append(anchors[i])
+            if anchors[i] is None: anchors[i] = remaining.pop(0); used.append(anchors[i])
         for i in range(4):
-            if guests[i] is None:
-                guests[i] = remaining.pop(0); used.append(guests[i])
+            if guests[i] is None: guests[i] = remaining.pop(0); used.append(guests[i])
         
-        # Save
         async with self.config.guild(ctx.guild).season_data() as season:
             season["anchors"] = anchors; season["guests"] = guests
             season["current_week"] = 1; season["is_active"] = True
@@ -320,14 +259,9 @@ class BreakingArmy(commands.Cog):
                 if boss not in seen: seen.append(boss)
             
         embed = discord.Embed(title="Breaking Army Season Setup", color=discord.Color.green())
-        def fmt(name):
-            e = boss_pool.get(name, "⚔️")
-            sparkle = " ✨" if name in new_bosses[:3] else ""
-            return f"{e} **{name}**{sparkle}"
-
+        def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (" ✨" if name in new_bosses[:3] else "")
         embed.add_field(name="Anchors (Used Twice)", value="\n".join([f"{i+1}. {fmt(a)}" for i, a in enumerate(anchors)]), inline=True)
         embed.add_field(name="Guests (Used Once)", value="\n".join([f"{i+1}. {fmt(g)}" for i, g in enumerate(guests)]), inline=True)
-        embed.set_footer(text="Season initialized! ✨ = New Priority Boss.")
         await ctx.send(embed=embed)
 
     @ba_season.command(name="show")
@@ -335,21 +269,18 @@ class BreakingArmy(commands.Cog):
         """Display the 6-week schedule."""
         season = await self.config.guild(ctx.guild).season_data()
         boss_pool = await self.config.guild(ctx.guild).boss_pool()
-        
         if not season["is_active"] and not season["anchors"]:
             await ctx.send("No active season."); return
 
         anchors = season["anchors"]; guests = season["guests"]
         current_week = season["current_week"]
-        
         embed = discord.Embed(title="📅 Season Schedule (Anchor Rotation)", color=discord.Color.blue())
         schedule_text = ""
         for week in range(1, 7):
-            # The Matrix: W1:A1+A2, W2:A3+G1, W3:A4+G2, W4:A1+A2 (Encore), W5:A3+G3, W6:A4+G4
             if week == 1: boss_list = [anchors[0], anchors[1]]
             elif week == 2: boss_list = [anchors[2], guests[0]]
             elif week == 3: boss_list = [anchors[3], guests[1]]
-            elif week == 4: boss_list = [anchors[0], anchors[1]] # Encore
+            elif week == 4: boss_list = [anchors[0], anchors[1]]
             elif week == 5: boss_list = [anchors[2], guests[2]]
             elif week == 6: boss_list = [anchors[3], guests[3]]
             
@@ -366,12 +297,9 @@ class BreakingArmy(commands.Cog):
     async def season_next(self, ctx: commands.Context):
         """Generate the run for the current week."""
         season = await self.config.guild(ctx.guild).season_data()
-        if not season["is_active"]:
-            await ctx.send("No active season!"); return
-            
+        if not season["is_active"]: await ctx.send("No active season!"); return
         week = season["current_week"]
         anchors = season["anchors"]; guests = season["guests"]
-        
         if week > 6: await ctx.send("Season complete!"); return
 
         if week == 1: boss_list = [anchors[0], anchors[1]]
@@ -382,12 +310,8 @@ class BreakingArmy(commands.Cog):
         elif week == 6: boss_list = [anchors[3], guests[3]]
             
         await ctx.send(f"**Generating Run for Week {week}**")
-        await self.config.guild(ctx.guild).active_run.set({
-            "message_id": None, "channel_id": None,
-            "boss_order": boss_list, "current_index": -1, "is_running": False
-        })
+        await self.config.guild(ctx.guild).active_run.set({"boss_order": boss_list, "current_index": -1, "is_running": False})
         await self._start_run_display(ctx, boss_list)
-        
         async with self.config.guild(ctx.guild).season_data() as s:
             s["current_week"] += 1
             if s["current_week"] > 6: s["is_active"] = False
@@ -396,15 +320,13 @@ class BreakingArmy(commands.Cog):
     @commands.guild_only()
     async def ba_poll(self, ctx: commands.Context):
         """Poll management commands."""
-        if not await self.is_ba_admin(ctx.author):
-             raise commands.CheckFailure("You do not have permission to manage Breaking Army polls.")
+        if not await self.is_ba_admin(ctx.author): raise commands.CheckFailure("Permission denied.")
         pass
 
     @ba_poll.command(name="live")
     async def poll_live(self, ctx: commands.Context):
         """Create a live-updating view of the poll results."""
-        embed = discord.Embed(title="📊 Live Poll Results", description="Initializing...", color=discord.Color.blue())
-        msg = await ctx.send(embed=embed)
+        msg = await ctx.send(embed=discord.Embed(title="📊 Live Poll Results", description="Initializing..."))
         async with self.config.guild(ctx.guild).active_poll() as poll:
             poll["live_view_message"] = {"message_id": msg.id, "channel_id": msg.channel.id}
         await self._update_live_view(ctx.guild)
@@ -412,16 +334,9 @@ class BreakingArmy(commands.Cog):
     @ba_poll.command(name="start")
     async def poll_start(self, ctx: commands.Context):
         """Start (or move) the persistent voting poll."""
-        pool = await self.config.guild(ctx.guild).boss_pool()
-        if not pool: await ctx.send("Boss pool is empty!"); return
-
-        embed = discord.Embed(
-            title="Breaking Army: Boss Selection Vote",
-            description="**Live Poll:** Vote for the bosses you want to fight!\n\nThis poll is always open. Click the button below to open the ballot.",
-            color=discord.Color.gold()
-        )
+        if not await self.config.guild(ctx.guild).boss_pool(): await ctx.send("Boss pool is empty!"); return
         view = BossPollView(self)
-        msg = await ctx.send(embed=embed, view=view)
+        msg = await ctx.send(embed=discord.Embed(title="Breaking Army: Boss Selection Vote", description="**Live Poll:** Vote for the bosses you want to fight!\n\nThis poll is always open. Click the button below to open the ballot.", color=discord.Color.gold()), view=view)
         async with self.config.guild(ctx.guild).active_poll() as poll:
             poll["message_id"] = msg.id; poll["channel_id"] = msg.channel.id
 
@@ -430,39 +345,28 @@ class BreakingArmy(commands.Cog):
         """Snapshot current votes and start a run."""
         poll_data = await self.config.guild(ctx.guild).active_poll()
         if not poll_data["message_id"]: await ctx.send("No active poll."); return
-
         votes = poll_data["votes"]; tally = {}
-        for user_votes in votes.values():
-            for boss in user_votes: tally[boss] = tally.get(boss, 0) + 1
-
+        for uv in votes.values():
+            for b in uv: tally[b] = tally.get(b, 0) + 1
         threshold = await self.config.guild(ctx.guild).min_vote_threshold()
         limit = await self.config.guild(ctx.guild).max_bosses_in_run()
-        candidates = [(boss, count) for boss, count in tally.items() if count >= threshold]
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        final_list = [boss for boss, count in candidates[:limit]]
-
-        if not final_list: await ctx.send(f"No bosses met the threshold."); return
-
-        await self.config.guild(ctx.guild).active_run.set({
-            "message_id": None, "channel_id": None,
-            "boss_order": final_list, "current_index": -1, "is_running": False
-        })
-        await self._start_run_display(ctx, final_list)
+        cands = sorted([(b, c) for b, c in tally.items() if c >= threshold], key=lambda x: x[1], reverse=True)
+        flist = [b for b, c in cands[:limit]]
+        if not flist: await ctx.send(f"No bosses met the threshold."); return
+        await self.config.guild(ctx.guild).active_run.set({"boss_order": flist, "current_index": -1, "is_running": False})
+        await self._start_run_display(ctx, flist)
 
     @ba_poll.command(name="close")
     async def poll_close(self, ctx: commands.Context):
         """Close poll and wipe votes."""
-        await self.config.guild(ctx.guild).active_poll.set({
-            "message_id": None, "channel_id": None, "votes": {}, "live_view_message": None
-        })
+        await self.config.guild(ctx.guild).active_poll.set({"message_id": None, "channel_id": None, "votes": {}, "live_view_message": {}})
         await ctx.send("Poll closed and votes cleared.")
 
     @ba_poll.command(name="resetvotes")
     async def poll_reset_votes(self, ctx: commands.Context):
         """Clear all votes but keep poll open."""
         async with self.config.guild(ctx.guild).active_poll() as poll: poll["votes"] = {}
-        await self._update_live_view(ctx.guild)
-        await ctx.send("Votes cleared.")
+        await self._update_live_view(ctx.guild); await ctx.send("Votes cleared.")
 
     async def _start_run_display(self, ctx, boss_list):
         embed = await self._generate_run_embed(ctx.guild, boss_list, -1, False)
@@ -475,14 +379,13 @@ class BreakingArmy(commands.Cog):
         status_text = "Waiting to Start"; color = discord.Color.light_grey()
         if is_running: status_text = "In Progress"; color = discord.Color.green()
         if current_index >= len(boss_list): status_text = "Run Complete"; color = discord.Color.purple()
-
         boss_pool = await self.config.guild(guild).boss_pool()
         desc = ""
         for i, boss in enumerate(boss_list):
-            emote = boss_pool.get(boss, "⚔️")
-            if i < current_index: desc += f"💀 ~~{emote} {boss}~~\n"
-            elif i == current_index and is_running: desc += f"⚔️ **__ {emote} {boss} __** (Target)\n"
-            else: desc += f"⏳ {emote} {boss}\n"
+            e = boss_pool.get(boss, "⚔️")
+            if i < current_index: desc += f"💀 ~~{e} {boss}~~\n"
+            elif i == current_index and is_running: desc += f"⚔️ **__ {e} {boss} __** (Target)\n"
+            else: desc += f"⏳ {e} {boss}\n"
         return discord.Embed(title=f"Breaking Army Run - {status_text}", description=desc, color=color)
 
     @ba.group(name="run")
@@ -503,24 +406,17 @@ class BossVoteModal(Modal, title="Vote for Bosses"):
         super().__init__()
         self.cog = cog; self.guild = guild; self.user_id = user_id
         Label_cls = Label or getattr(discord.ui, "Label", None)
-        options = [
-            discord.SelectOption(label=name, value=name, emoji=emote, default=(name in current_votes))
-            for name, emote in list(pool.items())[:25]
-        ]
+        options = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in current_votes)) for n, e in list(pool.items())[:25]]
         self.select = StringSelect(placeholder="Select bosses...", min_values=0, max_values=len(options), options=options, custom_id="boss_select_modal")
         if Label_cls: self.add_item(Label_cls("Select Bosses", self.select))
         else: self.add_item(self.select)
-
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        async with self.cog.config.guild(interaction.guild).active_poll() as poll:
-            poll["votes"][str(interaction.user.id)] = self.select.values
-        await self.cog._update_live_view(interaction.guild)
-        await interaction.followup.send(f"Votes saved: {', '.join(self.select.values)}", ephemeral=True)
+        async with self.cog.config.guild(interaction.guild).active_poll() as poll: poll["votes"][str(interaction.user.id)] = self.select.values
+        await self.cog._update_live_view(interaction.guild); await interaction.followup.send(f"Votes saved: {', '.join(self.select.values)}", ephemeral=True)
 
 class BossPollView(discord.ui.View):
-    def __init__(self, cog):
-        super().__init__(timeout=None); self.cog = cog
+    def __init__(self, cog): super().__init__(timeout=None); self.cog = cog
     @discord.ui.button(label="Vote", style=discord.ButtonStyle.primary, emoji="🗳️", custom_id="ba_open_vote_modal")
     async def open_vote_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
         pool = await self.cog.config.guild(interaction.guild).boss_pool()
@@ -530,8 +426,7 @@ class BossPollView(discord.ui.View):
         await interaction.response.send_modal(BossVoteModal(self.cog, interaction.guild, interaction.user.id, votes, pool))
 
 class RunManagerView(discord.ui.View):
-    def __init__(self, cog):
-        super().__init__(timeout=None); self.cog = cog
+    def __init__(self, cog): super().__init__(timeout=None); self.cog = cog
     @discord.ui.button(label="Start Run", style=discord.ButtonStyle.green, custom_id="ba_run_start")
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.cog.is_ba_admin(interaction.user): await interaction.response.send_message("Admins only.", ephemeral=True); return
@@ -552,8 +447,7 @@ class RunManagerView(discord.ui.View):
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.cog.is_ba_admin(interaction.user): await interaction.response.send_message("Admins only.", ephemeral=True); return
         await interaction.response.defer()
-        async with self.cog.config.guild(interaction.guild).active_run() as run:
-            run["is_running"] = False; await self.update_message(interaction, run)
+        async with self.cog.config.guild(interaction.guild).active_run() as run: run["is_running"] = False; await self.update_message(interaction, run)
     async def update_message(self, interaction, run_data):
         embed = await self.cog._generate_run_embed(interaction.guild, run_data["boss_order"], run_data["current_index"], run_data["is_running"])
         try: await interaction.message.edit(embed=embed, view=self)
