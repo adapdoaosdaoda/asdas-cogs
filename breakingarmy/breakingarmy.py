@@ -126,8 +126,6 @@ class BreakingArmy(commands.Cog):
                 polling_cog = self.bot.get_cog("EventPolling")
                 if not polling_cog: continue
 
-                # Get winning times from Polling Cog
-                # We replicate the logic from EventPolling.event_notification_task
                 polls = await polling_cog.config.guild(guild).polls()
                 if not polls: continue
                 
@@ -135,26 +133,22 @@ class BreakingArmy(commands.Cog):
                 poll_data = polls[latest_poll_id]
                 selections = poll_data.get("selections", {})
                 
-                # Reach into polling cog's internal method if possible, or replicate
-                # Since we can't easily call private methods, we look for signs of start
                 server_tz = timezone(timedelta(hours=1))
                 now = datetime.now(server_tz)
                 day_name = now.strftime("%A")
                 time_str = now.strftime("%H:%M")
                 
-                # Calculate winners for Breaking Army
                 winners = polling_cog._calculate_winning_times_weighted(selections)
                 ba_winners = winners.get("Breaking Army", {})
                 
                 trigger = False
                 for slot_data in ba_winners.values():
-                    win_key, _, _ = slot_data # (day, time)
+                    win_key, _, _ = slot_data 
                     if win_key[0] == day_name and win_key[1] == time_str:
                         trigger = True
                         break
                 
                 if trigger:
-                    # Check if already triggered in this minute
                     last_trigger = await self.config.guild(guild).active_run.last_auto_trigger()
                     current_key = now.strftime("%Y-%m-%dT%H:%M")
                     if last_trigger != current_key:
@@ -163,14 +157,69 @@ class BreakingArmy(commands.Cog):
         except Exception as e:
             log.error(f"Error in schedule_checker: {e}")
 
-    async def _auto_start_run(self, guild):
-        """Logic to advance week and post dashboard."""
-        season = await self.config.guild(guild).season_data()
-        if not season["is_active"]: return
+    async def _setup_new_season_logic(self, guild: discord.Guild) -> Optional[discord.Embed]:
+        """Internal logic to rank bosses and start a season. Returns success embed or None."""
+        poll_data = await self.config.guild(guild).active_poll()
+        boss_pool = await self.config.guild(guild).boss_pool()
+        seen_bosses = await self.config.guild(guild).seen_bosses()
+        votes = poll_data.get("votes", {})
+        
+        if not votes: return None
 
-        # Advance week logic (simulate [p]ba season next)
+        tally = self._calculate_weighted_tally(votes)
+        ranked_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
+        
+        if len(ranked_names) < 8: return None
+
+        new_bosses = [b for b in ranked_names if b not in seen_bosses]
+        anchors = [None]*4; guests = [None]*4; used = []
+
+        if len(new_bosses) >= 1: anchors[0] = new_bosses[0]; used.append(new_bosses[0])
+        if len(new_bosses) >= 2: anchors[1] = new_bosses[1]; used.append(new_bosses[1])
+        if len(new_bosses) >= 3: anchors[3] = new_bosses[2]; used.append(new_bosses[2])
+            
+        rem = [b for b in ranked_names if b not in used]
+        for i in range(4):
+            if anchors[i] is None: anchors[i] = rem.pop(0); used.append(anchors[i])
+        for i in range(4):
+            if guests[i] is None: guests[i] = rem.pop(0); used.append(guests[i])
+        
+        async with self.config.guild(guild).season_data() as s:
+            s["anchors"] = anchors; s["guests"] = guests; s["current_week"] = 1; s["is_active"] = True
+        async with self.config.guild(guild).seen_bosses() as seen:
+            for b in used: 
+                if b not in seen: seen.append(b)
+        
+        embed = discord.Embed(title="🚀 New Breaking Army Season Automatically Initialized", color=discord.Color.green())
+        def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (" ✨" if name in new_bosses[:3] else "")
+        embed.add_field(name="Anchors", value="\n".join([f"{i+1}. {fmt(a)}" for i, a in enumerate(anchors)]), inline=True)
+        embed.add_field(name="Guests", value="\n".join([f"{i+1}. {fmt(g)}" for i, g in enumerate(guests)]), inline=True)
+        return embed
+
+    async def _auto_start_run(self, guild):
+        """Logic to advance week and post dashboard. Automatically triggers new season if needed."""
+        season = await self.config.guild(guild).season_data()
+        
+        # Auto-generate new season if current one is finished
+        if not season["is_active"]:
+            setup_embed = await self._setup_new_season_logic(guild)
+            if not setup_embed:
+                poll_data = await self.config.guild(guild).active_poll()
+                channel = guild.get_channel(poll_data["channel_id"])
+                if channel:
+                    await channel.send("⚠️ **Failed to auto-start new season:** Not enough bosses with votes (need 8).")
+                return
+            
+            # Post the new season announcement
+            poll_data = await self.config.guild(guild).active_poll()
+            channel = guild.get_channel(poll_data["channel_id"])
+            if channel: await channel.send(embed=setup_embed)
+            
+            # Refresh local season data after update
+            season = await self.config.guild(guild).season_data()
+
         week = season["current_week"]
-        if week > 6: return
+        if week > 6: return # Should be caught by setup check but safety first
 
         anchors = season["anchors"]; guests = season["guests"]
         if week == 1: boss_list = [anchors[0], anchors[1]]
@@ -180,22 +229,18 @@ class BreakingArmy(commands.Cog):
         elif week == 5: boss_list = [anchors[2], guests[2]]
         elif week == 6: boss_list = [anchors[3], guests[3]]
 
-        # Save Run
         await self.config.guild(guild).active_run.set({
             "boss_order": boss_list, "current_index": 0, "is_running": True
         })
         
-        # Post to default channel or polling channel
         poll_data = await self.config.guild(guild).active_poll()
         channel = guild.get_channel(poll_data["channel_id"])
         if channel:
             embed = await self._generate_run_embed(guild, boss_list, 0, True)
-            msg = await channel.send(content=f"🚀 **Auto-Starting Breaking Army: Week {week}**", embed=embed)
+            msg = await channel.send(content=f"⚔️ **Breaking Army Active: Week {week}**", embed=embed)
             async with self.config.guild(guild).active_run() as run:
-                run["message_id"] = msg.id
-                run["channel_id"] = channel.id
+                run["message_id"] = msg.id; run["channel_id"] = channel.id
 
-        # Advance week for next time
         async with self.config.guild(guild).season_data() as s:
             s["current_week"] += 1
             if s["current_week"] > 6: s["is_active"] = False
@@ -231,35 +276,12 @@ class BreakingArmy(commands.Cog):
 
     @ba_season.command(name="setup")
     async def season_setup(self, ctx: commands.Context):
-        poll_data = await self.config.guild(ctx.guild).active_poll()
-        boss_pool = await self.config.guild(ctx.guild).boss_pool()
-        seen_bosses = await self.config.guild(ctx.guild).seen_bosses()
-        
-        tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
-        ranked_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
-        
-        if len(ranked_names) < 8:
-            await ctx.send(f"Need 8 bosses with votes. Have {len(ranked_names)}."); return
-
-        new_bosses = [b for b in ranked_names if b not in seen_bosses]
-        anchors = [None]*4; guests = [None]*4; used = []
-
-        if len(new_bosses) >= 1: anchors[0] = new_bosses[0]; used.append(new_bosses[0])
-        if len(new_bosses) >= 2: anchors[1] = new_bosses[1]; used.append(new_bosses[1])
-        if len(new_bosses) >= 3: anchors[3] = new_bosses[2]; used.append(new_bosses[2])
-            
-        rem = [b for b in ranked_names if b not in used]
-        for i in range(4):
-            if anchors[i] is None: anchors[i] = rem.pop(0); used.append(anchors[i])
-        for i in range(4):
-            if guests[i] is None: guests[i] = rem.pop(0); used.append(guests[i])
-        
-        async with self.config.guild(ctx.guild).season_data() as s:
-            s["anchors"] = anchors; s["guests"] = guests; s["current_week"] = 1; s["is_active"] = True
-        async with self.config.guild(ctx.guild).seen_bosses() as seen:
-            for b in used: 
-                if b not in seen: seen.append(b)
-        await ctx.send("Season Setup Complete. Use `[p]ba season show` to see the roster.")
+        """Manual Season Setup using weighted votes."""
+        embed = await self._setup_new_season_logic(ctx.guild)
+        if embed:
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send("Failed to setup season. Ensure 8 unique bosses have votes.")
 
     @ba_season.command(name="show")
     async def season_show(self, ctx: commands.Context):
@@ -272,8 +294,6 @@ class BreakingArmy(commands.Cog):
             await ctx.send("No season data."); return
 
         embed = discord.Embed(title="📅 Breaking Army Season Status", color=discord.Color.blue())
-        
-        # Schedule
         a = season["anchors"]; g = season["guests"]
         sched = ""
         matrix = [(a[0],a[1]), (a[2],g[0]), (a[3],g[1]), (a[0],a[1]), (a[2],g[2]), (a[3],g[3])]
@@ -285,7 +305,6 @@ class BreakingArmy(commands.Cog):
             sched += f"{pref}**W{w}**: {b1} & {b2}{enc}{stat}\n"
         embed.add_field(name="6-Week Schedule", value=sched, inline=False)
 
-        # Current Run if active
         if run["is_running"]:
             run_embed = await self._generate_run_embed(ctx.guild, run["boss_order"], run["current_index"], True)
             await ctx.send(embed=embed)
@@ -316,8 +335,6 @@ class BreakingArmy(commands.Cog):
                 await ctx.send("🏁 **Run Complete!**")
             else:
                 await ctx.send(f"⚔️ Next Target: **{run['boss_order'][run['current_index']]}**")
-            
-            # Update dashboard if exists
             try:
                 channel = ctx.guild.get_channel(run["channel_id"])
                 msg = await channel.fetch_message(run["message_id"])
@@ -363,21 +380,18 @@ class BossVoteModal(Modal, title="Weighted Boss Ballot"):
         self.cog = cog; self.guild = guild; self.user_id = user_id
         Label_cls = Label or getattr(discord.ui, "Label", None)
         options = [discord.SelectOption(label=n, value=n, emoji=e) for n, e in list(pool.items())[:25]]
-        
         self.selects = []
         for i in range(1, 6):
             sel = StringSelect(placeholder=f"Rank {i} Choice...", options=options, custom_id=f"choice_{i}")
             self.selects.append(sel)
             if Label_cls: self.add_item(Label_cls(f"{i}st Choice" if i==1 else f"{i}th Choice", sel))
             else: self.add_item(sel)
-
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         choices = [s.values[0] if s.values else None for s in self.selects]
         async with self.cog.config.guild(interaction.guild).active_poll() as p:
             p["votes"][str(interaction.user.id)] = choices
-        await self.cog._update_live_view(interaction.guild)
-        await interaction.followup.send("Ballot Saved!", ephemeral=True)
+        await self.cog._update_live_view(interaction.guild); await interaction.followup.send("Ballot Saved!", ephemeral=True)
 
 class BossPollView(discord.ui.View):
     def __init__(self, cog): super().__init__(timeout=None); self.cog = cog
