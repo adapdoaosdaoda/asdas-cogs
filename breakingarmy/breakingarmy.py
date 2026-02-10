@@ -2,7 +2,7 @@ import discord
 from redbot.core import commands, Config
 from redbot.core.bot import Red
 from discord.ext import tasks
-from typing import Optional, List, Dict, Union, Any, Tuple
+from typing import Optional, List, Dict, Union, Any
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -40,7 +40,7 @@ class BreakingArmy(commands.Cog):
             "active_poll": {
                 "message_id": None,
                 "channel_id": None,
-                "votes": {},  # user_id: [anchor, encore, [guests]]
+                "votes": {}, 
             },
             "active_run": {
                 "message_id": None,
@@ -48,13 +48,15 @@ class BreakingArmy(commands.Cog):
                 "boss_order": [], 
                 "current_index": -1,
                 "is_running": False,
+                "start_time": None,
                 "last_auto_trigger": None
             },
             "season_data": {
                 "current_week": 1,
                 "anchors": [], 
                 "guests": [],
-                "is_active": False
+                "is_active": False,
+                "live_season_message": {} 
             }
         }
         
@@ -72,24 +74,17 @@ class BreakingArmy(commands.Cog):
         return False
 
     def _calculate_weighted_tally(self, votes: Dict[str, Any]) -> Dict[str, float]:
-        """Calculates points: Anchor=2.5ea (up to 3), Encore=1, Guests=1ea."""
         tally = {}
         for choices in votes.values():
             if not isinstance(choices, list) or len(choices) < 3: continue
-            
-            # Anchors (Index 0) - 2.5 pts ea
             anchors = choices[0]
             if isinstance(anchors, list):
                 for a in anchors:
                     if a: tally[a] = tally.get(a, 0) + 2.5
-            elif isinstance(anchors, str): # Backward compatibility
+            elif isinstance(anchors, str):
                 tally[anchors] = tally.get(anchors, 0) + 2.5
-            
-            # Encore (Index 1) - 1 pt
             e = choices[1]
             if e: tally[e] = tally.get(e, 0) + 1
-            
-            # Guests (Index 2 - List) - 1 pt ea
             gs = choices[2]
             if isinstance(gs, list):
                 for g in gs:
@@ -97,7 +92,6 @@ class BreakingArmy(commands.Cog):
         return tally
 
     async def _update_poll_embed(self, guild: discord.Guild):
-        """Updates the main poll message with current leaders."""
         async with self.config.guild(guild).active_poll() as poll:
             if not poll["message_id"]: return
             try:
@@ -108,16 +102,12 @@ class BreakingArmy(commands.Cog):
             except: pass
 
     async def _generate_poll_embed(self, guild: discord.Guild) -> discord.Embed:
-        """Generates the main poll embed with sample and leaders."""
         poll_data = await self.config.guild(guild).active_poll()
         boss_pool = await self.config.guild(guild).boss_pool()
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
         sorted_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
-        
         embed = discord.Embed(title="⚔️ Breaking Army: Permanent Boss Poll", color=discord.Color.gold())
         embed.description = "Vote for your favorite bosses to determine the next 6-week season roster!"
-        
-        # 1. Sample Season
         sample = (
             "**W1**: Anchor 1 & Guest 1\n"
             "**W2**: Anchor 2 & Guest 2\n"
@@ -127,8 +117,6 @@ class BreakingArmy(commands.Cog):
             "**W6**: Anchor 3 & Guest 5"
         )
         embed.add_field(name="📋 Season Structure (Rotation)", value=sample, inline=False)
-        
-        # 2. Current Leaders
         if len(sorted_names) < 8:
             leaders = f"⚠️ *Not enough votes to form a season ({len(sorted_names)}/8 bosses)*"
         else:
@@ -144,9 +132,48 @@ class BreakingArmy(commands.Cog):
                 f"8. {get_n(7)} (Guest 5)"
             )
         embed.add_field(name="📊 Current Leaders", value=leaders, inline=False)
-        
         embed.set_footer(text=f"Total Voters: {len(poll_data.get('votes', {}))} | Updates live on vote")
         return embed
+
+    async def _refresh_live_season_view(self, guild: discord.Guild):
+        season = await self.config.guild(guild).season_data()
+        live = season.get("live_season_message", {})
+        if not live.get("message_id"): return
+        try:
+            channel = guild.get_channel(live["channel_id"])
+            if not channel: return
+            msg = await channel.fetch_message(live["message_id"])
+            embeds = await self._generate_season_status_embeds(guild)
+            await msg.edit(embeds=embeds)
+        except: pass
+
+    async def _generate_season_status_embeds(self, guild: discord.Guild) -> List[discord.Embed]:
+        season = await self.config.guild(guild).season_data()
+        run = await self.config.guild(guild).active_run()
+        boss_pool = await self.config.guild(guild).boss_pool()
+        color = discord.Color.green() if season["is_active"] else discord.Color.purple()
+        sched_embed = discord.Embed(title="📅 Breaking Army Season Status", color=color)
+        a = season["anchors"]; g = season["guests"]
+        if not a: 
+            sched_embed.description = "No season initialized."
+            return [sched_embed]
+        sched = ""
+        matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
+        for i, (b1, b2) in enumerate(matrix):
+            w = i+1; e1 = boss_pool.get(b1, "⚔️"); e2 = boss_pool.get(b2, "⚔️"); enc = " (Encore)" if w == 4 else ""
+            if w < season["current_week"]:
+                sched += f"💀 ~~**Week {w}**: {e1} {b1} & {e2} {b2}{enc}~~\n"
+            elif w == season["current_week"] and season["is_active"]:
+                sched += f"⚔️ **__Week {w}__: {e1} {b1} & {e2} {b2}{enc}** (Active)\n"
+            else:
+                sched += f"⏳ **Week {w}**: {e1} {b1} & {e2} {b2}{enc}\n"
+        sched_embed.description = sched
+        embeds = [sched_embed]
+        if run["is_running"]:
+            run_embed = await self._generate_run_embed(guild, run["boss_order"], run["current_index"], True)
+            run_embed.title = "🔥 Current Active Run"
+            embeds.append(run_embed)
+        return embeds
 
     @tasks.loop(minutes=1)
     async def schedule_checker(self):
@@ -154,18 +181,46 @@ class BreakingArmy(commands.Cog):
             for guild_id in await self.config.all_guilds():
                 guild = self.bot.get_guild(guild_id)
                 if not guild: continue
+                
+                # Time Context
+                server_tz = timezone(timedelta(hours=1))
+                now = datetime.now(server_tz)
+                day_name = now.strftime("%A")
+                time_str = now.strftime("%H:%M")
+
+                # 1. Check for Auto-Death (1 hour)
+                run = await self.config.guild(guild).active_run()
+                if run["is_running"] and run["current_index"] == 0 and run["start_time"]:
+                    start = datetime.fromisoformat(run["start_time"])
+                    if datetime.now(timezone.utc) >= start + timedelta(hours=1):
+                        await self._advance_run(guild)
+
+                # 2. Check for Season Reset (Sunday 22:00)
+                if day_name == "Sunday" and time_str == "22:00":
+                    season = await self.config.guild(guild).season_data()
+                    if not season["is_active"] and season.get("current_week", 1) > 6:
+                        setup_embed = await self._setup_new_season_logic(guild)
+                        if setup_embed:
+                            poll_data = await self.config.guild(guild).active_poll()
+                            channel = guild.get_channel(poll_data["channel_id"])
+                            if channel: await channel.send(embed=setup_embed)
+                            await self._refresh_live_season_view(guild)
+                        log.info(f"Auto-generated new season for guild {guild_id} (Sunday Reset)")
+
+                # 3. Check for Schedule Trigger
                 polling_cog = self.bot.get_cog("EventPolling")
                 if not polling_cog: continue
                 polls = await polling_cog.config.guild(guild).polls()
                 if not polls: continue
                 latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
-                winners = polling_cog._calculate_winning_times_weighted(polls[latest_poll_id].get("selections", {}))
+                poll_data = polls[latest_poll_id]
+                snapshot = poll_data.get("weekly_snapshot_winning_times")
+                winners = snapshot if snapshot else polling_cog._calculate_winning_times_weighted(poll_data.get("selections", {}))
+                
                 ba_winners = winners.get("Breaking Army", {})
-                server_tz = timezone(timedelta(hours=1))
-                now = datetime.now(server_tz)
                 trigger = False
                 for slot in ba_winners.values():
-                    if slot[0][0] == now.strftime("%A") and slot[0][1] == now.strftime("%H:%M"):
+                    if slot[0][0] == day_name and slot[0][1] == time_str:
                         trigger = True; break
                 if trigger:
                     last = await self.config.guild(guild).active_run.last_auto_trigger()
@@ -196,7 +251,7 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(guild).seen_bosses() as s:
             for b in used: 
                 if b not in s: s.append(b)
-        embed = discord.Embed(title="🚀 New Season Initialized", color=discord.Color.green())
+        embed = discord.Embed(title="🚀 New Season Automatically Initialized", color=discord.Color.green())
         def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (" ✨" if name in new_b[:3] else "")
         embed.add_field(name="Anchors", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(a)]), inline=True)
         embed.add_field(name="Guests", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(g)]), inline=True)
@@ -222,7 +277,8 @@ class BreakingArmy(commands.Cog):
         elif week == 4: boss_list = [a[0], g[0]]
         elif week == 5: boss_list = [a[1], g[3]]
         elif week == 6: boss_list = [a[2], g[4]]
-        await self.config.guild(guild).active_run.set({"boss_order": boss_list, "current_index": 0, "is_running": True})
+        now_utc = datetime.now(timezone.utc).isoformat()
+        await self.config.guild(guild).active_run.set({"boss_order": boss_list, "current_index": 0, "is_running": True, "start_time": now_utc})
         poll_data = await self.config.guild(guild).active_poll()
         chan = guild.get_channel(poll_data["channel_id"])
         if chan:
@@ -233,6 +289,22 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(guild).season_data() as s:
             s["current_week"] += 1
             if s["current_week"] > 6: s["is_active"] = False
+        await self._refresh_live_season_view(guild)
+
+    async def _advance_run(self, guild: discord.Guild):
+        """Internal helper to move target and check for season end."""
+        async with self.config.guild(guild).active_run() as run:
+            if not run["is_running"]: return
+            run["current_index"] += 1
+            if run["current_index"] >= len(run["boss_order"]):
+                run["is_running"] = False
+            try:
+                channel = guild.get_channel(run["channel_id"])
+                msg = await channel.fetch_message(run["message_id"])
+                embed = await self._generate_run_embed(guild, run["boss_order"], run["current_index"], run["is_running"])
+                await msg.edit(embed=embed)
+            except: pass
+        await self._refresh_live_season_view(guild)
 
     @commands.group(name="ba")
     @commands.guild_only()
@@ -242,33 +314,14 @@ class BreakingArmy(commands.Cog):
 
     @ba.command(name="clearall")
     async def ba_clear_all(self, ctx: commands.Context):
-        """
-        Unload all active embeds and wipe session memory.
-        
-        This stops the current run and unlinks the active poll.
-        Config (Boss Pool, Seen Bosses) is preserved.
-        """
-        if not await self.is_ba_admin(ctx.author):
-            return await ctx.send("Permission denied.")
-
-        # Wipe Poll Session
-        await self.config.guild(ctx.guild).active_poll.set({
-            "message_id": None,
-            "channel_id": None,
-            "votes": {}
-        })
-
-        # Wipe Run Session
-        await self.config.guild(ctx.guild).active_run.set({
-            "message_id": None,
-            "channel_id": None,
-            "boss_order": [],
-            "current_index": -1,
-            "is_running": False,
-            "last_auto_trigger": None
-        })
-
-        await ctx.send("✅ **Success:** All active poll and run sessions have been cleared from memory.")
+        if not await self.is_ba_admin(ctx.author): return await ctx.send("Permission denied.")
+        await self.config.guild(ctx.guild).active_poll.set({"message_id": None, "channel_id": None, "votes": {}})
+        await self.config.guild(ctx.guild).active_run.set({"message_id": None, "channel_id": None, "boss_order": [], "current_index": -1, "is_running": False, "start_time": None, "last_auto_trigger": None})
+        async with self.config.guild(ctx.guild).season_data() as s: 
+            s["live_season_message"] = {}
+            s["is_active"] = False
+            s["current_week"] = 1
+        await ctx.send("✅ **Success:** All sessions cleared.")
 
     @ba.group(name="config")
     async def ba_config(self, ctx: commands.Context):
@@ -294,57 +347,30 @@ class BreakingArmy(commands.Cog):
     @ba_season.command(name="setup")
     async def season_setup(self, ctx: commands.Context):
         embed = await self._setup_new_season_logic(ctx.guild)
-        if embed: await ctx.send(embed=embed)
+        if embed: 
+            await ctx.send(embed=embed)
+            await self._refresh_live_season_view(ctx.guild)
         else: await ctx.send("Failed setup. Need 8 unique bosses with votes.")
 
     @ba_season.command(name="setweek")
     async def season_set_week(self, ctx: commands.Context, week: int):
-        """Manually set the current season week (1-6)."""
-        if not (1 <= week <= 6):
-            return await ctx.send("Week must be between 1 and 6.")
+        if not (1 <= week <= 6): return await ctx.send("Week must be between 1 and 6.")
         async with self.config.guild(ctx.guild).season_data() as s:
-            s["current_week"] = week
-            s["is_active"] = True
+            s["current_week"] = week; s["is_active"] = True
         await ctx.send(f"✅ **Success:** Current week set to **Week {week}**.")
+        await self._refresh_live_season_view(ctx.guild)
 
     @ba_season.command(name="show")
     async def season_show(self, ctx: commands.Context):
-        """Displays schedule and current run status."""
-        season = await self.config.guild(ctx.guild).season_data()
-        run = await self.config.guild(ctx.guild).active_run()
-        boss_pool = await self.config.guild(ctx.guild).boss_pool()
-        
-        if not season["anchors"]:
-            return await ctx.send("No season data.")
+        embeds = await self._generate_season_status_embeds(ctx.guild)
+        await ctx.send(embeds=embeds)
 
-        color = discord.Color.green() if season["is_active"] else discord.Color.purple()
-        embed = discord.Embed(title="📅 Breaking Army Season Status", color=color)
-        
-        a = season["anchors"]; g = season["guests"]
-        sched = ""
-        matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
-        
-        for i, (b1, b2) in enumerate(matrix):
-            w = i+1
-            e1 = boss_pool.get(b1, "⚔️")
-            e2 = boss_pool.get(b2, "⚔️")
-            enc = " (Encore)" if w == 4 else ""
-            
-            if w < season["current_week"]:
-                sched += f"💀 ~~**Week {w}**: {e1} {b1} & {e2} {b2}{enc}~~\n"
-            elif w == season["current_week"] and season["is_active"]:
-                sched += f"⚔️ **__Week {w}__: {e1} {b1} & {e2} {b2}{enc}** (Active)\n"
-            else:
-                sched += f"⏳ **Week {w}**: {e1} {b1} & {e2} {b2}{enc}\n"
-        
-        embed.description = sched
-
-        if run["is_running"]:
-            run_embed = await self._generate_run_embed(ctx.guild, run["boss_order"], run["current_index"], True)
-            await ctx.send(embed=embed)
-            await ctx.send(content="🔥 **Current Active Run:**", embed=run_embed)
-        else:
-            await ctx.send(embed=embed)
+    @ba_season.command(name="live")
+    async def season_live(self, ctx: commands.Context):
+        embeds = await self._generate_season_status_embeds(ctx.guild)
+        msg = await ctx.send(embeds=embeds)
+        async with self.config.guild(ctx.guild).season_data() as s:
+            s["live_season_message"] = {"message_id": msg.id, "channel_id": msg.channel.id}
 
     @ba.group(name="run")
     async def ba_run(self, ctx: commands.Context):
@@ -357,22 +383,13 @@ class BreakingArmy(commands.Cog):
 
     @ba_run.command(name="next", aliases=["bossdown"])
     async def run_next(self, ctx: commands.Context):
-        async with self.config.guild(ctx.guild).active_run() as run:
-            if not run["is_running"]: return await ctx.send("No run active.")
-            run["current_index"] += 1
-            if run["current_index"] >= len(run["boss_order"]):
-                run["is_running"] = False; await ctx.send("🏁 **Run Complete!**")
-            else: await ctx.send(f"⚔️ Next Target: **{run['boss_order'][run['current_index']]}**")
-            try:
-                channel = ctx.guild.get_channel(run["channel_id"])
-                msg = await channel.fetch_message(run["message_id"])
-                embed = await self._generate_run_embed(ctx.guild, run["boss_order"], run["current_index"], run["is_running"])
-                await msg.edit(embed=embed)
-            except: pass
+        await self._advance_run(ctx.guild)
+        await ctx.tick()
 
     @ba_run.command(name="cancel")
     async def run_cancel(self, ctx: commands.Context):
         await self.config.guild(ctx.guild).active_run.is_running.set(False); await ctx.send("Run cancelled.")
+        await self._refresh_live_season_view(ctx.guild)
 
     @ba.group(name="poll")
     async def ba_poll(self, ctx: commands.Context):
@@ -398,7 +415,7 @@ class BreakingArmy(commands.Cog):
         cands = sorted([(b, c) for b, c in tally.items() if c >= thresh], key=lambda x: x[1], reverse=True)
         flist = [b for b, c in cands[:limit]]
         if not flist: return await ctx.send("No bosses met threshold.")
-        await self.config.guild(ctx.guild).active_run.set({"boss_order": flist, "current_index": -1, "is_running": False})
+        await self.config.guild(ctx.guild).active_run.set({"boss_order": flist, "current_index": -1, "is_running": False, "start_time": None})
         await self._start_run_display(ctx, flist)
 
     @ba_poll.command(name="close")
@@ -409,8 +426,7 @@ class BreakingArmy(commands.Cog):
     @ba_poll.command(name="resetvotes")
     async def poll_reset_votes(self, ctx: commands.Context):
         async with self.config.guild(ctx.guild).active_poll() as p: p["votes"] = {}
-        await self._update_poll_embed(ctx.guild)
-        await ctx.send("Votes cleared.")
+        await self._update_poll_embed(ctx.guild); await ctx.send("Votes cleared.")
 
     async def _start_run_display(self, ctx, boss_list):
         embed = await self._generate_run_embed(ctx.guild, boss_list, -1, False)
@@ -432,61 +448,42 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
         super().__init__()
         self.cog = cog; self.guild = guild; self.user_id = user_id
         Label_cls = Label or getattr(discord.ui, "Label", None)
-        
-        # Parse current votes
         cur_anchors = current_votes[0] if current_votes and isinstance(current_votes[0], list) else []
         cur_encore = current_votes[1] if current_votes and len(current_votes) > 1 else None
         cur_guests = current_votes[2] if current_votes and len(current_votes) > 2 and isinstance(current_votes[2], list) else []
-
-        # Options
         anchor_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_anchors)) for n, e in list(pool.items())[:25]]
         self.anchor = StringSelect(placeholder="Select up to 3 Anchors...", min_values=0, max_values=3, options=anchor_opts, custom_id="anchor")
-        
         encore_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n == cur_encore)) for n, e in list(pool.items())[:25]]
         self.encore = StringSelect(placeholder="Select Encore Preference...", min_values=0, options=encore_opts, custom_id="encore")
-        
         guest_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_guests)) for n, e in list(pool.items())[:25]]
         self.guests = StringSelect(placeholder="Select up to 4 other bosses...", min_values=0, max_values=4, options=guest_opts, custom_id="guests")
-        
         if Label_cls:
             self.add_item(Label_cls("Anchor Votes (2.5 pts ea, max 3)", self.anchor))
             self.add_item(Label_cls("Encore Vote (1 pt)", self.encore))
             self.add_item(Label_cls("Guest Votes (1 pt ea, max 4)", self.guests))
         else:
             self.add_item(self.anchor); self.add_item(self.encore); self.add_item(self.guests)
-
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        choices = [
-            self.anchor.values if self.anchor.values else [],
-            self.encore.values[0] if self.encore.values else None,
-            self.guests.values if self.guests.values else []
-        ]
-        async with self.cog.config.guild(interaction.guild).active_poll() as p:
-            p["votes"][str(interaction.user.id)] = choices
-        await self.cog._update_poll_embed(interaction.guild)
-        await interaction.followup.send("Ballot Saved!", ephemeral=True)
+        choices = [self.anchor.values if self.anchor.values else [], self.encore.values[0] if self.encore.values else None, self.guests.values if self.guests.values else []]
+        async with self.cog.config.guild(interaction.guild).active_poll() as p: p["votes"][str(interaction.user.id)] = choices
+        await self.cog._update_poll_embed(interaction.guild); await interaction.followup.send("Ballot Saved!", ephemeral=True)
 
 class BossPollView(discord.ui.View):
     def __init__(self, cog): super().__init__(timeout=None); self.cog = cog
-    
     @discord.ui.button(label="Vote", style=discord.ButtonStyle.primary, emoji="🗳️", custom_id="ba_vote")
     async def vote(self, interaction: discord.Interaction, button: discord.ui.Button):
         pool = await self.cog.config.guild(interaction.guild).boss_pool()
         poll_data = await self.cog.config.guild(interaction.guild).active_poll()
         cur_votes = poll_data.get("votes", {}).get(str(interaction.user.id), [])
         await interaction.response.send_modal(BossVoteModal(self.cog, interaction.guild, interaction.user.id, pool, cur_votes))
-
     @discord.ui.button(label="Total Results", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="ba_results")
     async def results(self, interaction: discord.Interaction, button: discord.ui.Button):
         poll = await self.cog.config.guild(interaction.guild).active_poll()
         boss_pool = await self.cog.config.guild(interaction.guild).boss_pool()
         tally = self.cog._calculate_weighted_tally(poll.get("votes", {}))
         ranked = sorted(tally.items(), key=lambda x: x[1], reverse=True)
-        
-        if not ranked:
-            await interaction.response.send_message("No votes yet.", ephemeral=True); return
-            
+        if not ranked: return await interaction.response.send_message("No votes yet.", ephemeral=True)
         res = "**Current Ranked Totals:**\n"
         for i, (name, pts) in enumerate(ranked):
             role = ""
@@ -495,6 +492,5 @@ class BossPollView(discord.ui.View):
             elif i == 2: role = " (Anchor 3)"
             elif i == 3: role = " (Guest 1 - Encore)"
             elif i <= 7: role = f" (Guest {i-2})"
-            
             res += f"{i+1}. {boss_pool.get(name, '⚔️')} **{name}**: {pts:g} pts{role}\n"
         await interaction.response.send_message(res, ephemeral=True)
