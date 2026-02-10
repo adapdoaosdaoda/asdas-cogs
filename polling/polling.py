@@ -479,6 +479,15 @@ class EventPolling(commands.Cog):
                                                       .replace("{timestamp}", discord_ts)\
                                                       .replace("{time_str}", f"{now.hour:02d}:{now.minute:02d}")
                                     
+                                    # Handle {boss} variable for Breaking Army
+                                    if "{boss}" in message and "Breaking Army" in event_name:
+                                        ba_cog = self.bot.get_cog("BreakingArmy")
+                                        if ba_cog:
+                                            boss_info = await ba_cog._get_current_boss_info(guild)
+                                            message = message.replace("{boss}", boss_info or "Unknown Boss")
+                                        else:
+                                            message = message.replace("{boss}", "Unknown Boss")
+                                    
                                     # Calculate auto-delete duration
                                     delete_duration = None
                                     if "Showdown" in event_name or "Breaking Army" in event_name:

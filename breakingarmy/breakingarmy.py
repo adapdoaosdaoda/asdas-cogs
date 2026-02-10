@@ -349,6 +349,22 @@ class BreakingArmy(commands.Cog):
             except: pass
         await self._refresh_live_season_view(guild)
 
+    async def _get_current_boss_info(self, guild: discord.Guild) -> str:
+        """Returns a formatted string (Emoji Name [New]) for the current active boss."""
+        run = await self.config.guild(guild).active_run()
+        if not run["is_running"] or run["current_index"] < 0 or run["current_index"] >= len(run["boss_order"]):
+            return ""
+        
+        boss_name = run["boss_order"][run["current_index"]]
+        boss_pool = await self.config.guild(guild).boss_pool()
+        new_emote = await self.config.guild(guild).new_boss_emote()
+        season = await self.config.guild(guild).season_data()
+        priority = season.get("priority_bosses", [])
+        
+        emoji = boss_pool.get(boss_name, "⚔️")
+        suffix = f" {new_emote}" if boss_name in priority else ""
+        return f"{emoji} {boss_name}{suffix}"
+
     @commands.group(name="ba")
     @commands.guild_only()
     async def ba(self, ctx: commands.Context):
