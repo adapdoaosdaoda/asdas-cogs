@@ -297,6 +297,16 @@ class BreakingArmy(commands.Cog):
         if embed: await ctx.send(embed=embed)
         else: await ctx.send("Failed setup. Need 8 unique bosses with votes.")
 
+    @ba_season.command(name="setweek")
+    async def season_set_week(self, ctx: commands.Context, week: int):
+        """Manually set the current season week (1-6)."""
+        if not (1 <= week <= 6):
+            return await ctx.send("Week must be between 1 and 6.")
+        async with self.config.guild(ctx.guild).season_data() as s:
+            s["current_week"] = week
+            s["is_active"] = True
+        await ctx.send(f"✅ **Success:** Current week set to **Week {week}**.")
+
     @ba_season.command(name="show")
     async def season_show(self, ctx: commands.Context):
         season = await self.config.guild(ctx.guild).season_data()
