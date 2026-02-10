@@ -368,15 +368,28 @@ class BreakingArmy(commands.Cog):
         return discord.Embed(title=f"Breaking Army Run - {'Active' if is_running else 'Queued'}", description=desc, color=discord.Color.green())
 
 class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
-    def __init__(self, cog, guild, user_id, pool):
+    def __init__(self, cog, guild, user_id, pool, current_votes):
         super().__init__()
         self.cog = cog; self.guild = guild; self.user_id = user_id
         Label_cls = Label or getattr(discord.ui, "Label", None)
+        
+        # Parse current votes
+        # current_votes = [anchors_list, encore_str, guests_list]
+        cur_anchors = current_votes[0] if current_votes and isinstance(current_votes[0], list) else []
+        cur_encore = current_votes[1] if current_votes and len(current_votes) > 1 else None
+        cur_guests = current_votes[2] if current_votes and len(current_votes) > 2 and isinstance(current_votes[2], list) else []
+
         options = [discord.SelectOption(label=n, value=n, emoji=e) for n, e in list(pool.items())[:25]]
         
-        self.anchor = StringSelect(placeholder="Select up to 3 Anchors...", min_values=0, max_values=3, options=options, custom_id="anchor")
-        self.encore = StringSelect(placeholder="Select Encore Preference...", options=options, custom_id="encore")
-        self.guests = StringSelect(placeholder="Select 4 other bosses...", min_values=0, max_values=4, options=options, custom_id="guests")
+        # 3 Weighted Choice Dropdowns
+        anchor_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_anchors)) for n, e in list(pool.items())[:25]]
+        self.anchor = StringSelect(placeholder="Select up to 3 Anchors...", min_values=0, max_values=3, options=anchor_opts, custom_id="anchor")
+        
+        encore_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n == cur_encore)) for n, e in list(pool.items())[:25]]
+        self.encore = StringSelect(placeholder="Select Encore Preference...", options=encore_opts, custom_id="encore")
+        
+        guest_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_guests)) for n, e in list(pool.items())[:25]]
+        self.guests = StringSelect(placeholder="Select 4 other bosses...", min_values=0, max_values=4, options=guest_opts, custom_id="guests")
         
         if Label_cls:
             self.add_item(Label_cls("Anchor Votes (2.5 pts ea, max 3)", self.anchor))
@@ -403,7 +416,9 @@ class BossPollView(discord.ui.View):
     @discord.ui.button(label="Vote", style=discord.ButtonStyle.primary, emoji="🗳️", custom_id="ba_vote")
     async def vote(self, interaction: discord.Interaction, button: discord.ui.Button):
         pool = await self.cog.config.guild(interaction.guild).boss_pool()
-        await interaction.response.send_modal(BossVoteModal(self.cog, interaction.guild, interaction.user.id, pool))
+        poll_data = await self.cog.config.guild(interaction.guild).active_poll()
+        cur_votes = poll_data.get("votes", {}).get(str(interaction.user.id), [])
+        await interaction.response.send_modal(BossVoteModal(self.cog, interaction.guild, interaction.user.id, pool, cur_votes))
 
     @discord.ui.button(label="Total Results", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="ba_results")
     async def results(self, interaction: discord.Interaction, button: discord.ui.Button):
