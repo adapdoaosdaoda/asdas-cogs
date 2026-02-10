@@ -134,14 +134,14 @@ class BreakingArmy(commands.Cog):
         else:
             def get_n(n): return f"{boss_pool.get(sorted_names[n], '⚔️')} {sorted_names[n]}"
             leaders = (
-                f"1. {get_n(0)} (Anchor)\n"
-                f"2. {get_n(1)} (Anchor)\n"
-                f"3. {get_n(2)} (Anchor)\n"
+                f"1. {get_n(0)} (Anchor 1)\n"
+                f"2. {get_n(1)} (Anchor 2)\n"
+                f"3. {get_n(2)} (Anchor 3)\n"
                 f"4. {get_n(3)} (Guest 1 - Encore)\n"
-                f"5. {get_n(4)} (Guest)\n"
-                f"6. {get_n(5)} (Guest)\n"
-                f"7. {get_n(6)} (Guest)\n"
-                f"8. {get_n(7)} (Guest)"
+                f"5. {get_n(4)} (Guest 2)\n"
+                f"6. {get_n(5)} (Guest 3)\n"
+                f"7. {get_n(6)} (Guest 4)\n"
+                f"8. {get_n(7)} (Guest 5)"
             )
         embed.add_field(name="📊 Current Leaders", value=leaders, inline=False)
         
@@ -416,6 +416,13 @@ class BossPollView(discord.ui.View):
             await interaction.response.send_message("No votes yet.", ephemeral=True); return
             
         res = "**Current Ranked Totals:**\n"
-        for name, pts in ranked:
-            res += f"{boss_pool.get(name, '⚔️')} **{name}**: {pts:g} pts\n"
+        for i, (name, pts) in enumerate(ranked):
+            role = ""
+            if i == 0: role = " (Anchor 1)"
+            elif i == 1: role = " (Anchor 2)"
+            elif i == 2: role = " (Anchor 3)"
+            elif i == 3: role = " (Guest 1 - Encore)"
+            elif i <= 7: role = f" (Guest {i-2})"
+            
+            res += f"{i+1}. {boss_pool.get(name, '⚔️')} **{name}**: {pts:g} pts{role}\n"
         await interaction.response.send_message(res, ephemeral=True)
