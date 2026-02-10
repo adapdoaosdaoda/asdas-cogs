@@ -337,15 +337,22 @@ class BreakingArmy(commands.Cog):
 
     @ba_poll.command(name="close")
     async def poll_close(self, ctx: commands.Context):
-        """Close poll and wipe votes."""
-        await self.config.guild(ctx.guild).active_poll.set({"message_id": None, "channel_id": None, "votes": {}, "live_view_message": {}})
-        await ctx.send("Poll closed and votes cleared.")
+        """Close poll and wipe votes/live views from memory."""
+        await self.config.guild(ctx.guild).active_poll.set({
+            "message_id": None, 
+            "channel_id": None, 
+            "votes": {}, 
+            "live_view_message": {}
+        })
+        await ctx.send("Poll closed. All votes and live-update embeds have been removed from memory.")
 
     @ba_poll.command(name="resetvotes")
     async def poll_reset_votes(self, ctx: commands.Context):
-        """Clear all votes but keep poll open."""
-        async with self.config.guild(ctx.guild).active_poll() as poll: poll["votes"] = {}
-        await self._update_live_view(ctx.guild); await ctx.send("Votes cleared.")
+        """Clear all votes and remove live views from memory, but keep poll message active."""
+        async with self.config.guild(ctx.guild).active_poll() as poll: 
+            poll["votes"] = {}
+            poll["live_view_message"] = {}
+        await ctx.send("Votes cleared. Live-update results have been removed from memory.")
 
     async def _generate_run_embed(self, guild, boss_list, current_index, is_running):
         pool = await self.config.guild(guild).boss_pool(); desc = ""
