@@ -118,7 +118,7 @@ class BreakingArmy(commands.Cog):
             "**W1**: Anchor 1 & Guest 1\n"
             "**W2**: Anchor 2 & Guest 2\n"
             "**W3**: Anchor 3 & Guest 3\n"
-            "**W4**: **Anchor 1 & Guest 1 (Encore)**\n"
+            "**W4**: Anchor 1 & Guest 1 (Encore)\n"
             "**W5**: Anchor 2 & Guest 4\n"
             "**W6**: Anchor 3 & Guest 5"
         )
@@ -130,9 +130,9 @@ class BreakingArmy(commands.Cog):
         else:
             def get_n(n): return f"{boss_pool.get(sorted_names[n], '⚔️')} {sorted_names[n]}"
             leaders = (
-                f"**Anchors (Top 3)**: {get_n(0)}, {get_n(1)}, {get_n(2)}\n"
-                f"**Encore (Rank 4)**: {get_n(3)}\n"
-                f"**Guests (5-8)**: {get_n(4)}, {get_n(5)}, {get_n(6)}, {get_n(7)}"
+                f"**Anchors**: {get_n(0)}, {get_n(1)}, {get_n(2)}\n"
+                f"**Guest 1 (Encore)**: {get_n(3)}\n"
+                f"**Other Guests**: {get_n(4)}, {get_n(5)}, {get_n(6)}, {get_n(7)}"
             )
         embed.add_field(name="📊 Current Leaders", value=leaders, inline=False)
         
