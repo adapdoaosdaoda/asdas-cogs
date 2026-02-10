@@ -321,6 +321,32 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(ctx.guild).active_poll() as p:
             p["message_id"] = msg.id; p["channel_id"] = msg.channel.id
 
+    @ba_poll.command(name="snapshot")
+    async def poll_snapshot(self, ctx: commands.Context):
+        """Snapshot current votes and start a run."""
+        poll_data = await self.config.guild(ctx.guild).active_poll()
+        if not poll_data["message_id"]: await ctx.send("No active poll."); return
+        votes = poll_data["votes"]; tally = self._calculate_weighted_tally(votes)
+        threshold = await self.config.guild(ctx.guild).min_vote_threshold()
+        limit = await self.config.guild(ctx.guild).max_bosses_in_run()
+        cands = sorted([(b, c) for b, c in tally.items() if c >= threshold], key=lambda x: x[1], reverse=True)
+        flist = [b for b, c in cands[:limit]]
+        if not flist: await ctx.send(f"No bosses met the threshold."); return
+        await self.config.guild(ctx.guild).active_run.set({"boss_order": flist, "current_index": -1, "is_running": False})
+        await self._start_run_display(ctx, flist)
+
+    @ba_poll.command(name="close")
+    async def poll_close(self, ctx: commands.Context):
+        """Close poll and wipe votes."""
+        await self.config.guild(ctx.guild).active_poll.set({"message_id": None, "channel_id": None, "votes": {}, "live_view_message": {}})
+        await ctx.send("Poll closed and votes cleared.")
+
+    @ba_poll.command(name="resetvotes")
+    async def poll_reset_votes(self, ctx: commands.Context):
+        """Clear all votes but keep poll open."""
+        async with self.config.guild(ctx.guild).active_poll() as poll: poll["votes"] = {}
+        await self._update_live_view(ctx.guild); await ctx.send("Votes cleared.")
+
     async def _generate_run_embed(self, guild, boss_list, current_index, is_running):
         pool = await self.config.guild(guild).boss_pool(); desc = ""
         for i, b in enumerate(boss_list):
