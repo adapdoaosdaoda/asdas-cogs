@@ -2,7 +2,7 @@ import discord
 from redbot.core import commands, Config
 from redbot.core.bot import Red
 from discord.ext import tasks
-from typing import Optional, List, Dict, Union
+from typing import Optional, List, Dict, Union, Any
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -40,7 +40,7 @@ class BreakingArmy(commands.Cog):
             "active_poll": {
                 "message_id": None,
                 "channel_id": None,
-                "votes": {},  # user_id: [choice1, choice2, choice3, choice4, choice5]
+                "votes": {},  # user_id: [rank1, rank2, rank3, [guests]]
                 "live_view_message": {} 
             },
             "active_run": {
@@ -53,8 +53,8 @@ class BreakingArmy(commands.Cog):
             },
             "season_data": {
                 "current_week": 1,
-                "anchors": [], # 3 names
-                "guests": [],  # 5 names
+                "anchors": [], 
+                "guests": [],
                 "is_active": False
             }
         }
@@ -72,14 +72,24 @@ class BreakingArmy(commands.Cog):
             if role.id in admin_roles: return True
         return False
 
-    def _calculate_weighted_tally(self, votes: Dict[str, List[str]]) -> Dict[str, int]:
+    def _calculate_weighted_tally(self, votes: Dict[str, Any]) -> Dict[str, float]:
+        """Calculates points: R1=3, R2=2.5, R3=2, Guests=1ea."""
         tally = {}
-        for user_choices in votes.values():
-            for i, boss in enumerate(user_choices):
-                if not boss: continue
-                points = 5 - i
-                if points < 1: break
-                tally[boss] = tally.get(boss, 0) + points
+        for choices in votes.values():
+            if not isinstance(choices, list): continue
+            
+            # Rank 1-3
+            weights = [3, 2.5, 2]
+            for i in range(min(3, len(choices))):
+                boss = choices[i]
+                if boss and isinstance(boss, str):
+                    tally[boss] = tally.get(boss, 0) + weights[i]
+            
+            # Guests (Stored in 4th element as a list)
+            if len(choices) > 3 and isinstance(choices[3], list):
+                for guest in choices[3]:
+                    if guest and isinstance(guest, str):
+                        tally[guest] = tally.get(guest, 0) + 1
         return tally
 
     async def _update_live_view(self, guild):
@@ -87,14 +97,18 @@ class BreakingArmy(commands.Cog):
         live_view = poll_data.get("live_view_message", {})
         boss_pool = await self.config.guild(guild).boss_pool()
         if not live_view.get("message_id"): return
+        
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
         sorted_tally = sorted(tally.items(), key=lambda x: x[1], reverse=True)
+        
         desc = ""
         if not sorted_tally: desc = "No votes yet."
         else:
             for boss, points in sorted_tally:
                 emote = boss_pool.get(boss, "⚔️")
-                desc += f"{emote} **{boss}**: {points} pts\n"
+                pts_str = f"{points:g}" # Clean float display
+                desc += f"{emote} **{boss}**: {pts_str} pts\n"
+        
         embed = discord.Embed(title="📊 Live Poll Results (Weighted)", description=desc, color=discord.Color.blue())
         embed.set_footer(text=f"Total Voters: {len(poll_data.get('votes', {}))}")
         try:
@@ -120,11 +134,15 @@ class BreakingArmy(commands.Cog):
                 ba_winners = winners.get("Breaking Army", {})
                 server_tz = timezone(timedelta(hours=1))
                 now = datetime.now(server_tz)
+                day_name = now.strftime("%A")
+                time_str = now.strftime("%H:%M")
+                
                 trigger = False
                 for slot_data in ba_winners.values():
                     win_key, _, _ = slot_data 
-                    if win_key[0] == now.strftime("%A") and win_key[1] == now.strftime("%H:%M"):
+                    if win_key[0] == day_name and win_key[1] == time_str:
                         trigger = True; break
+                
                 if trigger:
                     last_trigger = await self.config.guild(guild).active_run.last_auto_trigger()
                     current_key = now.strftime("%Y-%m-%dT%H:%M")
@@ -139,25 +157,30 @@ class BreakingArmy(commands.Cog):
         seen_bosses = await self.config.guild(guild).seen_bosses()
         votes = poll_data.get("votes", {})
         if not votes: return None
+        
         tally = self._calculate_weighted_tally(votes)
         ranked_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
         if len(ranked_names) < 8: return None
+        
         new_bosses = [b for b in ranked_names if b not in seen_bosses]
         anchors = [None]*3; guests = [None]*5; used = []
         if len(new_bosses) >= 1: anchors[0] = new_bosses[0]; used.append(new_bosses[0])
         if len(new_bosses) >= 2: guests[0] = new_bosses[1]; used.append(new_bosses[1])
         if len(new_bosses) >= 3: anchors[2] = new_bosses[2]; used.append(new_bosses[2])
+        
         rem = [b for b in ranked_names if b not in used]
         for i in range(3):
             if anchors[i] is None: anchors[i] = rem.pop(0); used.append(anchors[i])
         for i in range(5):
             if guests[i] is None: guests[i] = rem.pop(0); used.append(guests[i])
+            
         async with self.config.guild(guild).season_data() as s:
             s["anchors"] = anchors; s["guests"] = guests; s["current_week"] = 1; s["is_active"] = True
         async with self.config.guild(guild).seen_bosses() as seen:
             for b in used: 
                 if b not in seen: seen.append(b)
-        embed = discord.Embed(title="🚀 New Breaking Army Season Initialized", color=discord.Color.green())
+        
+        embed = discord.Embed(title="🚀 New Season Initialized", color=discord.Color.green())
         def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (" ✨" if name in new_bosses[:3] else "")
         embed.add_field(name="Anchors (Used Twice)", value="\n".join([f"{i+1}. {fmt(a)}" for i, a in enumerate(anchors)]), inline=True)
         embed.add_field(name="Guests (Used Once)", value="\n".join([f"{i+1}. {fmt(g)}" for i, g in enumerate(guests)]), inline=True)
@@ -169,28 +192,31 @@ class BreakingArmy(commands.Cog):
             setup_embed = await self._setup_new_season_logic(guild)
             if not setup_embed:
                 poll_data = await self.config.guild(guild).active_poll()
-                channel = guild.get_channel(poll_data["channel_id"])
-                if channel: await channel.send("⚠️ **Failed to start season:** Need 8 bosses with votes.")
+                chan = guild.get_channel(poll_data["channel_id"])
+                if chan: await chan.send("⚠️ **Failed to start season:** Need 8 bosses with votes.")
                 return
             poll_data = await self.config.guild(guild).active_poll()
-            channel = guild.get_channel(poll_data["channel_id"])
-            if channel: await channel.send(embed=setup_embed)
+            chan = guild.get_channel(poll_data["channel_id"])
+            if chan: await chan.send(embed=setup_embed)
             season = await self.config.guild(guild).season_data()
+            
         week = season["current_week"]; anchors = season["anchors"]; guests = season["guests"]
+        # Cycle: W1:A1+G1, W2:A2+G2, W3:A3+G3, W4:A1+G1, W5:A2+G4, W6:A3+G5
         if week == 1: boss_list = [anchors[0], guests[0]]
         elif week == 2: boss_list = [anchors[1], guests[1]]
         elif week == 3: boss_list = [anchors[2], guests[2]]
-        elif week == 4: boss_list = [anchors[0], guests[0]] # Encore
+        elif week == 4: boss_list = [anchors[0], guests[0]]
         elif week == 5: boss_list = [anchors[1], guests[3]]
         elif week == 6: boss_list = [anchors[2], guests[4]]
+        
         await self.config.guild(guild).active_run.set({"boss_order": boss_list, "current_index": 0, "is_running": True})
         poll_data = await self.config.guild(guild).active_poll()
-        channel = guild.get_channel(poll_data["channel_id"])
-        if channel:
+        chan = guild.get_channel(poll_data["channel_id"])
+        if chan:
             embed = await self._generate_run_embed(guild, boss_list, 0, True)
-            msg = await channel.send(content=f"⚔️ **Breaking Army Active: Week {week}**", embed=embed)
+            msg = await chan.send(content=f"⚔️ **Breaking Army Active: Week {week}**", embed=embed)
             async with self.config.guild(guild).active_run() as run:
-                run["message_id"] = msg.id; run["channel_id"] = channel.id
+                run["message_id"] = msg.id; run["channel_id"] = chan.id
         async with self.config.guild(guild).season_data() as s:
             s["current_week"] += 1
             if s["current_week"] > 6: s["is_active"] = False
@@ -282,7 +308,6 @@ class BreakingArmy(commands.Cog):
 
     @ba_poll.command(name="live")
     async def poll_live(self, ctx: commands.Context):
-        """Create a live-updating view of the poll results."""
         msg = await ctx.send(embed=discord.Embed(title="📊 Live Poll Results", description="Initializing..."))
         async with self.config.guild(ctx.guild).active_poll() as poll:
             poll["live_view_message"] = {"message_id": msg.id, "channel_id": msg.channel.id}
@@ -292,7 +317,7 @@ class BreakingArmy(commands.Cog):
     async def poll_start(self, ctx: commands.Context):
         if not await self.config.guild(ctx.guild).boss_pool(): return await ctx.send("Pool empty.")
         view = BossPollView(self)
-        msg = await ctx.send(embed=discord.Embed(title="Breaking Army Voting", description="Rank your Top 5 bosses below!", color=discord.Color.gold()), view=view)
+        msg = await ctx.send(embed=discord.Embed(title="Breaking Army Voting", description="Vote for your top choices below!", color=discord.Color.gold()), view=view)
         async with self.config.guild(ctx.guild).active_poll() as p:
             p["message_id"] = msg.id; p["channel_id"] = msg.channel.id
 
@@ -311,16 +336,29 @@ class BossVoteModal(Modal, title="Weighted Boss Ballot"):
         self.cog = cog; self.guild = guild; self.user_id = user_id
         Label_cls = Label or getattr(discord.ui, "Label", None)
         options = [discord.SelectOption(label=n, value=n, emoji=e) for n, e in list(pool.items())[:25]]
-        self.selects = []
-        for i in range(1, 6):
-            sel = StringSelect(placeholder=f"Rank {i} Choice...", options=options, custom_id=f"choice_{i}")
-            self.selects.append(sel)
-            if Label_cls: self.add_item(Label_cls(f"{i} Choice", sel))
+        
+        # 3 Weighted Choice Dropdowns
+        self.ranked = []
+        for i in range(1, 4):
+            sel = StringSelect(placeholder=f"Choice {i}...", options=options, custom_id=f"rank_{i}")
+            self.ranked.append(sel)
+            label = f"{i}st Choice (3 pts)" if i==1 else f"{i}nd Choice (2.5 pts)" if i==2 else f"3rd Choice (2 pts)"
+            if Label_cls: self.add_item(Label_cls(label, sel))
             else: self.add_item(sel)
+            
+        # 1 Multi-select Guest Dropdown
+        self.guest_select = StringSelect(placeholder="Select up to 5 others...", min_values=0, max_values=5, options=options, custom_id="guests")
+        if Label_cls: self.add_item(Label_cls("Guest Selections (1 pt each)", self.guest_select))
+        else: self.add_item(self.guest_select)
+
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        choices = [s.values[0] if s.values else None for s in self.selects]
-        async with self.cog.config.guild(interaction.guild).active_poll() as p: p["votes"][str(interaction.user.id)] = choices
+        # choices = [rank1, rank2, rank3, [guests]]
+        choices = [s.values[0] if s.values else None for s in self.ranked]
+        choices.append(self.guest_select.values if self.guest_select.values else [])
+        
+        async with self.cog.config.guild(interaction.guild).active_poll() as p:
+            p["votes"][str(interaction.user.id)] = choices
         await self.cog._update_live_view(interaction.guild); await interaction.followup.send("Ballot Saved!", ephemeral=True)
 
 class BossPollView(discord.ui.View):
