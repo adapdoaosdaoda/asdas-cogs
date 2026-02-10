@@ -386,10 +386,10 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
         self.anchor = StringSelect(placeholder="Select up to 3 Anchors...", min_values=0, max_values=3, options=anchor_opts, custom_id="anchor")
         
         encore_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n == cur_encore)) for n, e in list(pool.items())[:25]]
-        self.encore = StringSelect(placeholder="Select Encore Preference...", options=encore_opts, custom_id="encore")
+        self.encore = StringSelect(placeholder="Select Encore Preference...", min_values=0, options=encore_opts, custom_id="encore")
         
         guest_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_guests)) for n, e in list(pool.items())[:25]]
-        self.guests = StringSelect(placeholder="Select 4 other bosses...", min_values=0, max_values=4, options=guest_opts, custom_id="guests")
+        self.guests = StringSelect(placeholder="Select up to 4 other bosses...", min_values=0, max_values=4, options=guest_opts, custom_id="guests")
         
         if Label_cls:
             self.add_item(Label_cls("Anchor Votes (2.5 pts ea, max 3)", self.anchor))
