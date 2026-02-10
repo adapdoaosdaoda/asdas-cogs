@@ -580,10 +580,15 @@ class BreakingArmy(commands.Cog):
         for i, b in enumerate(boss_list):
             e = pool.get(b, "⚔️")
             suffix = f" {new_emote}" if b in priority else ""
-            day_fmt = f"**{days[i]}** " if i < len(days) else ""
-            if i < current_index: desc += f"💀 ~~{day_fmt}{e} {b}{suffix}~~\n"
-            elif i == current_index and is_running: desc += f"⚔️ **__{day_fmt}{e} {b}{suffix}__** (Target)\n"
-            else: desc += f"⏳ {day_fmt}{e} {b}{suffix}\n"
+            day_text = days[i] if i < len(days) else "???"
+            day_code = f"`{day_text}` "
+            
+            if i < current_index:
+                desc += f"{day_code}💀 ~~{e} {b}{suffix}~~\n"
+            elif i == current_index and is_running:
+                desc += f"{day_code}⚔️ **__{e} {b}{suffix}__**\n"
+            else:
+                desc += f"{day_code}⏳ {e} {b}{suffix}\n"
         
         return discord.Embed(description=desc, color=discord.Color.green())
 
