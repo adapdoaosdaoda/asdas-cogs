@@ -309,22 +309,42 @@ class BreakingArmy(commands.Cog):
 
     @ba_season.command(name="show")
     async def season_show(self, ctx: commands.Context):
+        """Displays schedule and current run status."""
         season = await self.config.guild(ctx.guild).season_data()
         run = await self.config.guild(ctx.guild).active_run()
-        if not season["anchors"]: return await ctx.send("No season data.")
-        embed = discord.Embed(title="📅 Breaking Army Season Status", color=discord.Color.blue())
+        boss_pool = await self.config.guild(ctx.guild).boss_pool()
+        
+        if not season["anchors"]:
+            return await ctx.send("No season data.")
+
+        color = discord.Color.green() if season["is_active"] else discord.Color.purple()
+        embed = discord.Embed(title="📅 Breaking Army Season Status", color=color)
+        
         a = season["anchors"]; g = season["guests"]
         sched = ""
         matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
+        
         for i, (b1, b2) in enumerate(matrix):
-            w = i+1; pref = "▶️ " if w == season["current_week"] and season["is_active"] else ""
-            stat = " (Complete)" if w < season["current_week"] else ""; enc = " (Encore)" if w == 4 else ""
-            sched += f"{pref}**W{w}**: {b1} & {b2}{enc}{stat}\n"
-        embed.add_field(name="6-Week Schedule", value=sched, inline=False)
+            w = i+1
+            e1 = boss_pool.get(b1, "⚔️")
+            e2 = boss_pool.get(b2, "⚔️")
+            enc = " (Encore)" if w == 4 else ""
+            
+            if w < season["current_week"]:
+                sched += f"💀 ~~**Week {w}**: {e1} {b1} & {e2} {b2}{enc}~~\n"
+            elif w == season["current_week"] and season["is_active"]:
+                sched += f"⚔️ **__Week {w}__: {e1} {b1} & {e2} {b2}{enc}** (Active)\n"
+            else:
+                sched += f"⏳ **Week {w}**: {e1} {b1} & {e2} {b2}{enc}\n"
+        
+        embed.description = sched
+
         if run["is_running"]:
             run_embed = await self._generate_run_embed(ctx.guild, run["boss_order"], run["current_index"], True)
-            await ctx.send(embed=embed); await ctx.send(content="🔥 **Current Active Run:**", embed=run_embed)
-        else: await ctx.send(embed=embed)
+            await ctx.send(embed=embed)
+            await ctx.send(content="🔥 **Current Active Run:**", embed=run_embed)
+        else:
+            await ctx.send(embed=embed)
 
     @ba.group(name="run")
     async def ba_run(self, ctx: commands.Context):
