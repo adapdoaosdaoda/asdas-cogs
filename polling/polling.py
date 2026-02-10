@@ -1756,6 +1756,58 @@ class EventPolling(commands.Cog):
             
         await ctx.send(embed=embed)
 
+    @eventpoll.command(name="testnotif")
+    async def eventpoll_testnotif(self, ctx: commands.Context, *, event_name: str):
+        """Test an event notification message in the current channel.
+        
+        Example: [p]eventpoll testnotif Breaking Army
+        """
+        # 1. Verify Event Name
+        matched_event = None
+        for e in self.events:
+            if event_name.lower() == e.lower():
+                matched_event = e
+                break
+        
+        if not matched_event:
+            return await ctx.send(f"❌ Invalid event name. Available: {', '.join(self.events.keys())}")
+
+        # 2. Get Message Template
+        guild_data = await self.config.guild(ctx.guild).all()
+        custom_msgs = guild_data.get("notification_messages", {})
+        msg_tmpl = custom_msgs.get(matched_event)
+        if not msg_tmpl:
+            msg_tmpl = guild_data.get("notification_message", "{event} is starting at {timestamp}!")
+
+        # 3. Variable Replacement
+        # Timestamp (Current Time)
+        from datetime import timezone
+        server_tz = timezone(timedelta(hours=1))
+        now = datetime.now(server_tz)
+        ts = int(now.timestamp())
+        discord_ts = f"<t:{ts}:R>"
+        
+        # Event Display (Role or Bold)
+        event_roles = guild_data.get("event_roles", {})
+        role_id = event_roles.get(matched_event)
+        event_display = f"<@&{role_id}>" if role_id else f"**{matched_event}**"
+
+        message = msg_tmpl.replace("{event}", event_display)\
+                          .replace("{timestamp}", discord_ts)\
+                          .replace("{time_str}", f"{now.hour:02d}:{now.minute:02d}")
+
+        # Boss Variable
+        if "{boss}" in message and "Breaking Army" in matched_event:
+            ba_cog = self.bot.get_cog("BreakingArmy")
+            if ba_cog:
+                boss_info = await ba_cog._get_current_boss_info(ctx.guild)
+                message = message.replace("{boss}", boss_info or "*(No Active Run)*")
+            else:
+                message = message.replace("{boss}", "*(BreakingArmy Cog Not Found)*")
+
+        # 4. Send
+        await ctx.send(f"🧪 **Test Notification for {matched_event}:**\n---\n{message}", allowed_mentions=discord.AllowedMentions(roles=True))
+
     @eventpoll.command(name="export")
     async def export_backup(self, ctx: commands.Context):
         """Manually create a backup of the latest active poll
