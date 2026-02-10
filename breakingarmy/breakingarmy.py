@@ -404,14 +404,11 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
         Label_cls = Label or getattr(discord.ui, "Label", None)
         
         # Parse current votes
-        # current_votes = [anchors_list, encore_str, guests_list]
         cur_anchors = current_votes[0] if current_votes and isinstance(current_votes[0], list) else []
         cur_encore = current_votes[1] if current_votes and len(current_votes) > 1 else None
         cur_guests = current_votes[2] if current_votes and len(current_votes) > 2 and isinstance(current_votes[2], list) else []
 
-        options = [discord.SelectOption(label=n, value=n, emoji=e) for n, e in list(pool.items())[:25]]
-        
-        # 3 Weighted Choice Dropdowns
+        # Options
         anchor_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_anchors)) for n, e in list(pool.items())[:25]]
         self.anchor = StringSelect(placeholder="Select up to 3 Anchors...", min_values=0, max_values=3, options=anchor_opts, custom_id="anchor")
         
@@ -419,12 +416,12 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
         self.encore = StringSelect(placeholder="Select Encore Preference...", min_values=0, options=encore_opts, custom_id="encore")
         
         guest_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_guests)) for n, e in list(pool.items())[:25]]
-        self.guests = StringSelect(placeholder="Select up to 4 other bosses...", min_values=0, max_values=4, options=guest_opts, custom_id="guests")
+        self.guests = StringSelect(placeholder="Select up to 5 other bosses...", min_values=0, max_values=5, options=guest_opts, custom_id="guests")
         
         if Label_cls:
             self.add_item(Label_cls("Anchor Votes (2.5 pts ea, max 3)", self.anchor))
             self.add_item(Label_cls("Encore Vote (1 pt)", self.encore))
-            self.add_item(Label_cls("Guest Votes (1 pt ea)", self.guests))
+            self.add_item(Label_cls("Guest Votes (1 pt ea, max 5)", self.guests))
         else:
             self.add_item(self.anchor); self.add_item(self.encore); self.add_item(self.guests)
 
