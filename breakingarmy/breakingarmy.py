@@ -111,7 +111,7 @@ class BreakingArmy(commands.Cog):
         
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
         sorted_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
-        embed = discord.Embed(title="⚔️ Breaking Army: Permanent Boss Poll", color=discord.Color.gold())
+        embed = discord.Embed(title="⚔️ Breaking Army: Boss Poll", color=discord.Color.gold())
         embed.description = "Vote for your favorite bosses to determine the next 6-week season roster!"
         sample = (
             "**Week 1**: Anchor 1 & Guest 1\n"
