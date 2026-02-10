@@ -114,12 +114,12 @@ class BreakingArmy(commands.Cog):
         embed = discord.Embed(title="⚔️ Breaking Army: Permanent Boss Poll", color=discord.Color.gold())
         embed.description = "Vote for your favorite bosses to determine the next 6-week season roster!"
         sample = (
-            "**W1**: Anchor 1 & Guest 1\n"
-            "**W2**: Anchor 2 & Guest 2\n"
-            "**W3**: Anchor 3 & Guest 3\n"
-            "**W4**: Anchor 1 & Guest 1 (Encore)\n"
-            "**W5**: Anchor 2 & Guest 4\n"
-            "**W6**: Anchor 3 & Guest 5"
+            "**Week 1**: Anchor 1 & Guest 1\n"
+            "**Week 2**: Anchor 2 & Guest 2\n"
+            "**Week 3**: Anchor 3 & Guest 3\n"
+            "**Week 4**: Anchor 1 & Guest 1 (Encore)\n"
+            "**Week 5**: Anchor 2 & Guest 4\n"
+            "**Week 6**: Anchor 3 & Guest 5"
         )
         embed.add_field(name="📋 Season Structure (Rotation)", value=sample, inline=False)
         
@@ -350,6 +350,31 @@ class BreakingArmy(commands.Cog):
     async def ba(self, ctx: commands.Context):
         """Breaking Army Management"""
         pass
+
+    @ba.command(name="refresh")
+    async def ba_refresh(self, ctx: commands.Context):
+        """Force update all active embeds (Poll, Season Live View, and Run Dashboard)."""
+        if not await self.is_ba_admin(ctx.author):
+            return await ctx.send("Permission denied.")
+
+        # 1. Refresh Poll
+        await self._update_poll_embed(ctx.guild)
+
+        # 2. Refresh Season Live View
+        await self._refresh_live_season_view(ctx.guild)
+
+        # 3. Refresh Standalone Run Dashboard
+        run = await self.config.guild(ctx.guild).active_run()
+        if run.get("message_id") and run.get("is_running"):
+            try:
+                channel = ctx.guild.get_channel(run["channel_id"])
+                if channel:
+                    msg = await channel.fetch_message(run["message_id"])
+                    embed = await self._generate_run_embed(ctx.guild, run["boss_order"], run["current_index"], run["is_running"])
+                    await msg.edit(embed=embed)
+            except: pass
+
+        await ctx.send("✅ **Refreshed:** All active embeds have been updated with the latest data.")
 
     @ba.command(name="clearall")
     async def ba_clear_all(self, ctx: commands.Context):
