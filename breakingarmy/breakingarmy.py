@@ -205,7 +205,7 @@ class BreakingArmy(commands.Cog):
         # Always show run dashboard if season is active
         if season["is_active"] and (run["boss_order"] or run["is_running"]):
             run_embed = await self._generate_run_embed(guild, run["boss_order"], run["current_index"], run["is_running"])
-            run_embed.title = f"Week {season['current_week']}"
+            run_embed.title = f"🔥 Week {season['current_week']}"
             embeds.append(run_embed)
         return embeds
 
@@ -332,8 +332,6 @@ class BreakingArmy(commands.Cog):
         await self.config.guild(guild).active_run.set({
             "boss_order": boss_list, "current_index": 0, "is_running": True, "start_time": now_utc
         })
-        
-        # No longer sending standalone run messages automatically
         await self._refresh_live_season_view(guild)
 
     async def _advance_run(self, guild: discord.Guild):
@@ -458,7 +456,6 @@ class BreakingArmy(commands.Cog):
         embed = await self._setup_new_season_logic(ctx.guild)
         if embed: 
             await ctx.send(embed=embed)
-            # Queued upcoming run
             season = await self.config.guild(ctx.guild).season_data()
             bosses = self._get_bosses_for_week(season, season["current_week"])
             await self.config.guild(ctx.guild).active_run.set({
@@ -473,7 +470,6 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(ctx.guild).season_data() as s:
             s["current_week"] = week; s["is_active"] = True
         
-        # Populate run for this specific week
         season = await self.config.guild(ctx.guild).season_data()
         bosses = self._get_bosses_for_week(season, week)
         await self.config.guild(ctx.guild).active_run.set({
@@ -559,8 +555,6 @@ class BreakingArmy(commands.Cog):
     async def _start_run_display(self, ctx, boss_list):
         embed = await self._generate_run_embed(ctx.guild, boss_list, -1, False)
         msg = await ctx.send(embed=embed)
-        # Note: Standalone run messages are no longer tracked for auto-updates
-        # This remains as a manual utility only.
 
     async def _generate_run_embed(self, guild, boss_list, current_index, is_running):
         pool = await self.config.guild(guild).boss_pool(); desc = ""
@@ -568,8 +562,7 @@ class BreakingArmy(commands.Cog):
         season = await self.config.guild(guild).season_data()
         priority = season.get("priority_bosses", [])
         
-        # Get Scheduled Days from Polling Cog
-        days_str = ""
+        days = []
         polling_cog = self.bot.get_cog("EventPolling")
         if polling_cog:
             polls = await polling_cog.config.guild(guild).polls()
@@ -579,18 +572,20 @@ class BreakingArmy(commands.Cog):
                 snap = poll_data.get("weekly_snapshot_winning_times")
                 winners = snap if snap else polling_cog._calculate_winning_times_weighted(poll_data.get("selections", {}))
                 ba_winners = winners.get("Breaking Army", {})
-                days = sorted(list(set(slot[0][0][:3] for slot in ba_winners.values())))
-                if days: days_str = f" [{ ' & '.join(days) }]"
+                dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                raw_days = list(set(slot[0][0] for slot in ba_winners.values()))
+                raw_days.sort(key=lambda d: dow_order.index(d))
+                days = [d[:3] for d in raw_days]
 
         for i, b in enumerate(boss_list):
             e = pool.get(b, "⚔️")
             suffix = f" {new_emote}" if b in priority else ""
-            if i < current_index: desc += f"💀 ~~{e}{days_str} {b}{suffix}~~\n"
-            elif i == current_index and is_running: desc += f"⚔️ **__ {e}{days_str} {b}{suffix} __** (Target)\n"
-            else: desc += f"⏳ {e}{days_str} {b}{suffix}\n"
+            day_fmt = f"**{days[i]}** " if i < len(days) else ""
+            if i < current_index: desc += f"💀 ~~{day_fmt}{e} {b}{suffix}~~\n"
+            elif i == current_index and is_running: desc += f"⚔️ **__{day_fmt}{e} {b}{suffix}__** (Target)\n"
+            else: desc += f"⏳ {day_fmt}{e} {b}{suffix}\n"
         
-        title = f"Breaking Army Run - {'Active' if is_running else 'Queued'}"
-        return discord.Embed(title=title, description=desc, color=discord.Color.green())
+        return discord.Embed(description=desc, color=discord.Color.green())
 
 class SeasonLiveView(discord.ui.View):
     def __init__(self, url: str):
