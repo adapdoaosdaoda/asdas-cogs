@@ -94,14 +94,16 @@ class BreakingArmy(commands.Cog):
         return tally
 
     async def _update_poll_embed(self, guild: discord.Guild):
-        async with self.config.guild(guild).active_poll() as poll:
-            if not poll["message_id"]: return
-            try:
-                channel = guild.get_channel(poll["channel_id"])
-                msg = await channel.fetch_message(poll["message_id"])
-                embed = await self._generate_poll_embed(guild)
-                await msg.edit(embed=embed)
-            except: pass
+        poll = await self.config.guild(guild).active_poll()
+        if not poll["message_id"]: return
+        try:
+            channel = guild.get_channel(poll["channel_id"])
+            if not channel: return
+            msg = await channel.fetch_message(poll["message_id"])
+            embed = await self._generate_poll_embed(guild)
+            await msg.edit(embed=embed)
+        except Exception as e:
+            log.error(f"Error updating poll embed: {e}")
 
     async def _generate_poll_embed(self, guild: discord.Guild) -> discord.Embed:
         poll_data = await self.config.guild(guild).active_poll()
