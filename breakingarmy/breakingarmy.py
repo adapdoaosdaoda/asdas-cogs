@@ -134,9 +134,14 @@ class BreakingArmy(commands.Cog):
         else:
             def get_n(n): return f"{boss_pool.get(sorted_names[n], '⚔️')} {sorted_names[n]}"
             leaders = (
-                f"**Anchors**: {get_n(0)}, {get_n(1)}, {get_n(2)}\n"
-                f"**Guest 1 (Encore)**: {get_n(3)}\n"
-                f"**Other Guests**: {get_n(4)}, {get_n(5)}, {get_n(6)}, {get_n(7)}"
+                f"1. {get_n(0)} (Anchor)\n"
+                f"2. {get_n(1)} (Anchor)\n"
+                f"3. {get_n(2)} (Anchor)\n"
+                f"4. {get_n(3)} (Guest 1 - Encore)\n"
+                f"5. {get_n(4)} (Guest)\n"
+                f"6. {get_n(5)} (Guest)\n"
+                f"7. {get_n(6)} (Guest)\n"
+                f"8. {get_n(7)} (Guest)"
             )
         embed.add_field(name="📊 Current Leaders", value=leaders, inline=False)
         
