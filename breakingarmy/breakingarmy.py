@@ -240,6 +240,36 @@ class BreakingArmy(commands.Cog):
         """Breaking Army Management"""
         pass
 
+    @ba.command(name="clearall")
+    async def ba_clear_all(self, ctx: commands.Context):
+        """
+        Unload all active embeds and wipe session memory.
+        
+        This stops the current run and unlinks the active poll.
+        Config (Boss Pool, Seen Bosses) is preserved.
+        """
+        if not await self.is_ba_admin(ctx.author):
+            return await ctx.send("Permission denied.")
+
+        # Wipe Poll Session
+        await self.config.guild(ctx.guild).active_poll.set({
+            "message_id": None,
+            "channel_id": None,
+            "votes": {}
+        })
+
+        # Wipe Run Session
+        await self.config.guild(ctx.guild).active_run.set({
+            "message_id": None,
+            "channel_id": None,
+            "boss_order": [],
+            "current_index": -1,
+            "is_running": False,
+            "last_auto_trigger": None
+        })
+
+        await ctx.send("✅ **Success:** All active poll and run sessions have been cleared from memory.")
+
     @ba.group(name="config")
     async def ba_config(self, ctx: commands.Context):
         if not await self.is_ba_admin(ctx.author): raise commands.CheckFailure()
