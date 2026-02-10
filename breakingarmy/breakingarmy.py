@@ -101,7 +101,9 @@ class BreakingArmy(commands.Cog):
             if not channel: return
             msg = await channel.fetch_message(poll["message_id"])
             embed = await self._generate_poll_embed(guild)
-            await msg.edit(embed=embed)
+            # Re-attach the view to ensure it uses the latest code
+            view = BossPollView(self)
+            await msg.edit(embed=embed, view=view)
         except Exception as e:
             log.error(f"Error updating poll embed: {e}")
 
@@ -597,25 +599,31 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
             self.add_item(self.anchor); self.add_item(self.encore); self.add_item(self.guests)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        # Use the latest cog instance from the bot
+        actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
         choices = [self.anchor.values if self.anchor.values else [], self.encore.values[0] if self.encore.values else None, self.guests.values if self.guests.values else []]
-        async with self.cog.config.guild(interaction.guild).active_poll() as p: p["votes"][str(interaction.user.id)] = choices
-        await self.cog._update_poll_embed(interaction.guild); await interaction.followup.send("Ballot Saved!", ephemeral=True)
+        async with actual_cog.config.guild(interaction.guild).active_poll() as p: p["votes"][str(interaction.user.id)] = choices
+        await actual_cog._update_poll_embed(interaction.guild); await interaction.followup.send("Ballot Saved!", ephemeral=True)
 
 class BossPollView(discord.ui.View):
     def __init__(self, cog): super().__init__(timeout=None); self.cog = cog
     @discord.ui.button(label="Vote", style=discord.ButtonStyle.primary, emoji="🗳️", custom_id="ba_vote")
     async def vote(self, interaction: discord.Interaction, button: discord.ui.Button):
-        pool = await self.cog.config.guild(interaction.guild).boss_pool()
-        poll_data = await self.cog.config.guild(interaction.guild).active_poll()
+        # Use the latest cog instance from the bot
+        actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
+        pool = await actual_cog.config.guild(interaction.guild).boss_pool()
+        poll_data = await actual_cog.config.guild(interaction.guild).active_poll()
         cur_votes = poll_data.get("votes", {}).get(str(interaction.user.id), [])
-        await interaction.response.send_modal(BossVoteModal(self.cog, interaction.guild, interaction.user.id, pool, cur_votes))
+        await interaction.response.send_modal(BossVoteModal(actual_cog, interaction.guild, interaction.user.id, pool, cur_votes))
     @discord.ui.button(label="Total Results", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="ba_results")
     async def results(self, interaction: discord.Interaction, button: discord.ui.Button):
-        poll = await self.cog.config.guild(interaction.guild).active_poll()
-        boss_pool = await self.cog.config.guild(interaction.guild).boss_pool()
-        new_emote = await self.cog.config.guild(interaction.guild).new_boss_emote()
-        seen_bosses = await self.cog.config.guild(interaction.guild).seen_bosses()
-        tally = self.cog._calculate_weighted_tally(poll.get("votes", {}))
+        # Use the latest cog instance from the bot
+        actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
+        poll = await actual_cog.config.guild(interaction.guild).active_poll()
+        boss_pool = await actual_cog.config.guild(interaction.guild).boss_pool()
+        new_emote = await actual_cog.config.guild(interaction.guild).new_boss_emote()
+        seen_bosses = await actual_cog.config.guild(interaction.guild).seen_bosses()
+        tally = actual_cog._calculate_weighted_tally(poll.get("votes", {}))
         ranked = sorted(tally.items(), key=lambda x: x[1], reverse=True)
         if not ranked: return await interaction.response.send_message("No votes yet.", ephemeral=True)
         res = "**Current Ranked Totals:**\n"
