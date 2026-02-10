@@ -72,14 +72,18 @@ class BreakingArmy(commands.Cog):
         return False
 
     def _calculate_weighted_tally(self, votes: Dict[str, Any]) -> Dict[str, float]:
-        """Calculates points: Anchor=2.5, Encore=1, Guests=1ea."""
+        """Calculates points: Anchor=2.5ea (up to 3), Encore=1, Guests=1ea."""
         tally = {}
         for choices in votes.values():
             if not isinstance(choices, list) or len(choices) < 3: continue
             
-            # Anchor (Index 0) - 2.5 pts
-            a = choices[0]
-            if a: tally[a] = tally.get(a, 0) + 2.5
+            # Anchors (Index 0) - 2.5 pts ea
+            anchors = choices[0]
+            if isinstance(anchors, list):
+                for a in anchors:
+                    if a: tally[a] = tally.get(a, 0) + 2.5
+            elif isinstance(anchors, str): # Backward compatibility
+                tally[anchors] = tally.get(anchors, 0) + 2.5
             
             # Encore (Index 1) - 1 pt
             e = choices[1]
@@ -365,12 +369,12 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
         Label_cls = Label or getattr(discord.ui, "Label", None)
         options = [discord.SelectOption(label=n, value=n, emoji=e) for n, e in list(pool.items())[:25]]
         
-        self.anchor = StringSelect(placeholder="Select Primary Anchor...", options=options, custom_id="anchor")
+        self.anchor = StringSelect(placeholder="Select up to 3 Anchors...", min_values=0, max_values=3, options=options, custom_id="anchor")
         self.encore = StringSelect(placeholder="Select Encore Preference...", options=options, custom_id="encore")
         self.guests = StringSelect(placeholder="Select 4 other bosses...", min_values=0, max_values=4, options=options, custom_id="guests")
         
         if Label_cls:
-            self.add_item(Label_cls("Anchor Vote (2.5 pts)", self.anchor))
+            self.add_item(Label_cls("Anchor Votes (2.5 pts ea, max 3)", self.anchor))
             self.add_item(Label_cls("Encore Vote (1 pt)", self.encore))
             self.add_item(Label_cls("Guest Votes (1 pt ea)", self.guests))
         else:
@@ -379,7 +383,7 @@ class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         choices = [
-            self.anchor.values[0] if self.anchor.values else None,
+            self.anchor.values if self.anchor.values else [],
             self.encore.values[0] if self.encore.values else None,
             self.guests.values if self.guests.values else []
         ]
