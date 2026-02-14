@@ -52,13 +52,13 @@ class CommandsConfigMixin:
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    async def seteventdeletion(self, ctx, hours: int):
-        """Set how many hours after event start channels are deleted (default: 4)."""
+    async def seteventarchiving(self, ctx, hours: int):
+        """Set how many hours after event start channels are archived (default: 4)."""
         if hours < 0:
             await ctx.send("❌ Hours must be a positive number.")
             return
         await self.config.guild(ctx.guild).deletion_hours.set(hours)
-        await ctx.send(f"✅ Event channels will be deleted **{hours} hours** after event start.")
+        await ctx.send(f"✅ Event channels will be archived **{hours} hours** after event start.")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
@@ -564,26 +564,26 @@ class CommandsConfigMixin:
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
-    async def setdeletionwarning(self, ctx, *, message: str):
-        """Set the warning message posted 15 minutes before channel deletion.
+    async def setarchivingwarning(self, ctx, *, message: str):
+        """Set the warning message posted 15 minutes before channel archiving.
 
         Available placeholders:
         - {role} - Mentions the event role
         - {event} - Event name
 
         Examples:
-        - `⚠️ These channels will be deleted in 15 minutes.` (default)
+        - `⚠️ These channels will be archived in 15 minutes.` (default)
         - `{role} Event channels closing in 15 minutes!`
-        - `⚠️ {event} channels will be removed shortly.`
+        - `⚠️ {event} channels will be archived shortly.`
 
-        To disable deletion warnings, use: `none`
+        To disable archiving warnings, use: `none`
         """
         if message.lower() == "none":
             await self.config.guild(ctx.guild).deletion_warning_message.set("")
-            await ctx.send("✅ Deletion warnings disabled.")
+            await ctx.send("✅ Archiving warnings disabled.")
         else:
             await self.config.guild(ctx.guild).deletion_warning_message.set(message)
-            await ctx.send(f"✅ Deletion warning message set to: `{message}`")
+            await ctx.send(f"✅ Archiving warning message set to: `{message}`")
 
     @commands.admin_or_permissions(manage_guild=True)
     @commands.guild_only()

@@ -26,7 +26,7 @@ class UtilsMixin:
         """
         try:
             OLD_DEFAULT = "⚠️ These channels will be deleted in 15 minutes."
-            NEW_DEFAULT = "⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours."
+            NEW_DEFAULT = "⚠️ These channels will be archived in 15 minutes. React with ⏰ to extend archiving by 4 hours."
 
             current_message = await self.config.guild(guild).deletion_warning_message()
 

@@ -954,15 +954,17 @@ class HandlersMixin:
 
             # Send archive notification
             try:
+                from datetime import datetime, timezone
+                archive_ts = int(datetime.now(timezone.utc).timestamp())
                 await text_channel.send(
                     f"📦 This channel has been archived because it contains messages. "
-                    f"It is now read-only."
+                    f"It is now read-only.\n"
+                    f"-# Channel archived at <t:{archive_ts}:F>"
                 )
             except discord.Forbidden:
                 pass
 
             # Store archived channel info for tracking
-            from datetime import datetime, timezone
             archived_channels = await self.config.guild(guild).archived_channels()
             archived_channels[str(text_channel.id)] = {
                 "event_name": event_name,

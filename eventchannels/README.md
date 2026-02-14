@@ -8,7 +8,7 @@ A Red-Discord bot cog that automatically creates temporary text and voice channe
 - **Role-Based Access Control**: Assigns event-specific roles for channel access
 - **Dynamic Voice Scaling**: Creates multiple voice channels based on role member count
 - **Channel Name Customization**: Supports character limits and custom truncation
-- **Automatic Cleanup**: Removes channels and roles when events end or are cancelled
+- **Automatic Archiving**: Archives or removes channels and roles when events end or are cancelled
 - **Divider Channel Support**: Organizes event channels with visual separators
 - **Permission Management**: Handles channel permissions and role assignments
 

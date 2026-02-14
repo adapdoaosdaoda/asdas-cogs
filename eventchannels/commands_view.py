@@ -79,7 +79,7 @@ class CommandsViewMixin:
         embed.add_field(name="Category", value=category_name, inline=False)
         embed.add_field(name="Timezone", value=timezone, inline=False)
         embed.add_field(name="Creation Time", value=f"{creation_minutes} minutes before start", inline=False)
-        embed.add_field(name="Deletion Time", value=f"{deletion_hours} hours after start", inline=False)
+        embed.add_field(name="Archiving Time", value=f"{deletion_hours} hours after start", inline=False)
         embed.add_field(name="Role Format", value=f"`{role_format}`", inline=False)
         embed.add_field(name="Channel Format", value=f"`{channel_format}`", inline=False)
         embed.add_field(name="Space Replacer", value=f"`{space_replacer}`", inline=False)
@@ -89,7 +89,7 @@ class CommandsViewMixin:
         embed.add_field(name="Whitelisted Roles", value=whitelisted_display, inline=False)
         embed.add_field(name="Announcement", value=announcement_display, inline=False)
         embed.add_field(name="Event Start Message", value=event_start_display, inline=False)
-        embed.add_field(name="Deletion Warning", value=deletion_warning_display, inline=False)
+        embed.add_field(name="Archiving Warning", value=deletion_warning_display, inline=False)
         embed.add_field(name="Divider Channel", value=divider_display, inline=False)
 
         try:
@@ -101,7 +101,7 @@ class CommandsViewMixin:
                 f"**Category:** {category_name}\n"
                 f"**Timezone:** {timezone}\n"
                 f"**Creation Time:** {creation_minutes} minutes before start\n"
-                f"**Deletion Time:** {deletion_hours} hours after start\n"
+                f"**Archiving Time:** {deletion_hours} hours after start\n"
                 f"**Role Format:** `{role_format}`\n"
                 f"**Channel Format:** `{channel_format}`\n"
                 f"**Space Replacer:** `{space_replacer}`\n"
@@ -111,7 +111,7 @@ class CommandsViewMixin:
                 f"**Whitelisted Roles:** {whitelisted_display}\n"
                 f"**Announcement:** {announcement_display}\n"
                 f"**Event Start Message:** {event_start_display}\n"
-                f"**Deletion Warning:** {deletion_warning_display}\n"
+                f"**Archiving Warning:** {deletion_warning_display}\n"
                 f"**Divider Channel:** {divider_display}"
             )
             await ctx.send(message)

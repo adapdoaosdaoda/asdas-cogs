@@ -31,10 +31,10 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             channel_format="{name}᲼{type}",  # Default channel name format
             space_replacer="᲼",  # Character to replace spaces in channel names
             creation_minutes=15,  # Default creation time in minutes before event
-            deletion_hours=4,  # Default deletion time in hours
+            deletion_hours=4,  # Default archiving time in hours
             announcement_message="{role} The event is starting soon!",  # Default announcement
             event_start_message="{role} The event is starting now!",  # Message sent at event start
-            deletion_warning_message="⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours.",  # Warning before deletion
+            deletion_warning_message="⚠️ These channels will be archived in 15 minutes. React with ⏰ to extend archiving by 4 hours.",  # Warning before archiving
             divider_enabled=True,  # Enable divider channel by default
             divider_name="━━━━━━ EVENT CHANNELS ━━━━━━",  # Default divider name
             divider_channel_id=None,  # Stores the divider channel ID
@@ -74,7 +74,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             f"`{prefix}eventchannels setarchivecategory <category>` - Set where archived channels will be moved\n"
             f"`{prefix}eventchannels settimezone <timezone>` - Set timezone for event role matching (e.g., Europe/Amsterdam)\n"
             f"`{prefix}eventchannels setcreationtime <minutes>` - Set when channels are created before event start (default: 15)\n"
-            f"`{prefix}eventchannels setdeletion <hours>` - Set when channels are deleted after event start (default: 4)\n"
+            f"`{prefix}eventchannels setarchiving <hours>` - Set when channels are archived after event start (default: 4)\n"
         )
         embed.add_field(name="Configuration - Basic", value=config_commands_basic, inline=False)
 
@@ -84,7 +84,7 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             f"`{prefix}eventchannels setchannelformat <format>` - Customize channel name format pattern\n"
             f"`{prefix}eventchannels setannouncement <message>` - Set announcement message in event channels\n"
             f"`{prefix}eventchannels setstartmessage <message>` - Set message posted when event starts\n"
-            f"`{prefix}eventchannels setdeletionwarning <message>` - Set warning message before channel deletion\n"
+            f"`{prefix}eventchannels setarchivingwarning <message>` - Set warning message before channel archiving\n"
             f"`{prefix}eventchannels setchannelnamelimit <limit>` - Set maximum character limit for channel names (default: 100)\n"
             f"`{prefix}eventchannels linkthread <thread> <event_id>` - Manually link a forum thread to an event\n"
         )
@@ -95,8 +95,8 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
             f"**Automatic Archiving:**\n"
             f"Channels with user messages are automatically archived instead of deleted.\n"
             f"Archived channels are moved to the archive category, made read-only, and prefixed with 'archived-'.\n\n"
-            f"**Deletion Extension:**\n"
-            f"React with ⏰ to the deletion warning message to extend deletion by 4 hours.\n"
+            f"**Archiving Extension:**\n"
+            f"React with ⏰ to the archiving warning message to extend archiving by 4 hours.\n"
             f"This allows you to keep channels open longer if needed."
         )
         embed.add_field(name="Archive & Deletion Features", value=archive_commands, inline=False)
@@ -176,10 +176,10 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
         """Wrapper for seteventtimezone from CommandsConfigMixin."""
         await self.seteventtimezone(ctx, tz)
 
-    @eventchannels.command(name="setdeletion")
-    async def setdeletion(self, ctx, hours: int):
-        """Wrapper for seteventdeletion from CommandsConfigMixin."""
-        await self.seteventdeletion(ctx, hours)
+    @eventchannels.command(name="setarchiving", aliases=["setdeletion"])
+    async def setarchiving(self, ctx, hours: int):
+        """Wrapper for seteventarchiving from CommandsConfigMixin."""
+        await self.seteventarchiving(ctx, hours)
 
     @eventchannels.command(name="setcreationtime")
     async def setcreationtime(self, ctx, minutes: int):
@@ -246,10 +246,10 @@ class EventChannels(UtilsMixin, HandlersMixin, EventsMixin, CommandsConfigMixin,
         """Wrapper for seteventstartmessage from CommandsConfigMixin."""
         await self.seteventstartmessage(ctx, message=message)
 
-    @eventchannels.command(name="setdeletionwarning")
-    async def setdeletionwarning_cmd(self, ctx, *, message: str):
-        """Wrapper for setdeletionwarning from CommandsConfigMixin."""
-        await self.setdeletionwarning(ctx, message=message)
+    @eventchannels.command(name="setarchivingwarning", aliases=["setdeletionwarning"])
+    async def setarchivingwarning_cmd(self, ctx, *, message: str):
+        """Wrapper for setarchivingwarning from CommandsConfigMixin."""
+        await self.setarchivingwarning(ctx, message=message)
 
     @eventchannels.command(name="setdivider")
     async def setdivider(self, ctx, enabled: bool, *, divider_name: str = None):

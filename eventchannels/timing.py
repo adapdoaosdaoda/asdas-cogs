@@ -67,14 +67,14 @@ def calculate_extended_delete_time(current_delete_time: datetime) -> datetime:
 
 
 def format_default_warning_message() -> str:
-    """Generate the default deletion warning message using timing constants.
+    """Generate the default archiving warning message using timing constants.
 
     Returns:
         Formatted warning message string
     """
     return (
-        f"These channels will be deleted in {WARNING_MINUTES} minutes. "
-        f"React with to extend deletion by {EXTENSION_HOURS} hours."
+        f"These channels will be archived in {WARNING_MINUTES} minutes. "
+        f"React with to extend archiving by {EXTENSION_HOURS} hours."
     )
 
 
@@ -83,13 +83,13 @@ def format_extension_message(user_mention: str, delete_time: datetime) -> str:
 
     Args:
         user_mention: Discord mention string for the user who extended
-        delete_time: When channels will now be deleted (timezone-aware UTC)
+        delete_time: When channels will now be archived (timezone-aware UTC)
 
     Returns:
         Formatted extension notification string
     """
     timestamp = int(delete_time.timestamp())
     return (
-        f"\n\n⏰ **Extended by {user_mention}**: Deletion postponed by {EXTENSION_HOURS} hours. "
-        f"Channels will now be deleted <t:{timestamp}:R>."
+        f"\n\n⏰ **Extended by {user_mention}**: Archiving postponed by {EXTENSION_HOURS} hours. "
+        f"Channels will now be archived <t:{timestamp}:R>."
     )

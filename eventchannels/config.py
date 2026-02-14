@@ -12,7 +12,7 @@ DEFAULT_CONFIG = {
     "deletion_hours": 4,
     "announcement_message": "{role} The event is starting soon!",
     "event_start_message": "{role} The event is starting now!",
-    "deletion_warning_message": "⚠️ These channels will be deleted in 15 minutes. React with ⏰ to extend deletion by 4 hours.",
+    "deletion_warning_message": "⚠️ These channels will be archived in 15 minutes. React with ⏰ to extend archiving by 4 hours.",
     "divider_enabled": True,
     "divider_name": "━━━━━━ EVENT CHANNELS ━━━━━━",
     "divider_channel_id": None,

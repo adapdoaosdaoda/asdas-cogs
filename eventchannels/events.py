@@ -22,11 +22,11 @@ class EventsMixin:
     @commands.Cog.listener()
     async def on_scheduled_event_delete(self, event: discord.ScheduledEvent):
         """Cancel task and clean up channels when event is deleted."""
-        # Check if deletion has been extended - if so, don't cancel task (keep channels open)
+        # Check if archiving has been extended - if so, don't cancel task (keep channels open)
         async with self._config_lock:
             deletion_extensions = await self.config.guild(event.guild).deletion_extensions()
             if str(event.id) in deletion_extensions:
-                log.info(f"Event '{event.name}' (ID: {event.id}) was deleted, but deletion is extended. Keeping channels open until extended deletion time.")
+                log.info(f"Event '{event.name}' (ID: {event.id}) was deleted, but archiving is extended. Keeping channels open until extended archiving time.")
                 return
 
         self._cancel_event_tasks(event.id)
@@ -35,11 +35,11 @@ class EventsMixin:
     async def on_scheduled_event_update(self, before: discord.ScheduledEvent, after: discord.ScheduledEvent):
         """Cancel task and clean up if event is cancelled or start time changes significantly."""
         if after.status == discord.EventStatus.cancelled:
-            # Check if deletion has been extended
+            # Check if archiving has been extended
             async with self._config_lock:
                 deletion_extensions = await self.config.guild(after.guild).deletion_extensions()
                 if str(after.id) in deletion_extensions:
-                    log.info(f"Event '{after.name}' (ID: {after.id}) was cancelled, but deletion is extended. Keeping channels open.")
+                    log.info(f"Event '{after.name}' (ID: {after.id}) was cancelled, but archiving is extended. Keeping channels open.")
                     return
 
             self._cancel_event_tasks(after.id)
@@ -135,7 +135,7 @@ class EventsMixin:
                     # Check if extended before deciding to cleanup
                     deletion_extensions = await self.config.guild(guild).deletion_extensions()
                     if str(event_id) in deletion_extensions:
-                        log.info(f"Deletion is extended for event {event_id}. Keeping channels despite role recreation failure (access may be limited).")
+                        log.info(f"Archiving is extended for event {event_id}. Keeping channels despite role recreation failure (access may be limited).")
                         should_cleanup = False
                     else:
                         log.info("Channels will be cleaned up without role.")
@@ -351,7 +351,7 @@ class EventsMixin:
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        """Handle reactions on deletion warning messages to extend deletion time."""
+        """Handle reactions on archiving warning messages to extend archiving time."""
         # Ignore bot reactions
         if payload.user_id == self.bot.user.id:
             return
@@ -364,7 +364,7 @@ class EventsMixin:
         if not guild:
             return
 
-        # Check if this reaction is on a deletion warning message
+        # Check if this reaction is on an archiving warning message
         async with self._config_lock:
             deletion_extensions = await self.config.guild(guild).deletion_extensions()
 
@@ -376,9 +376,9 @@ class EventsMixin:
                     break
 
             if not event_id_str:
-                return  # Not a deletion warning message
+                return  # Not an archiving warning message
 
-            # Get the current deletion time
+            # Get the current archiving time
             current_delete_time = datetime.fromtimestamp(
                 deletion_extensions[event_id_str]["delete_time"],
                 tz=timezone.utc
@@ -388,11 +388,11 @@ class EventsMixin:
             from datetime import timedelta
             new_delete_time = current_delete_time + timedelta(hours=EXTENSION_HOURS)
 
-            # Update the stored deletion time
+            # Update the stored archiving time
             deletion_extensions[event_id_str]["delete_time"] = new_delete_time.timestamp()
             await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
 
-            log.info(f"Extended deletion time for event {event_id_str} by {EXTENSION_HOURS} hours to {new_delete_time}")
+            log.info(f"Extended archiving time for event {event_id_str} by {EXTENSION_HOURS} hours to {new_delete_time}")
 
         # Get the channel and update the warning message
         text_channel_id = deletion_extensions[event_id_str].get("text_channel_id")
@@ -418,13 +418,13 @@ class EventsMixin:
                     else:
                         await warning_message.edit(content=f"{warning_message.content}{extension_msg}")
 
-                    log.info(f"Updated deletion warning message with extension notification")
+                    log.info(f"Updated archiving warning message with extension notification")
                 except discord.NotFound:
-                    log.warning(f"Could not find deletion warning message {payload.message_id}")
+                    log.warning(f"Could not find archiving warning message {payload.message_id}")
                 except discord.Forbidden:
-                    log.warning(f"Could not edit deletion warning message - missing permissions")
+                    log.warning(f"Could not edit archiving warning message - missing permissions")
                 except Exception as e:
-                    log.error(f"Error updating deletion warning message: {e}")
+                    log.error(f"Error updating archiving warning message: {e}")
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
