@@ -73,7 +73,7 @@ class MCWhitelist(commands.Cog):
                 else:
                     await ctx.send(f"❌ Failed to add `{player_name}` to the whitelist: {response}")
 
-    @mcwhitelist.command(name="remove")
+    @mcwhitelist.command(name="remove", aliases=["rm"])
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist_remove(self, ctx, player: str):
         """
@@ -107,7 +107,7 @@ class MCWhitelist(commands.Cog):
             else:
                 await ctx.send(f"❌ Failed to add `{player_name}` to the whitelist: {response}")
 
-    @mcwhitelist.command(name="removebedrock")
+    @mcwhitelist.command(name="removebedrock", aliases=["rmbedrock", "bedrockremove"])
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist_remove_bedrock(self, ctx, player: str):
         """
