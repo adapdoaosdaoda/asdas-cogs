@@ -16,8 +16,9 @@ class TestMCWhitelist:
     """Test suite for MCWhitelist cog."""
 
     @pytest.fixture
-    async def cog(self, bot):
+    async def cog(self):
         """Create a MCWhitelist cog instance with mocked config."""
+        bot = MagicMock()
         with patch('redbot.core.Config.get_conf'):
             cog = MCWhitelist(bot)
             cog.config = MagicMock()
@@ -29,7 +30,7 @@ class TestMCWhitelist:
                     "port": 25575,
                     "password": "password123",
                 }
-            cog.config.guild.return_value.all = get_all
+            cog.config.all = get_all
             yield cog
 
     async def test_cog_loads(self, cog):
@@ -42,7 +43,6 @@ class TestMCWhitelist:
         """Test the whitelist add command."""
         ctx = MagicMock()
         ctx.invoked_subcommand = None
-        ctx.guild.id = 123
         ctx.typing.return_value.__aenter__ = AsyncMock()
         ctx.typing.return_value.__aexit__ = AsyncMock()
         
@@ -52,7 +52,7 @@ class TestMCWhitelist:
             mock_client_class.return_value = mock_client
             mock_client.send_cmd.return_value = ("Added PlayerX to the whitelist", 1)
             
-            await cog.whitelist(ctx, "PlayerX")
+            await cog.mcwhitelist(ctx, "PlayerX")
             
             # Verify RCON was called correctly
             mock_client_class.assert_called_with("127.0.0.1", 25575, "password123")
@@ -68,7 +68,6 @@ class TestMCWhitelist:
     async def test_whitelist_remove(self, cog):
         """Test the whitelist remove command."""
         ctx = MagicMock()
-        ctx.guild.id = 123
         ctx.typing.return_value.__aenter__ = AsyncMock()
         ctx.typing.return_value.__aexit__ = AsyncMock()
         
@@ -78,7 +77,7 @@ class TestMCWhitelist:
             mock_client_class.return_value = mock_client
             mock_client.send_cmd.return_value = ("Removed PlayerX from the whitelist", 1)
             
-            await cog.whitelist_remove(ctx, "PlayerX")
+            await cog.mcwhitelist_remove(ctx, "PlayerX")
             
             # Verify RCON was called correctly
             mock_client.send_cmd.assert_called_with("easywhitelist remove PlayerX")
@@ -91,7 +90,6 @@ class TestMCWhitelist:
     async def test_no_password_error(self, cog):
         """Test error when no password is set."""
         ctx = MagicMock()
-        ctx.guild.id = 123
         ctx.typing.return_value.__aenter__ = AsyncMock()
         ctx.typing.return_value.__aexit__ = AsyncMock()
         
@@ -102,9 +100,9 @@ class TestMCWhitelist:
                 "port": 25575,
                 "password": "",
             }
-        cog.config.guild.return_value.all = get_all_no_pass
+        cog.config.all = get_all_no_pass
         
-        await cog.whitelist_remove(ctx, "PlayerX")
+        await cog.mcwhitelist_remove(ctx, "PlayerX")
         
         ctx.send.assert_called()
         args, _ = ctx.send.call_args

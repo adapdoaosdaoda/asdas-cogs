@@ -18,16 +18,16 @@ class MCWhitelist(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=8273645190, force_registration=True)
 
-        default_guild = {
+        default_global = {
             "host": "127.0.0.1",
             "port": 25575,
             "password": "",
         }
-        self.config.register_guild(**default_guild)
+        self.config.register_global(**default_global)
 
-    async def _send_rcon(self, guild: discord.Guild, command: str) -> Tuple[bool, str]:
+    async def _send_rcon(self, command: str) -> Tuple[bool, str]:
         """Sends a command via RCON and returns (success, response)."""
-        conf = await self.config.guild(guild).all()
+        conf = await self.config.all()
         host = conf["host"]
         port = conf["port"]
         password = conf["password"]
@@ -50,7 +50,6 @@ class MCWhitelist(commands.Cog):
             return False, f"An unexpected error occurred: {e}"
 
     @commands.group(name="mcwhitelist", aliases=["mcwl"], invoke_without_command=True)
-    @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist(self, ctx, player: Optional[str] = None):
         """
@@ -64,14 +63,13 @@ class MCWhitelist(commands.Cog):
                 return
 
             async with ctx.typing():
-                success, response = await self._send_rcon(ctx.guild, f"easywhitelist add {player}")
+                success, response = await self._send_rcon(f"easywhitelist add {player}")
                 if success:
                     await ctx.send(f"✅ Successfully added `{player}` to the whitelist.\n**Server response:** {response}")
                 else:
                     await ctx.send(f"❌ Failed to add `{player}` to the whitelist: {response}")
 
     @mcwhitelist.command(name="remove")
-    @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist_remove(self, ctx, player: str):
         """
@@ -80,15 +78,14 @@ class MCWhitelist(commands.Cog):
         Usage: [p]mcwhitelist remove <player>
         """
         async with ctx.typing():
-            success, response = await self._send_rcon(ctx.guild, f"easywhitelist remove {player}")
+            success, response = await self._send_rcon(f"easywhitelist remove {player}")
             if success:
                 await ctx.send(f"✅ Successfully removed `{player}` from the whitelist.\n**Server response:** {response}")
             else:
                 await ctx.send(f"❌ Failed to remove `{player}` from the whitelist: {response}")
 
     @commands.group(name="mcset")
-    @commands.guild_only()
-    @checks.admin_or_permissions(manage_guild=True)
+    @checks.is_owner()
     async def mcset(self, ctx):
         """Configure Minecraft RCON settings."""
         pass
@@ -96,7 +93,7 @@ class MCWhitelist(commands.Cog):
     @mcset.command(name="host")
     async def mcset_host(self, ctx, host: str):
         """Set the RCON server host."""
-        await self.config.guild(ctx.guild).host.set(host)
+        await self.config.host.set(host)
         await ctx.send(f"RCON host set to `{host}`.")
 
     @mcset.command(name="port")
@@ -105,13 +102,13 @@ class MCWhitelist(commands.Cog):
         if not (1 <= port <= 65535):
             await ctx.send("❌ Port must be between 1 and 65535.")
             return
-        await self.config.guild(ctx.guild).port.set(port)
+        await self.config.port.set(port)
         await ctx.send(f"RCON port set to `{port}`.")
 
     @mcset.command(name="password")
     async def mcset_password(self, ctx, password: str):
         """Set the RCON server password."""
-        await self.config.guild(ctx.guild).password.set(password)
+        await self.config.password.set(password)
         try:
             await ctx.message.delete()
         except discord.Forbidden:
@@ -121,7 +118,7 @@ class MCWhitelist(commands.Cog):
     @mcset.command(name="settings")
     async def mcset_settings(self, ctx):
         """Show current RCON settings."""
-        conf = await self.config.guild(ctx.guild).all()
+        conf = await self.config.all()
         host = conf["host"]
         port = conf["port"]
         has_password = "Yes" if conf["password"] else "No"
