@@ -49,7 +49,7 @@ class MCWhitelist(commands.Cog):
             log.error(f"RCON Error: {e}")
             return False, f"An unexpected error occurred: {e}"
 
-    @commands.group(name="mcwhitelist", invoke_without_command=True)
+    @commands.group(name="mcwhitelist", aliases=["mcwl"], invoke_without_command=True)
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist(self, ctx, player: Optional[str] = None):
