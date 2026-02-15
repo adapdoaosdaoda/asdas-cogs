@@ -63,7 +63,7 @@ class MCWhitelist(commands.Cog):
                 return
 
             async with ctx.typing():
-                success, response = await self._send_rcon(f"easywhitelist add {player}")
+                success, response = await self._send_rcon(f'easywhitelist add "{player}"')
                 if success:
                     await ctx.send(f"✅ Successfully added `{player}` to the whitelist.\n**Server response:** {response}")
                 else:
@@ -78,7 +78,7 @@ class MCWhitelist(commands.Cog):
         Usage: [p]mcwhitelist remove <player>
         """
         async with ctx.typing():
-            success, response = await self._send_rcon(f"easywhitelist remove {player}")
+            success, response = await self._send_rcon(f'easywhitelist remove "{player}"')
             if success:
                 await ctx.send(f"✅ Successfully removed `{player}` from the whitelist.\n**Server response:** {response}")
             else:
@@ -94,7 +94,7 @@ class MCWhitelist(commands.Cog):
         """
         player_name = f"⛨{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f"easywhitelist add {player_name}")
+            success, response = await self._send_rcon(f'easywhitelist add "{player_name}"')
             if success:
                 await ctx.send(f"✅ Successfully added Bedrock player `{player_name}` to the whitelist.\n**Server response:** {response}")
             else:
@@ -110,7 +110,7 @@ class MCWhitelist(commands.Cog):
         """
         player_name = f"⛨{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f"easywhitelist remove {player_name}")
+            success, response = await self._send_rcon(f'easywhitelist remove "{player_name}"')
             if success:
                 await ctx.send(f"✅ Successfully removed Bedrock player `{player_name}` from the whitelist.\n**Server response:** {response}")
             else:
