@@ -91,7 +91,7 @@ Automatically send, edit, and optionally delete messages in new forum threads.
 Whitelist players on a Minecraft server via RCON using /easywhitelist.
 
 **Key Features:**
-- Simple `!whitelist <player>` and `!whitelist remove <player>` commands
+- Simple `!mcwhitelist <player>` and `!mcwhitelist remove <player>` commands
 - Secure RCON communication
 - Real-time server feedback
 - Configurable host, port, and password

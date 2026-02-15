@@ -49,14 +49,14 @@ class MCWhitelist(commands.Cog):
             log.error(f"RCON Error: {e}")
             return False, f"An unexpected error occurred: {e}"
 
-    @commands.group(name="whitelist", invoke_without_command=True)
+    @commands.group(name="mcwhitelist", invoke_without_command=True)
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
-    async def whitelist(self, ctx, player: Optional[str] = None):
+    async def mcwhitelist(self, ctx, player: Optional[str] = None):
         """
         Add a player to the Minecraft whitelist.
         
-        Usage: [p]whitelist <player>
+        Usage: [p]mcwhitelist <player>
         """
         if ctx.invoked_subcommand is None:
             if player is None:
@@ -70,14 +70,14 @@ class MCWhitelist(commands.Cog):
                 else:
                     await ctx.send(f"❌ Failed to add `{player}` to the whitelist: {response}")
 
-    @whitelist.command(name="remove")
+    @mcwhitelist.command(name="remove")
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
-    async def whitelist_remove(self, ctx, player: str):
+    async def mcwhitelist_remove(self, ctx, player: str):
         """
         Remove a player from the Minecraft whitelist.
         
-        Usage: [p]whitelist remove <player>
+        Usage: [p]mcwhitelist remove <player>
         """
         async with ctx.typing():
             success, response = await self._send_rcon(ctx.guild, f"easywhitelist remove {player}")
