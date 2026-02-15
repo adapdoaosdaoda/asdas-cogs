@@ -23,7 +23,7 @@ class MCWhitelist(commands.Cog):
             "port": 25575,
             "password": "",
             "java_prefix": "",
-            "bedrock_prefix": "⛨",
+            "bedrock_prefix": ".",
         }
         self.config.register_global(**default_global)
 
@@ -175,7 +175,7 @@ class MCWhitelist(commands.Cog):
         port = conf["port"]
         has_password = "Yes" if conf["password"] else "No"
         j_prefix = conf.get("java_prefix", "")
-        b_prefix = conf.get("bedrock_prefix", "⛨")
+        b_prefix = conf.get("bedrock_prefix", ".")
         
         embed = discord.Embed(title="Minecraft RCON Settings", color=discord.Color.blue())
         embed.add_field(name="Host", value=host, inline=True)
