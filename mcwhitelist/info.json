@@ -4,9 +4,9 @@
     "end_user_data_statement": "This cog does not persistently store end-user data.",
     "install_msg": "MCWhitelist is installed. Use `[p]mcset` to configure your RCON server details.",
     "min_bot_version": "3.5.0",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "name": "MCWhitelist",
-    "requirements": ["aiomcrcon"],
+    "requirements": ["aio-mc-rcon"],
     "short": "Minecraft RCON whitelist manager.",
     "tags": ["minecraft", "rcon", "whitelist"]
 }
