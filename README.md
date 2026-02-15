@@ -15,6 +15,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]cog install asdas-cogs eventchannels
 [p]cog install asdas-cogs eventrolereadd
 [p]cog install asdas-cogs forumthreadmessage
+[p]cog install asdas-cogs mcwhitelist
 [p]cog install asdas-cogs msgmover
 [p]cog install asdas-cogs polling
 [p]cog install asdas-cogs reminders
@@ -26,6 +27,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]load eventchannels
 [p]load eventrolereadd
 [p]load forumthreadmessage
+[p]load mcwhitelist
 [p]load msgmover
 [p]load polling
 [p]load reminders
@@ -85,6 +87,15 @@ Automatically send, edit, and optionally delete messages in new forum threads.
 - Fully configurable message content
 - Silent message sending (no notifications)
 
+### MCWhitelist
+Whitelist players on a Minecraft server via RCON using /easywhitelist.
+
+**Key Features:**
+- Simple `!whitelist <player>` and `!whitelist remove <player>` commands
+- Secure RCON communication
+- Real-time server feedback
+- Configurable host, port, and password
+
 ### MsgMover
 [coffeebank's](https://github.com/coffeebank/coffee-cogs) message utilities cog for moving messages across channels and servers using webhooks.
 
@@ -139,6 +150,7 @@ A Discord cog for Where Winds Meet that sends weekly Trade Commission informatio
 - **[EventChannels Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventChannels)** - Complete guide with examples
 - **[EventRoleReadd Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/EventRoleReadd)** - Setup and commands
 - **[ForumThreadMessage Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/ForumThreadMessage)** - Auto-messaging setup
+- **[MCWhitelist Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/MCWhitelist)** - Minecraft RCON whitelist management
 - **[MsgMover Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/MsgMover)** - Message utilities guide
 - **[Polling Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Polling)** - Event polling system
 - **[Reminders Wiki](https://github.com/adapdoaosdaoda/asdas-cogs/wiki/Reminders)** - Features and usage
