@@ -22,6 +22,8 @@ class MCWhitelist(commands.Cog):
             "host": "127.0.0.1",
             "port": 25575,
             "password": "",
+            "java_prefix": "",
+            "bedrock_prefix": "⛨",
         }
         self.config.register_global(**default_global)
 
@@ -62,12 +64,14 @@ class MCWhitelist(commands.Cog):
                 await ctx.send_help()
                 return
 
+            prefix = await self.config.java_prefix()
+            player_name = f"{prefix}{player}"
             async with ctx.typing():
-                success, response = await self._send_rcon(f'easywhitelist add "{player}"')
+                success, response = await self._send_rcon(f'easywhitelist add "{player_name}"')
                 if success:
-                    await ctx.send(f"✅ Successfully added `{player}` to the whitelist.\n**Server response:** {response}")
+                    await ctx.send(f"✅ Successfully added `{player_name}` to the whitelist.\n**Server response:** {response}")
                 else:
-                    await ctx.send(f"❌ Failed to add `{player}` to the whitelist: {response}")
+                    await ctx.send(f"❌ Failed to add `{player_name}` to the whitelist: {response}")
 
     @mcwhitelist.command(name="remove")
     @checks.admin_or_permissions(manage_guild=True)
@@ -77,24 +81,27 @@ class MCWhitelist(commands.Cog):
         
         Usage: [p]mcwhitelist remove <player>
         """
+        prefix = await self.config.java_prefix()
+        player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'easywhitelist remove "{player}"')
+            success, response = await self._send_rcon(f'easywhitelist remove "{player_name}"')
             if success:
-                await ctx.send(f"✅ Successfully removed `{player}` from the whitelist.\n**Server response:** {response}")
+                await ctx.send(f"✅ Successfully removed `{player_name}` from the whitelist.\n**Server response:** {response}")
             else:
-                await ctx.send(f"❌ Failed to remove `{player}` from the whitelist: {response}")
+                await ctx.send(f"❌ Failed to remove `{player_name}` from the whitelist: {response}")
 
     @mcwhitelist.command(name="bedrock")
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist_bedrock(self, ctx, player: str):
         """
-        Add a Bedrock player to the Minecraft whitelist (adds ⛨ prefix).
+        Add a Bedrock player to the Minecraft whitelist.
         
         Usage: [p]mcwhitelist bedrock <player>
         """
-        player_name = f"⛨{player}"
+        prefix = await self.config.bedrock_prefix()
+        player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f"whitelist add {player_name}")
+            success, response = await self._send_rcon(f'whitelist add "{player_name}"')
             if success:
                 await ctx.send(f"✅ Successfully added Bedrock player `{player_name}` to the whitelist.\n**Server response:** {response}")
             else:
@@ -104,13 +111,14 @@ class MCWhitelist(commands.Cog):
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist_remove_bedrock(self, ctx, player: str):
         """
-        Remove a Bedrock player from the Minecraft whitelist (adds ⛨ prefix).
+        Remove a Bedrock player from the Minecraft whitelist.
         
         Usage: [p]mcwhitelist removebedrock <player>
         """
-        player_name = f"⛨{player}"
+        prefix = await self.config.bedrock_prefix()
+        player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f"whitelist remove {player_name}")
+            success, response = await self._send_rcon(f'whitelist remove "{player_name}"')
             if success:
                 await ctx.send(f"✅ Successfully removed Bedrock player `{player_name}` from the whitelist.\n**Server response:** {response}")
             else:
@@ -147,6 +155,18 @@ class MCWhitelist(commands.Cog):
             pass
         await ctx.send("RCON password set (and message deleted for security).")
 
+    @mcset.command(name="javaprefix")
+    async def mcset_java_prefix(self, ctx, prefix: str = ""):
+        """Set the prefix for Java players."""
+        await self.config.java_prefix.set(prefix)
+        await ctx.send(f"Java prefix set to `{prefix}`.")
+
+    @mcset.command(name="bedrockprefix")
+    async def mcset_bedrock_prefix(self, ctx, prefix: str = ""):
+        """Set the prefix for Bedrock players."""
+        await self.config.bedrock_prefix.set(prefix)
+        await ctx.send(f"Bedrock prefix set to `{prefix}`.")
+
     @mcset.command(name="settings")
     async def mcset_settings(self, ctx):
         """Show current RCON settings."""
@@ -154,10 +174,14 @@ class MCWhitelist(commands.Cog):
         host = conf["host"]
         port = conf["port"]
         has_password = "Yes" if conf["password"] else "No"
+        j_prefix = conf.get("java_prefix", "")
+        b_prefix = conf.get("bedrock_prefix", "⛨")
         
         embed = discord.Embed(title="Minecraft RCON Settings", color=discord.Color.blue())
         embed.add_field(name="Host", value=host, inline=True)
         embed.add_field(name="Port", value=port, inline=True)
         embed.add_field(name="Password Set", value=has_password, inline=True)
+        embed.add_field(name="Java Prefix", value=f"`{j_prefix}`" if j_prefix else "None", inline=True)
+        embed.add_field(name="Bedrock Prefix", value=f"`{b_prefix}`" if b_prefix else "None", inline=True)
         
         await ctx.send(embed=embed)
