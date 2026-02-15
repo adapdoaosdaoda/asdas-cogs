@@ -84,6 +84,38 @@ class MCWhitelist(commands.Cog):
             else:
                 await ctx.send(f"❌ Failed to remove `{player}` from the whitelist: {response}")
 
+    @mcwhitelist.command(name="bedrock")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def mcwhitelist_bedrock(self, ctx, player: str):
+        """
+        Add a Bedrock player to the Minecraft whitelist (adds ⛨ prefix).
+        
+        Usage: [p]mcwhitelist bedrock <player>
+        """
+        player_name = f"⛨{player}"
+        async with ctx.typing():
+            success, response = await self._send_rcon(f"easywhitelist add {player_name}")
+            if success:
+                await ctx.send(f"✅ Successfully added Bedrock player `{player_name}` to the whitelist.\n**Server response:** {response}")
+            else:
+                await ctx.send(f"❌ Failed to add `{player_name}` to the whitelist: {response}")
+
+    @mcwhitelist.command(name="removebedrock")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def mcwhitelist_remove_bedrock(self, ctx, player: str):
+        """
+        Remove a Bedrock player from the Minecraft whitelist (adds ⛨ prefix).
+        
+        Usage: [p]mcwhitelist removebedrock <player>
+        """
+        player_name = f"⛨{player}"
+        async with ctx.typing():
+            success, response = await self._send_rcon(f"easywhitelist remove {player_name}")
+            if success:
+                await ctx.send(f"✅ Successfully removed Bedrock player `{player_name}` from the whitelist.\n**Server response:** {response}")
+            else:
+                await ctx.send(f"❌ Failed to remove `{player_name}` from the whitelist: {response}")
+
     @commands.group(name="mcset")
     @checks.is_owner()
     async def mcset(self, ctx):
