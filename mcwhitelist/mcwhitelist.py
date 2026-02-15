@@ -67,7 +67,7 @@ class MCWhitelist(commands.Cog):
             prefix = await self.config.java_prefix()
             player_name = f"{prefix}{player}"
             async with ctx.typing():
-                success, response = await self._send_rcon(f'easywhitelist add "{player_name}"')
+                success, response = await self._send_rcon(f'easywhitelist add {player_name}')
                 if success:
                     await ctx.send(f"✅ Successfully added `{player_name}` to the whitelist.\n**Server response:** {response}")
                 else:
@@ -84,7 +84,7 @@ class MCWhitelist(commands.Cog):
         prefix = await self.config.java_prefix()
         player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'easywhitelist remove "{player_name}"')
+            success, response = await self._send_rcon(f'easywhitelist remove {player_name}')
             if success:
                 await ctx.send(f"✅ Successfully removed `{player_name}` from the whitelist.\n**Server response:** {response}")
             else:
@@ -101,7 +101,7 @@ class MCWhitelist(commands.Cog):
         prefix = await self.config.bedrock_prefix()
         player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'easywhitelist add "{player_name}"')
+            success, response = await self._send_rcon(f'easywhitelist add {player_name}')
             if success:
                 await ctx.send(f"✅ Successfully added Bedrock player `{player_name}` to the whitelist.\n**Server response:** {response}")
             else:
@@ -118,7 +118,7 @@ class MCWhitelist(commands.Cog):
         prefix = await self.config.bedrock_prefix()
         player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'easywhitelist remove "{player_name}"')
+            success, response = await self._send_rcon(f'easywhitelist remove {player_name}')
             if success:
                 await ctx.send(f"✅ Successfully removed Bedrock player `{player_name}` from the whitelist.\n**Server response:** {response}")
             else:
