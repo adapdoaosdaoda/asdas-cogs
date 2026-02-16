@@ -551,6 +551,40 @@ class EventPolling(commands.Cog):
             "guilds": {}
         }
 
+        # Ensure emojis directory exists
+        export_dir = Path(export_path).parent
+        emoji_dir = export_dir / "emojis"
+        emoji_dir.mkdir(parents=True, exist_ok=True)
+
+        async def get_emoji_url(emoji_str):
+            if not emoji_str:
+                return ""
+            
+            # Check if it's a custom Discord emoji <:name:id> or <a:name:id>
+            match = re.search(r'<(a?):([^:]+):(\d+)>', str(emoji_str))
+            if match:
+                is_animated = bool(match.group(1))
+                emoji_id = match.group(3)
+                ext = "gif" if is_animated else "png"
+                filename = f"{emoji_id}.{ext}"
+                local_path = emoji_dir / filename
+                
+                # Download if not exists
+                if not local_path.exists():
+                    url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+                    try:
+                        import aiohttp
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(url) as resp:
+                                if resp.status == 200:
+                                    with open(local_path, 'wb') as f:
+                                        f.write(await resp.read())
+                    except Exception as e:
+                        log.error(f"Failed to download emoji {emoji_id}: {e}")
+                
+                return f"emojis/{filename}"
+            return emoji_str # Return original if unicode
+
         for guild_id_str, guild_data in all_guilds_data.items():
             guild_id = int(guild_id_str)
             
@@ -587,11 +621,13 @@ class EventPolling(commands.Cog):
                             base_name = event_name.rsplit(" ", 1)[0]
                         
                         event_info = self.events.get(base_name, {})
+                        emoji_val = await get_emoji_url(event_info.get("emoji", ""))
+                        
                         polling_events.append({
                             "name": event_name,
                             "day": day,
                             "time": time_str,
-                            "emoji": event_info.get("emoji", ""),
+                            "emoji": emoji_val,
                             "color": self._get_hex_color(base_name),
                             "type": "polling"
                         })
@@ -633,10 +669,12 @@ class EventPolling(commands.Cog):
                                 "schedule": []
                             }
                             for i, (b1, b2) in enumerate(matrix):
+                                b1_emoji = await get_emoji_url(boss_pool.get(b1, "⚔️"))
+                                b2_emoji = await get_emoji_url(boss_pool.get(b2, "⚔️"))
                                 ba_season_data["schedule"].append({
                                     "week": i + 1,
-                                    "boss1": {"name": b1, "emoji": boss_pool.get(b1, "⚔️")},
-                                    "boss2": {"name": b2, "emoji": boss_pool.get(b2, "⚔️")},
+                                    "boss1": {"name": b1, "emoji": b1_emoji},
+                                    "boss2": {"name": b2, "emoji": b2_emoji},
                                     "is_encore": (i + 1 == 4)
                                 })
                 except Exception as e:
