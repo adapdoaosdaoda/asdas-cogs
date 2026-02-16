@@ -40,6 +40,11 @@ class EventPolling(commands.Cog):
             event_roles={},  # event_name -> role_id
         )
 
+        self.config.register_global(
+            website_export_path=None,
+            export_guild_id=None
+        )
+
         # Event definitions (ordered: Party, Guild War, Hero's Realm, Sword Trial, Breaking Army, Showdown)
         # Priority order for calendar display (higher number = higher priority)
         self.events = {
@@ -211,6 +216,7 @@ class EventPolling(commands.Cog):
         self.weekly_results_update.start()
         self.weekly_calendar_update.start()
         self.event_notification_task.start()
+        self.website_export_task.start()
 
     def cog_unload(self):
         """Called when the cog is unloaded"""
@@ -218,6 +224,7 @@ class EventPolling(commands.Cog):
         self.weekly_results_update.cancel()
         self.weekly_calendar_update.cancel()
         self.event_notification_task.cancel()
+        self.website_export_task.cancel()
 
     def _get_embed_color(self, guild: discord.Guild) -> discord.Color:
         """Get the poll embed color (0x5a61ee)"""
@@ -518,6 +525,124 @@ class EventPolling(commands.Cog):
     async def before_event_notification_task(self):
         await self.bot.wait_until_ready()
 
+    @tasks.loop(minutes=5)
+    async def website_export_task(self):
+        """Periodically export schedule to JSON for website"""
+        try:
+            await self._export_to_json()
+        except Exception as e:
+            log.error(f"Error in website export task: {e}")
+
+    @website_export_task.before_loop
+    async def before_website_export_task(self):
+        await self.bot.wait_until_ready()
+
+    async def _export_to_json(self):
+        """Export polling data and Discord events to a JSON file for the website"""
+        export_path = await self.config.website_export_path()
+        if not export_path:
+            return
+
+        target_guild_id = await self.config.export_guild_id()
+        all_guilds_data = await self.config.all_guilds()
+        
+        export_data = {
+            "last_updated": datetime.utcnow().isoformat(),
+            "guilds": {}
+        }
+
+        for guild_id_str, guild_data in all_guilds_data.items():
+            guild_id = int(guild_id_str)
+            
+            # If a specific guild is configured, skip others
+            if target_guild_id and guild_id != target_guild_id:
+                continue
+                
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+
+            polls = guild_data.get("polls", {})
+            if not polls:
+                # If no polls, we still might want Discord events
+                polling_events = []
+            else:
+                # Get latest poll
+                latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+                poll_data = polls[latest_poll_id]
+                
+                # Use weekly snapshot if available, otherwise calculate live winning times
+                winning_times = poll_data.get("weekly_snapshot_winning_times")
+                if not winning_times:
+                    winning_times = self._calculate_winning_times_weighted(poll_data.get("selections", {}))
+                
+                # Prepare polling events
+                polling_events = []
+                prepared_data = self._prepare_calendar_data(winning_times)
+                
+                for event_name, day_times in prepared_data.items():
+                    for day, time_str in day_times.items():
+                        base_name = event_name
+                        if event_name.endswith(" 1") or event_name.endswith(" 2"):
+                            base_name = event_name.rsplit(" ", 1)[0]
+                        
+                        event_info = self.events.get(base_name, {})
+                        polling_events.append({
+                            "name": event_name,
+                            "day": day,
+                            "time": time_str,
+                            "emoji": event_info.get("emoji", ""),
+                            "color": self._get_hex_color(base_name),
+                            "type": "polling"
+                        })
+
+            # Get Discord scheduled events
+            discord_events = []
+            try:
+                # scheduled_events is a list of ScheduledEvent objects
+                for event in guild.scheduled_events:
+                    # Only include upcoming or active events
+                    if event.status in [discord.EventStatus.scheduled, discord.EventStatus.active]:
+                        discord_events.append({
+                            "name": event.name,
+                            "start_time": event.start_time.isoformat(),
+                            "end_time": event.end_time.isoformat() if event.end_time else None,
+                            "location": event.location,
+                            "description": event.description,
+                            "status": event.status.name,
+                            "type": "discord"
+                        })
+            except Exception as e:
+                log.error(f"Failed to fetch Discord events for guild {guild_id}: {e}")
+
+            export_data["guilds"][guild_id_str] = {
+                "name": guild.name,
+                "polling_events": polling_events,
+                "discord_events": discord_events
+            }
+
+        # Write to file
+        try:
+            path = Path(export_path)
+            # Ensure directory exists
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            log.error(f"Failed to export schedule to JSON: {e}")
+
+    def _get_hex_color(self, event_name: str) -> str:
+        """Get hex color for an event based on its name"""
+        colors = {
+            "Hero's Realm": "#5C6BC0",
+            "Sword Trial": "#FFCA28",
+            "Party": "#e91e63",
+            "Breaking Army": "#3498db",
+            "Showdown": "#e67e22",
+            "Guild War": "#D81B60"
+        }
+        return colors.get(event_name, "#fbcfe8")
+
     async def _restore_poll_view(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
         """Restore the poll view to an existing poll message after import
 
@@ -661,6 +786,9 @@ class EventPolling(commands.Cog):
 
             # Update any weekly calendar messages for this poll
             await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
+            
+            # Export to website JSON
+            await self._export_to_json()
         except Exception as e:
             log.error(f"Error updating poll message: {e}")
 
@@ -2123,6 +2251,37 @@ class EventPolling(commands.Cog):
 
         except Exception as e:
             await ctx.send(f"❌ Error listing backups: {e}")
+
+    @eventpoll.command(name="exportpath")
+    @commands.is_owner()
+    async def set_export_path(self, ctx: commands.Context, path: str):
+        """Set the path to export the schedule JSON file for the website.
+        
+        Example: [p]eventpoll exportpath /home/zoe/Claude/blossom.ink/schedule.json
+        """
+        await self.config.website_export_path.set(path)
+        await self._export_to_json()
+        await ctx.send(f"✅ Website export path set to: `{path}`. Initial export complete.")
+
+    @eventpoll.command(name="exportguild")
+    @commands.is_owner()
+    async def set_export_guild(self, ctx: commands.Context, guild_id: Optional[int] = None):
+        """Set the guild ID to export for the website. Leave empty to export all guilds.
+        """
+        if guild_id:
+            await self.config.export_guild_id.set(guild_id)
+            await ctx.send(f"✅ Website export guild set to: `{guild_id}`")
+        else:
+            await self.config.export_guild_id.set(None)
+            await ctx.send("✅ Website export guild reset to all guilds")
+        await self._export_to_json()
+
+    @eventpoll.command(name="forceexport")
+    @commands.is_owner()
+    async def force_export(self, ctx: commands.Context):
+        """Force an immediate export of the schedule JSON."""
+        await self._export_to_json()
+        await ctx.send("✅ Schedule JSON exported.")
 
     def _format_file_size(self, file_path: Path) -> str:
         """Format file size in human-readable format"""
