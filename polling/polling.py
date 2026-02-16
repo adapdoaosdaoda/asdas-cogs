@@ -1185,22 +1185,12 @@ class EventPolling(commands.Cog):
                 winner_key, points, all_entries = slot_data
                 winner_day, winner_time = winner_key
 
-                # For multi-slot weekly events, create separate entries with slot number
+                # For multi-slot weekly events, create separate entries
                 if (event_info["type"] == "weekly" or event_info["type"] == "once") and event_info["slots"] > 1:
-                    # Use event name with slot number (e.g., "Breaking Army 1", "Guild War 2")
-                    # Special check: if it's Guild War, don't add the slot number to the name
-                    # actually, the renderer/website might prefer unified names.
-                    # Let's keep it consistent with how Breaking Army was handled but allow 
-                    # Guild War to appear twice.
-                    if event_name == "Guild War":
-                        if event_name not in calendar_data:
-                            calendar_data[event_name] = {}
-                        calendar_data[event_name][winner_day] = winner_time
-                    else:
-                        event_key = f"{event_name} {slot_index + 1}"
-                        if event_key not in calendar_data:
-                            calendar_data[event_key] = {}
-                        calendar_data[event_key][winner_day] = winner_time
+                    if event_name not in calendar_data:
+                        calendar_data[event_name] = {}
+                    # Accumulate all days/times for the event
+                    calendar_data[event_name][winner_day] = winner_time
                 elif event_info["type"] == "daily":
                     # Daily events appear on all days
                     if event_name not in calendar_data:
