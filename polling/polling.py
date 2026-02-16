@@ -615,10 +615,38 @@ class EventPolling(commands.Cog):
             except Exception as e:
                 log.error(f"Failed to fetch Discord events for guild {guild_id}: {e}")
 
+            # Get Breaking Army season data
+            ba_season_data = None
+            ba_cog = self.bot.get_cog("BreakingArmy")
+            if ba_cog:
+                try:
+                    ba_config = await ba_cog.config.guild(guild).all()
+                    ba_season = ba_config.get("season_data", {})
+                    if ba_season.get("is_active"):
+                        boss_pool = ba_config.get("boss_pool", {})
+                        a = ba_season.get("anchors", [])
+                        g = ba_season.get("guests", [])
+                        if a and g:
+                            matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
+                            ba_season_data = {
+                                "current_week": ba_season.get("current_week", 1),
+                                "schedule": []
+                            }
+                            for i, (b1, b2) in enumerate(matrix):
+                                ba_season_data["schedule"].append({
+                                    "week": i + 1,
+                                    "boss1": {"name": b1, "emoji": boss_pool.get(b1, "⚔️")},
+                                    "boss2": {"name": b2, "emoji": boss_pool.get(b2, "⚔️")},
+                                    "is_encore": (i + 1 == 4)
+                                })
+                except Exception as e:
+                    log.error(f"Failed to fetch Breaking Army data: {e}")
+
             export_data["guilds"][guild_id_str] = {
                 "name": guild.name,
                 "polling_events": polling_events,
-                "discord_events": discord_events
+                "discord_events": discord_events,
+                "ba_season": ba_season_data
             }
 
             # Export calendar image for this guild (if it's the target guild)
