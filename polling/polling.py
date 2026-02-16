@@ -556,6 +556,20 @@ class EventPolling(commands.Cog):
         emoji_dir = export_dir / "emojis"
         emoji_dir.mkdir(parents=True, exist_ok=True)
 
+        # Download favicon if not exists
+        favicon_path = export_dir / "favicon.png"
+        if not favicon_path.exists():
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    # Download flower icon in blossom-pink (#fbcfe8)
+                    async with session.get("https://api.iconify.design/ri/flower-fill.png?color=%23fbcfe8") as resp:
+                        if resp.status == 200:
+                            with open(favicon_path, 'wb') as f:
+                                f.write(await resp.read())
+            except Exception as e:
+                log.error(f"Failed to download favicon: {e}")
+
         async def get_emoji_url(emoji_str):
             if not emoji_str:
                 return ""
