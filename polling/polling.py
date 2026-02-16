@@ -796,11 +796,30 @@ class EventPolling(commands.Cog):
                 if guild.banner:
                     banner_path = Path(export_path).parent / "banner.png"
                     import aiohttp
+                    from PIL import Image, ImageDraw
                     async with aiohttp.ClientSession() as session:
                         async with session.get(str(guild.banner.url)) as resp:
                             if resp.status == 200:
-                                with open(banner_path, 'wb') as f:
-                                    f.write(await resp.read())
+                                banner_bytes = await resp.read()
+                                with Image.open(io.BytesIO(banner_bytes)) as img:
+                                    img = img.convert("RGBA")
+                                    # Create a red glow overlay (matching blossom-dark color)
+                                    # Hex #831843 -> RGB (131, 24, 67)
+                                    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                                    draw = ImageDraw.Draw(glow)
+                                    
+                                    # Draw horizontal gradient glow
+                                    w, h = img.size
+                                    for x in range(w):
+                                        # Calculate intensity: higher in middle, lower at edges
+                                        # Similar to bg-gradient-to-r from-stone-900/80 via-blossom-dark/40 to-stone-900/80
+                                        dist_from_center = abs(x - w/2) / (w/2)
+                                        opacity = int(max(0, 1 - dist_from_center) * 102) # 40% of 255 is ~102
+                                        draw.line([(x, 0), (x, h)], fill=(131, 24, 67, opacity))
+                                    
+                                    # Composite the glow on top
+                                    result = Image.alpha_composite(img, glow)
+                                    result.save(banner_path, "PNG")
             except Exception as e:
                 log.error(f"Failed to export assets: {e}")
 
