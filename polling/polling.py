@@ -596,15 +596,18 @@ class EventPolling(commands.Cog):
         
         # Always ensure favicon exists and is correct
         if not favicon_path_svg.exists() or not favicon_path_png.exists():
-            # Source SVG URL (base URL without color params for Weserv to handle tinting)
-            flower_base_svg_url = "https://api.iconify.design/ri:flower-fill.svg"
+            # Correctly URL-encoded Iconify SVG URL with color
+            # ri:flower-fill with color #fbcfe8
+            # %23 is #, %3A is :, %3F is ?, %3D is =
+            encoded_svg_url = "https%3A%2F%2Fapi.iconify.design%2Fri%3Aflower-fill.svg%3Fcolor%3D%2523fbcfe8"
             
-            # Download SVG (with color param for direct SVG use)
-            await save_image(f"{flower_base_svg_url}?color=%23fbcfe8", favicon_path_svg)
+            # Download SVG (with color and larger default size)
+            svg_url = "https://api.iconify.design/ri:flower-fill.svg?color=%23fbcfe8&width=128&height=128"
+            await save_image(svg_url, favicon_path_svg)
             
-            # Convert to PNG using Weserv proxy with tinting and download
-            # w=128&h=128 ensures a high-quality icon
-            flower_png_url = f"https://images.weserv.nl/?url={flower_base_svg_url}&tint=fbcfe8&w=128&h=128&output=png"
+            # Convert to PNG using Weserv proxy with the encoded URL
+            # w=128&h=128 ensures it's not a tiny icon
+            flower_png_url = f"https://images.weserv.nl/?url={encoded_svg_url}&w=128&h=128&output=png"
             await save_image(flower_png_url, favicon_path_png)
 
         async def get_emoji_url(emoji_str):
