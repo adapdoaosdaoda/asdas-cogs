@@ -593,7 +593,7 @@ class EventPolling(commands.Cog):
         favicon_path = export_dir / "favicon.png"
         if not favicon_path.exists():
             # Try to download flower icon in blossom-pink (#fbcfe8)
-            favicon_url = "https://img.icons8.com/ios-filled/50/fbcfe8/flower.png"
+            favicon_url = "https://api.iconify.design/ri:flower-fill.png?color=%23fbcfe8"
             await save_image(favicon_url, favicon_path)
 
         async def get_emoji_url(emoji_str):
