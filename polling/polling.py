@@ -621,6 +621,21 @@ class EventPolling(commands.Cog):
                 "discord_events": discord_events
             }
 
+            # Export calendar image for this guild (if it's the target guild)
+            try:
+                # Generate calendar image
+                image_buffer = self.calendar_renderer.render_calendar(
+                    prepared_data,
+                    self.events,
+                    self.blocked_times,
+                    len(guild_data.get("polls", {}).get(latest_poll_id, {}).get("selections", {})) if polls else 0
+                )
+                img_path = Path(export_path).parent / "calendar.png"
+                with open(img_path, 'wb') as f:
+                    f.write(image_buffer.getvalue())
+            except Exception as e:
+                log.error(f"Failed to export calendar image: {e}")
+
         # Write to file
         try:
             path = Path(export_path).resolve()
