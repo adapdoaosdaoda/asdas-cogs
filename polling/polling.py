@@ -8,6 +8,8 @@ import os
 import tempfile
 import re
 import json
+import base64
+import hashlib
 from pathlib import Path
 import importlib
 import logging
@@ -556,24 +558,64 @@ class EventPolling(commands.Cog):
         emoji_dir = export_dir / "emojis"
         emoji_dir.mkdir(parents=True, exist_ok=True)
 
+        # Helper to download or save data URL image
+        async def save_image(url_or_data, local_path):
+            if not url_or_data:
+                return False
+            
+            if str(url_or_data).startswith("data:"):
+                try:
+                    # Format: data:image/png;base64,iVBORw0KGgo...
+                    if "," in str(url_or_data):
+                        header, data_str = str(url_or_data).split(",", 1)
+                        with open(local_path, "wb") as f:
+                            f.write(base64.b64decode(data_str))
+                        return True
+                except Exception as e:
+                    log.error(f"Failed to save data URL image to {local_path}: {e}")
+                    return False
+            else:
+                try:
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url_or_data) as resp:
+                            if resp.status == 200:
+                                with open(local_path, "wb") as f:
+                                    f.write(await resp.read())
+                                return True
+                            else:
+                                log.error(f"Failed to download image from {url_or_data}: Status {resp.status}")
+                except Exception as e:
+                    log.error(f"Failed to download image from {url_or_data} to {local_path}: {e}")
+                return False
+
         # Download favicon if not exists
         favicon_path = export_dir / "favicon.png"
         if not favicon_path.exists():
-            try:
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    # Download flower icon in blossom-pink (#fbcfe8)
-                    async with session.get("https://api.iconify.design/ri/flower-fill.png?color=%23fbcfe8") as resp:
-                        if resp.status == 200:
-                            with open(favicon_path, 'wb') as f:
-                                f.write(await resp.read())
-            except Exception as e:
-                log.error(f"Failed to download favicon: {e}")
+            # Try to download flower icon in blossom-pink (#fbcfe8)
+            favicon_url = "https://img.icons8.com/ios-filled/50/fbcfe8/flower.png"
+            await save_image(favicon_url, favicon_path)
 
         async def get_emoji_url(emoji_str):
             if not emoji_str:
                 return ""
             
+            # Check if it's a data URL
+            if str(emoji_str).startswith("data:image/"):
+                # Create a unique filename based on the data
+                data_hash = hashlib.md5(str(emoji_str).encode()).hexdigest()
+                ext = "png"
+                if "image/gif" in str(emoji_str):
+                    ext = "gif"
+                elif "image/jpeg" in str(emoji_str):
+                    ext = "jpg"
+                
+                filename = f"data_{data_hash}.{ext}"
+                local_path = emoji_dir / filename
+                if not local_path.exists():
+                    await save_image(emoji_str, local_path)
+                return f"emojis/{filename}"
+
             # Check if it's a custom Discord emoji <:name:id> or <a:name:id>
             match = re.search(r'<(a?):([^:]+):(\d+)>', str(emoji_str))
             if match:
@@ -586,15 +628,7 @@ class EventPolling(commands.Cog):
                 # Download if not exists
                 if not local_path.exists():
                     url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
-                    try:
-                        import aiohttp
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(url) as resp:
-                                if resp.status == 200:
-                                    with open(local_path, 'wb') as f:
-                                        f.write(await resp.read())
-                    except Exception as e:
-                        log.error(f"Failed to download emoji {emoji_id}: {e}")
+                    await save_image(url, local_path)
                 
                 return f"emojis/{filename}"
             return emoji_str # Return original if unicode
