@@ -696,20 +696,26 @@ class EventPolling(commands.Cog):
 
             # Calculate filtered member count
             member_count = 0
+            online_count = 0
             try:
                 # Specific role IDs: @Member and @Friend of the Guild
                 target_role_ids = [1439747785644703754, 1452430729115078850]
                 
                 unique_members = set()
+                online_unique_members = set()
                 for role_id in target_role_ids:
                     role = guild.get_role(role_id)
                     if role:
                         for member in role.members:
                             unique_members.add(member.id)
+                            # Check if member is online (not offline)
+                            if member.status != discord.Status.offline:
+                                online_unique_members.add(member.id)
                 
                 count = len(unique_members)
                 # Round down to lowest 10
                 member_count = (count // 10) * 10
+                online_count = len(online_unique_members)
             except Exception as e:
                 log.error(f"Failed to calculate member count: {e}")
 
@@ -719,6 +725,7 @@ class EventPolling(commands.Cog):
                 "banner_url": str(guild.banner.url) if guild.banner else None,
                 "splash_url": str(guild.splash.url) if guild.splash else None,
                 "member_count": f"{member_count}+",
+                "online_count": online_count,
                 "polling_events": polling_events,
                 "discord_events": discord_events,
                 "ba_season": ba_season_data
