@@ -791,8 +791,18 @@ class EventPolling(commands.Cog):
                 img_path = Path(export_path).parent / "calendar.png"
                 with open(img_path, 'wb') as f:
                     f.write(image_buffer.getvalue())
+
+                # Export banner image
+                if guild.banner:
+                    banner_path = Path(export_path).parent / "banner.png"
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(str(guild.banner.url)) as resp:
+                            if resp.status == 200:
+                                with open(banner_path, 'wb') as f:
+                                    f.write(await resp.read())
             except Exception as e:
-                log.error(f"Failed to export calendar image: {e}")
+                log.error(f"Failed to export assets: {e}")
 
         # Write to file
         try:
