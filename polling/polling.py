@@ -633,6 +633,9 @@ class EventPolling(commands.Cog):
 
     def _get_hex_color(self, event_name: str) -> str:
         """Get hex color for an event based on its name"""
+        # Strip parentheses for sub-events like "Hero's Realm (Catch-up)"
+        base_name = event_name.split('(')[0].strip()
+        
         colors = {
             "Hero's Realm": "#5C6BC0",
             "Sword Trial": "#FFCA28",
@@ -641,7 +644,7 @@ class EventPolling(commands.Cog):
             "Showdown": "#e67e22",
             "Guild War": "#D81B60"
         }
-        return colors.get(event_name, "#fbcfe8")
+        return colors.get(base_name, "#fbcfe8")
 
     async def _restore_poll_view(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
         """Restore the poll view to an existing poll message after import
