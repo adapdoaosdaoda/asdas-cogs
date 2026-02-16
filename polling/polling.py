@@ -683,13 +683,15 @@ class EventPolling(commands.Cog):
             # Calculate filtered member count
             member_count = 0
             try:
-                # Find roles by name: @Members and @Friend of the Guild
-                unique_members = set()
-                member_roles = [r for r in guild.roles if r.name.lower() in ["members", "friend of the guild"]]
+                # Specific role IDs: @Member and @Friend of the Guild
+                target_role_ids = [1439747785644703754, 1452430729115078850]
                 
-                for role in member_roles:
-                    for member in role.members:
-                        unique_members.add(member.id)
+                unique_members = set()
+                for role_id in target_role_ids:
+                    role = guild.get_role(role_id)
+                    if role:
+                        for member in role.members:
+                            unique_members.add(member.id)
                 
                 count = len(unique_members)
                 # Round down to lowest 10
