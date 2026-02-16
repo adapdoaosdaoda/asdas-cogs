@@ -701,6 +701,7 @@ class EventPolling(commands.Cog):
 
             export_data["guilds"][guild_id_str] = {
                 "name": guild.name,
+                "icon_url": str(guild.icon.url) if guild.icon else None,
                 "banner_url": str(guild.banner.url) if guild.banner else None,
                 "member_count": f"{member_count}+",
                 "polling_events": polling_events,
