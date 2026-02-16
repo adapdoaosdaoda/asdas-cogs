@@ -695,6 +695,19 @@ class EventPolling(commands.Cog):
                             "type": "polling"
                         })
 
+                # Force add a manual Guild War event for every Sunday at 20:30
+                # Check if it already exists to avoid duplicates
+                has_sun_gw = any(e["name"] == "Guild War" and e["day"] == "Sunday" and e["time"] == "20:30" for e in polling_events)
+                if not has_sun_gw:
+                    polling_events.append({
+                        "name": "Guild War",
+                        "day": "Sunday",
+                        "time": "20:30",
+                        "emoji": await get_emoji_url("🏰"),
+                        "color": self._get_hex_color("Guild War"),
+                        "type": "polling"
+                    })
+
             # Get Discord scheduled events
             discord_events = []
             try:
@@ -1191,15 +1204,8 @@ class EventPolling(commands.Cog):
                     if event_name not in calendar_data:
                         calendar_data[event_name] = {}
                     
-                    if event_name == "Guild War":
-                        # Ensure we don't overwrite if multiple slots picked the same day (shouldn't happen now)
-                        calendar_data[event_name][winner_day] = winner_time
-                    else:
-                        # For other multi-slot events, use slot numbers to keep them separate
-                        event_key = f"{event_name} {slot_index + 1}"
-                        if event_key not in calendar_data:
-                            calendar_data[event_key] = {}
-                        calendar_data[event_key][winner_day] = winner_time
+                    # Store winning day/time without slot suffixes
+                    calendar_data[event_name][winner_day] = winner_time
                 elif event_info["type"] == "daily":
                     # Daily events appear on all days
                     if event_name not in calendar_data:
