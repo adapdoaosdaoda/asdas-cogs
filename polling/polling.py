@@ -65,16 +65,17 @@ class EventPolling(commands.Cog):
             },
             "Guild War": {
                 "type": "once",
-                "days": ["Saturday"],
+                "days": ["Saturday", "Sunday"],
                 "time_range": (20.5, 23),  # 20:30 to 23:00 (latest start 21:30)
                 "fixed_time": "20:30",
                 "duration": 90,  # 1.5 hours (e.g., 20:30-22:00 or 21:30-23:00)
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🏰",
                 "priority": 6,
-                "slots": 1,
+                "slots": 2,
                 "default_times": {
-                    "Saturday": "20:30"
+                    "Saturday": "20:30",
+                    "Sunday": "20:30"
                 }
             },
             "Hero's Realm (Catch-up)": {
@@ -593,7 +594,10 @@ class EventPolling(commands.Cog):
         favicon_path = export_dir / "favicon.png"
         if not favicon_path.exists():
             # Try to download flower icon in blossom-pink (#fbcfe8)
-            favicon_url = "https://api.iconify.design/ri:flower-fill.png?color=%23fbcfe8"
+            # PNG is not reliably available via Iconify API, but SVG is.
+            # We save it as favicon.png because index.html expects that filename, 
+            # and most modern browsers handle SVG-content-in-PNG-named-file or we can just update HTML.
+            favicon_url = "https://api.iconify.design/ri:flower-fill.svg?color=%23fbcfe8"
             await save_image(favicon_url, favicon_path)
 
         async def get_emoji_url(emoji_str):
