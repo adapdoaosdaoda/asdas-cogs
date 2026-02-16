@@ -680,10 +680,28 @@ class EventPolling(commands.Cog):
                 except Exception as e:
                     log.error(f"Failed to fetch Breaking Army data: {e}")
 
+            # Calculate filtered member count
+            member_count = 0
+            try:
+                # Find roles by name: @Members and @Friend of the Guild
+                unique_members = set()
+                member_roles = [r for r in guild.roles if r.name.lower() in ["members", "friend of the guild"]]
+                
+                for role in member_roles:
+                    for member in role.members:
+                        unique_members.add(member.id)
+                
+                count = len(unique_members)
+                # Round down to lowest 10
+                member_count = (count // 10) * 10
+            except Exception as e:
+                log.error(f"Failed to calculate member count: {e}")
+
             export_data["guilds"][guild_id_str] = {
                 "name": guild.name,
                 "icon_url": str(guild.icon.url) if guild.icon else None,
                 "banner_url": str(guild.banner.url) if guild.banner else None,
+                "member_count": f"{member_count}+",
                 "polling_events": polling_events,
                 "discord_events": discord_events,
                 "ba_season": ba_season_data
