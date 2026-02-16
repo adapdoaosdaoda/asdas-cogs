@@ -596,14 +596,15 @@ class EventPolling(commands.Cog):
         
         # Always ensure favicon exists and is correct
         if not favicon_path_svg.exists() or not favicon_path_png.exists():
-            # Source SVG URL
-            flower_svg_url = "https://api.iconify.design/ri:flower-fill.svg?color=%23fbcfe8"
+            # Source SVG URL (base URL without color params for Weserv to handle tinting)
+            flower_base_svg_url = "https://api.iconify.design/ri:flower-fill.svg"
             
-            # Download SVG
-            await save_image(flower_svg_url, favicon_path_svg)
+            # Download SVG (with color param for direct SVG use)
+            await save_image(f"{flower_base_svg_url}?color=%23fbcfe8", favicon_path_svg)
             
-            # Convert to PNG using Weserv proxy and download
-            flower_png_url = f"https://images.weserv.nl/?url={flower_svg_url}&output=png"
+            # Convert to PNG using Weserv proxy with tinting and download
+            # w=128&h=128 ensures a high-quality icon
+            flower_png_url = f"https://images.weserv.nl/?url={flower_base_svg_url}&tint=fbcfe8&w=128&h=128&output=png"
             await save_image(flower_png_url, favicon_path_png)
 
         async def get_emoji_url(emoji_str):
