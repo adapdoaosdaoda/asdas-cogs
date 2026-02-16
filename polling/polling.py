@@ -623,13 +623,13 @@ class EventPolling(commands.Cog):
 
         # Write to file
         try:
-            path = Path(export_path)
+            path = Path(export_path).resolve()
             # Ensure directory exists
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            log.error(f"Failed to export schedule to JSON: {e}")
+            log.error(f"Failed to export schedule to JSON at {export_path}: {e}")
 
     def _get_hex_color(self, event_name: str) -> str:
         """Get hex color for an event based on its name"""
