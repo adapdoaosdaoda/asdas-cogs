@@ -5,6 +5,7 @@ import discord
 from typing import Optional, Dict, List, Tuple, Union
 from datetime import datetime, time as dt_time, timedelta
 import os
+import io
 import tempfile
 import re
 import json
