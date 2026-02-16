@@ -1187,10 +1187,19 @@ class EventPolling(commands.Cog):
 
                 # For multi-slot weekly events, create separate entries
                 if (event_info["type"] == "weekly" or event_info["type"] == "once") and event_info["slots"] > 1:
+                    # Accumulate all days/times for the event
                     if event_name not in calendar_data:
                         calendar_data[event_name] = {}
-                    # Accumulate all days/times for the event
-                    calendar_data[event_name][winner_day] = winner_time
+                    
+                    if event_name == "Guild War":
+                        # Ensure we don't overwrite if multiple slots picked the same day (shouldn't happen now)
+                        calendar_data[event_name][winner_day] = winner_time
+                    else:
+                        # For other multi-slot events, use slot numbers to keep them separate
+                        event_key = f"{event_name} {slot_index + 1}"
+                        if event_key not in calendar_data:
+                            calendar_data[event_key] = {}
+                        calendar_data[event_key][winner_day] = winner_time
                 elif event_info["type"] == "daily":
                     # Daily events appear on all days
                     if event_name not in calendar_data:
@@ -3341,6 +3350,8 @@ class EventPolling(commands.Cog):
                             points = self._calculate_weighted_points(voted_time, target_time, weighted=is_weighted)
                             if points > 0:
                                 key = (voted_day, target_time)
+                                # If it's Guild War, only award points if day matches target day
+                                # (redundant but safe since voted_day is now specific)
                                 point_totals[key] = point_totals.get(key, 0) + points
 
                 # Sort by points (desc), then by distance to Saturday (asc), then by time (desc)
@@ -3356,11 +3367,24 @@ class EventPolling(commands.Cog):
                         key=lambda x: (-x[1], saturday_distance(x[0][0]), -self._time_to_sort_key(x[0][1])),
                     )
 
-                    # Assign top 2 to slots
-                    for slot_index in range(min(num_slots, len(sorted_entries))):
-                        winner_key, winner_points = sorted_entries[slot_index]
-                        winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
-                        log.info(f"  Slot {slot_index}: {winner_key[0]} at {winner_key[1]} with {winner_points} points")
+                    # Assign top winners to slots
+                    if event_name == "Guild War":
+                        # For Guild War, we specifically want the best for Sat and best for Sun
+                        days_needed = ["Saturday", "Sunday"]
+                        slot_idx = 0
+                        for day in days_needed:
+                            # Find best time for this specific day
+                            day_entries = [e for e in sorted_entries if e[0][0] == day]
+                            if day_entries:
+                                winner_key, winner_points = day_entries[0]
+                                winning_times[event_name][slot_idx] = (winner_key, winner_points, day_entries[:3])
+                                slot_idx += 1
+                    else:
+                        # Standard top-N logic for other multi-slot events
+                        for slot_index in range(min(num_slots, len(sorted_entries))):
+                            winner_key, winner_points = sorted_entries[slot_index]
+                            winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
+                            log.info(f"  Slot {slot_index}: {winner_key[0]} at {winner_key[1]} with {winner_points} points")
 
             else:
                 # Original slot-by-slot logic for other event types

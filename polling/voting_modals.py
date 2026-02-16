@@ -178,7 +178,7 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
             else:
                 self.add_item(hero_time_select)
 
-        # 3. Guild War (Saturday) - time only
+        # 3. Guild War (Sat & Sun) - time only
         if "Guild War" in events:
             gw_info = events["Guild War"]
             times = cog.generate_time_options(
@@ -189,39 +189,49 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
                 "Guild War"
             )
 
-            current_gw = user_selections.get("Guild War")
-            current_gw_time = None
-            if current_gw:
-                if isinstance(current_gw, list) and len(current_gw) > 0:
-                    current_gw_time = current_gw[0].get("time")
-                elif isinstance(current_gw, dict):
-                    current_gw_time = current_gw.get("time")
+            current_gw = user_selections.get("Guild War", [])
+            
+            # Find current times for Sat/Sun
+            sat_time = None
+            sun_time = None
+            if isinstance(current_gw, list):
+                for entry in current_gw:
+                    if entry.get("day") == "Saturday": sat_time = entry.get("time")
+                    if entry.get("day") == "Sunday": sun_time = entry.get("time")
 
-            time_options = [
+            # Saturday Select
+            sat_options = [
                 discord.SelectOption(
-                    label=format_time_range(time_str, gw_info["duration"]),
+                    label=f"Sat: {format_time_range(time_str, gw_info['duration'])}",
                     value=time_str,
-                    emoji="🕐",
-                    default=(current_gw_time == time_str)
+                    emoji="🏰",
+                    default=(sat_time == time_str)
                 )
                 for time_str in times[:25]
             ]
+            sat_select = StringSelect(min_values=0, placeholder="Saturday Time...", options=sat_options, custom_id="gw_sat_select")
+            
+            # Sunday Select
+            sun_options = [
+                discord.SelectOption(
+                    label=f"Sun: {format_time_range(time_str, gw_info['duration'])}",
+                    value=time_str,
+                    emoji="🏰",
+                    default=(sun_time == time_str)
+                )
+                for time_str in times[:25]
+            ]
+            sun_select = StringSelect(min_values=0, placeholder="Sunday Time...", options=sun_options, custom_id="gw_sun_select")
 
-            gw_select = StringSelect(min_values=0, 
-                placeholder="Choose a time...",
-                options=time_options,
-                custom_id="gw_time_select"
-            )
-            self.selects["Guild War"] = {"time": gw_select}
+            self.selects["Guild War"] = {"sat": sat_select, "sun": sun_select}
             
             if Label_cls:
-                self.add_item(Label_cls(
-                    "🏰 Guild War (Saturday)",
-                    gw_select,
-                    description="Saturday only"
-                ))
+                self.add_item(Label_cls("🏰 Guild War", sat_select, description="Choose Sat & Sun times"))
+                self.add_item(sat_select)
+                self.add_item(sun_select)
             else:
-                self.add_item(gw_select)
+                self.add_item(sat_select)
+                self.add_item(sun_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission - save all three events"""
@@ -258,12 +268,16 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
 
                 # Save Guild War vote
                 if "Guild War" in self.selects:
-                    gw_select = self.selects["Guild War"]["time"]
-                    if gw_select.values:
-                        polls[self.poll_id]["selections"][user_id_str]["Guild War"] = [{
-                            "day": "Saturday",
-                            "time": gw_select.values[0]
-                        }]
+                    sat_select = self.selects["Guild War"]["sat"]
+                    sun_select = self.selects["Guild War"]["sun"]
+                    gw_votes = []
+                    if sat_select.values:
+                        gw_votes.append({"day": "Saturday", "time": sat_select.values[0]})
+                    if sun_select.values:
+                        gw_votes.append({"day": "Sunday", "time": sun_select.values[0]})
+                    
+                    if gw_votes:
+                        polls[self.poll_id]["selections"][user_id_str]["Guild War"] = gw_votes
 
                 poll_data = polls[self.poll_id]
 
