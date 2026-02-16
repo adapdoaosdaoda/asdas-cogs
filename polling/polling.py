@@ -57,7 +57,7 @@ class EventPolling(commands.Cog):
                 "duration": 10,  # 10 minutes
                 "slots": 1,  # Single time slot
                 "color": discord.Color(0xe1e7ec),
-                "emoji": "🎉",
+                "emoji": "flower_fill",
                 "priority": 3,  # Priority 3 (matches results intro)
                 "default_times": {
                     "default": "20:00"
@@ -138,7 +138,7 @@ class EventPolling(commands.Cog):
                 "duration": 60,  # 1 hour
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color(0xe1e7ec),
-                "emoji": "⚡",
+                "emoji": "flower_fill",
                 "priority": 2,
                 "default_times": {
                     "Wednesday": "19:30",
@@ -590,19 +590,26 @@ class EventPolling(commands.Cog):
                     log.error(f"Failed to download image from {url_or_data} to {local_path}: {e}")
                 return False
 
+        # Flower-fill icon data URL (ri:flower-fill in #fbcfe8)
+        flower_icon_data = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSIjZmJjZmU4IiBkPSJNMTIuNDU1IDIuMzA5TDEyIDIuMDc2bC0uNDU1LjIzM2ExMiAxMiAwIDAgMC0zLjA5IDIuMjY1QTE0IDE0IDAgMCAxIDEyIDcuMjAyYTE0IDE0IDAgMCAxIDMuNTQ0LTIuNjI4YTEyIDEyIDAgMCAwLTMuMDg5LTIuMjY1bS0xLjc1NiA2LjQyNWExMS45OCAxMS45OCAwIDAgMC02LjUxOC0zLjUzNkwzIDQuOThWMTNhOSAxMiAwIDAgMCA1LjY5NyA4LjM3NEExNCAxNCAwIDAgMSAxNyAwLTMuMDkyIDEuMDAyLTUuOTUgMi43LTguMjY2TTIxIDQuOTgxbC0xLjE4LjIxN0MxNC4yMzIgNi4yMjQgMTAgMTEuMTE3IDEwIDE3YzAgMS41MzYuMjkgMy4wMDcuODE3IDQuMzZsLjI0LjYxNWMuMzE0LjAxLjYyOS4wMjUuOTQzLjAyNWE5IDkgMCAwIDAgOS05eiIvPjwvc3ZnPg=="
+
         # Download favicon if not exists
-        favicon_path = export_dir / "favicon.png"
-        if not favicon_path.exists():
-            # Try to download flower icon in blossom-pink (#fbcfe8)
-            # PNG is not reliably available via Iconify API, but SVG is.
-            # We save it as favicon.png because index.html expects that filename, 
-            # and most modern browsers handle SVG-content-in-PNG-named-file or we can just update HTML.
-            favicon_url = "https://api.iconify.design/ri:flower-fill.svg?color=%23fbcfe8"
-            await save_image(favicon_url, favicon_path)
+        favicon_path_png = export_dir / "favicon.png"
+        favicon_path_svg = export_dir / "favicon.svg"
+        
+        # Always ensure favicon exists and is correct
+        if not favicon_path_svg.exists() or not favicon_path_png.exists():
+            await save_image(flower_icon_data, favicon_path_svg)
+            # Save as PNG as well for compatibility, even if it's SVG content
+            await save_image(flower_icon_data, favicon_path_png)
 
         async def get_emoji_url(emoji_str):
             if not emoji_str:
                 return ""
+            
+            # Special case: if it's a known flower emoji or our placeholder, use flower_icon_data
+            if emoji_str in ["🌸", "🌼", "flower_fill"]:
+                emoji_str = flower_icon_data
             
             # Check if it's a data URL
             if str(emoji_str).startswith("data:image/"):
