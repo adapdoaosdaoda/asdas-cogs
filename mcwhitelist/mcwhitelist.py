@@ -1,6 +1,7 @@
 import discord
 import logging
 import asyncio
+import re
 from typing import Optional, Tuple
 
 from redbot.core import commands, Config, checks
@@ -132,9 +133,8 @@ class MCWhitelist(commands.Cog):
                 await ctx.send(f"❌ Failed to fetch whitelist: {response}")
                 return
 
-            # Strip Minecraft color codes (§0-§f, §k-§r)
-            import re
-            clean_response = re.sub(r'§[0-9a-fk-or]', '', response)
+            # Strip Minecraft color codes (§0-§f, §k-§r) - case insensitive
+            clean_response = re.sub(r'§[0-9a-fk-or]', '', response, flags=re.IGNORECASE)
 
             if ":" not in clean_response:
                 await ctx.send("There are no whitelisted players or the server response was unexpected.")
@@ -156,19 +156,24 @@ class MCWhitelist(commands.Cog):
             unknown_players = []
 
             for player in players:
-                # Check Bedrock first
+                # 1. Direct dot check (highest priority for Bedrock)
+                if player.startswith("."):
+                    bedrock_players.append(player[1:])
+                    continue
+
+                # 2. Configured Bedrock prefix
                 if b_prefix and player.startswith(b_prefix):
-                    display_name = player[len(b_prefix):]
-                    bedrock_players.append(display_name)
-                elif not b_prefix and player.startswith("."): # Fallback to dot if no prefix set
-                    display_name = player[1:]
-                    bedrock_players.append(display_name)
-                # Then Java
-                elif j_prefix and player.startswith(j_prefix):
-                    display_name = player[len(j_prefix):]
-                    java_players.append(display_name)
-                elif not j_prefix: # If java prefix is empty, assume others are java
-                     java_players.append(player)
+                    bedrock_players.append(player[len(b_prefix):])
+                    continue
+
+                # 3. Configured Java prefix
+                if j_prefix and player.startswith(j_prefix):
+                    java_players.append(player[len(j_prefix):])
+                    continue
+
+                # 4. Fallback for Java (if no prefix set or doesn't match others)
+                if not j_prefix:
+                    java_players.append(player)
                 else:
                     unknown_players.append(player)
 
