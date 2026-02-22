@@ -108,13 +108,13 @@ class TestMCWhitelist:
             
             await cog.mcwhitelist_bedrock(ctx, "PlayerX")
             
-            # Verify RCON was called correctly with fwhitelist and NO prefix
-            mock_client.send_cmd.assert_called_with("fwhitelist add PlayerX")
+            # Verify RCON was called correctly with easywhitelist and the '.' prefix
+            mock_client.send_cmd.assert_called_with("easywhitelist add .PlayerX")
             
             # Verify response message
             ctx.send.assert_called()
             args, _ = ctx.send.call_args
-            assert "Successfully added Bedrock player `PlayerX`" in args[0]
+            assert "Successfully added Bedrock player `.PlayerX`" in args[0]
 
     async def test_whitelist_bedrock_remove(self, cog):
         """Test the bedrock whitelist remove command."""
@@ -130,13 +130,13 @@ class TestMCWhitelist:
             
             await cog.mcwhitelist_remove_bedrock(ctx, "PlayerX")
             
-            # Verify RCON was called correctly with fwhitelist and NO prefix
-            mock_client.send_cmd.assert_called_with("fwhitelist remove PlayerX")
+            # Verify RCON was called correctly with easywhitelist and the '.' prefix
+            mock_client.send_cmd.assert_called_with("easywhitelist remove .PlayerX")
             
             # Verify response message
             ctx.send.assert_called()
             args, _ = ctx.send.call_args
-            assert "Successfully removed Bedrock player `PlayerX`" in args[0]
+            assert "Successfully removed Bedrock player `.PlayerX`" in args[0]
 
     async def test_whitelist_list(self, cog):
         """Test the whitelist list command."""

@@ -99,12 +99,14 @@ class MCWhitelist(commands.Cog):
         
         Usage: [p]mcwhitelist bedrock <player>
         """
+        prefix = await self.config.bedrock_prefix()
+        player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'fwhitelist add {player}')
+            success, response = await self._send_rcon(f'easywhitelist add {player_name}')
             if success:
-                await ctx.send(f"✅ Successfully added Bedrock player `{player}` to the whitelist.\n**Server response:** {response}")
+                await ctx.send(f"✅ Successfully added Bedrock player `{player_name}` to the whitelist.\n**Server response:** {response}")
             else:
-                await ctx.send(f"❌ Failed to add `{player}` to the whitelist: {response}")
+                await ctx.send(f"❌ Failed to add `{player_name}` to the whitelist: {response}")
 
     @mcwhitelist.command(name="removebedrock", aliases=["rmbedrock", "bedrockremove"])
     @checks.admin_or_permissions(manage_guild=True)
@@ -114,12 +116,14 @@ class MCWhitelist(commands.Cog):
         
         Usage: [p]mcwhitelist removebedrock <player>
         """
+        prefix = await self.config.bedrock_prefix()
+        player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'fwhitelist remove {player}')
+            success, response = await self._send_rcon(f'easywhitelist remove {player_name}')
             if success:
-                await ctx.send(f"✅ Successfully removed Bedrock player `{player}` from the whitelist.\n**Server response:** {response}")
+                await ctx.send(f"✅ Successfully removed Bedrock player `{player_name}` from the whitelist.\n**Server response:** {response}")
             else:
-                await ctx.send(f"❌ Failed to remove `{player}` from the whitelist: {response}")
+                await ctx.send(f"❌ Failed to remove `{player_name}` from the whitelist: {response}")
 
     @mcwhitelist.command(name="list")
     @checks.admin_or_permissions(manage_guild=True)
