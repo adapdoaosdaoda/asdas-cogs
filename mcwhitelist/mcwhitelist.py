@@ -120,6 +120,57 @@ class MCWhitelist(commands.Cog):
             else:
                 await ctx.send(f"❌ Failed to remove `{player}` from the whitelist: {response}")
 
+    @mcwhitelist.command(name="list")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def mcwhitelist_list(self, ctx):
+        """
+        List all whitelisted players.
+        """
+        async with ctx.typing():
+            success, response = await self._send_rcon("whitelist list")
+            if not success:
+                await ctx.send(f"❌ Failed to fetch whitelist: {response}")
+                return
+
+            # Typical response: "There are 3 whitelisted players: player1, player2, player3"
+            # Or: "There are no whitelisted players"
+            if "players: " not in response:
+                await ctx.send("There are no whitelisted players.")
+                return
+
+            players_str = response.split("players: ")[1]
+            players = [p.strip() for p in players_str.split(", ")]
+
+            b_prefix = await self.config.bedrock_prefix()
+            j_prefix = await self.config.java_prefix()
+
+            java_players = []
+            bedrock_players = []
+            unknown_players = []
+
+            for player in players:
+                if b_prefix and player.startswith(b_prefix):
+                    bedrock_players.append(player)
+                elif j_prefix and player.startswith(j_prefix):
+                    java_players.append(player)
+                elif not j_prefix: # If java prefix is empty, assume others are java
+                     java_players.append(player)
+                else:
+                    unknown_players.append(player)
+
+            embed = discord.Embed(title="Whitelisted Players", color=discord.Color.green())
+            if java_players:
+                embed.add_field(name="☕ Java Players", value="\n".join(java_players), inline=False)
+            if bedrock_players:
+                embed.add_field(name="📱 Bedrock Players", value="\n".join(bedrock_players), inline=False)
+            if unknown_players:
+                embed.add_field(name="❓ Unknown Players", value="\n".join(unknown_players), inline=False)
+            
+            if not java_players and not bedrock_players and not unknown_players:
+                embed.description = "No players found in the whitelist response."
+
+            await ctx.send(embed=embed)
+
     @commands.group(name="mcset")
     @checks.is_owner()
     async def mcset(self, ctx):
