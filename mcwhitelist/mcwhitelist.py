@@ -157,9 +157,11 @@ class MCWhitelist(commands.Cog):
 
             for player in players:
                 if b_prefix and player.startswith(b_prefix):
-                    bedrock_players.append(player)
+                    display_name = player[len(b_prefix):] if b_prefix else player
+                    bedrock_players.append(display_name)
                 elif j_prefix and player.startswith(j_prefix):
-                    java_players.append(player)
+                    display_name = player[len(j_prefix):] if j_prefix else player
+                    java_players.append(display_name)
                 elif not j_prefix: # If java prefix is empty, assume others are java
                      java_players.append(player)
                 else:
@@ -167,11 +169,11 @@ class MCWhitelist(commands.Cog):
 
             embed = discord.Embed(title="Whitelisted Players", color=discord.Color.green())
             if java_players:
-                embed.add_field(name="☕ Java Players", value="\n".join(java_players), inline=False)
+                embed.add_field(name="☕ Java Players", value="\n".join(sorted(java_players)), inline=False)
             if bedrock_players:
-                embed.add_field(name="📱 Bedrock Players", value="\n".join(bedrock_players), inline=False)
+                embed.add_field(name="📱 Bedrock Players", value="\n".join(sorted(bedrock_players)), inline=False)
             if unknown_players:
-                embed.add_field(name="❓ Unknown Players", value="\n".join(unknown_players), inline=False)
+                embed.add_field(name="❓ Unknown Players", value="\n".join(sorted(unknown_players)), inline=False)
             
             if not java_players and not bedrock_players and not unknown_players:
                 embed.description = "No players found in the whitelist response."

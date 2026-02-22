@@ -169,7 +169,9 @@ class TestMCWhitelist:
             assert "JavaPlayer" in fields["☕ Java Players"]
             assert "OtherPlayer" in fields["☕ Java Players"]
             assert "📱 Bedrock Players" in fields
-            assert ".BedrockPlayer" in fields["📱 Bedrock Players"]
+            # Prefix '.' should be removed for display
+            assert "BedrockPlayer" in fields["📱 Bedrock Players"]
+            assert ".BedrockPlayer" not in fields["📱 Bedrock Players"]
 
     async def test_no_password_error(self, cog):
         """Test error when no password is set."""
