@@ -11,7 +11,7 @@ log = logging.getLogger("red.asdas-cogs.mcwhitelist")
 
 class MCWhitelist(commands.Cog):
     """
-    Whitelist players on a Minecraft server via RCON using /easywhitelist.
+    Whitelist players on a Minecraft server via RCON.
     """
 
     def __init__(self, bot: Red):
@@ -67,7 +67,7 @@ class MCWhitelist(commands.Cog):
             prefix = await self.config.java_prefix()
             player_name = f"{prefix}{player}"
             async with ctx.typing():
-                success, response = await self._send_rcon(f'easywhitelist add {player_name}')
+                success, response = await self._send_rcon(f'whitelist add {player_name}')
                 if success:
                     await ctx.send(f"✅ Successfully added `{player_name}` to the whitelist.\n**Server response:** {response}")
                 else:
@@ -84,7 +84,7 @@ class MCWhitelist(commands.Cog):
         prefix = await self.config.java_prefix()
         player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'easywhitelist remove {player_name}')
+            success, response = await self._send_rcon(f'whitelist remove {player_name}')
             if success:
                 await ctx.send(f"✅ Successfully removed `{player_name}` from the whitelist.\n**Server response:** {response}")
             else:
@@ -98,14 +98,12 @@ class MCWhitelist(commands.Cog):
         
         Usage: [p]mcwhitelist bedrock <player>
         """
-        prefix = await self.config.bedrock_prefix()
-        player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'easywhitelist add {player_name}')
+            success, response = await self._send_rcon(f'fwhitelist add {player}')
             if success:
-                await ctx.send(f"✅ Successfully added Bedrock player `{player_name}` to the whitelist.\n**Server response:** {response}")
+                await ctx.send(f"✅ Successfully added Bedrock player `{player}` to the whitelist.\n**Server response:** {response}")
             else:
-                await ctx.send(f"❌ Failed to add `{player_name}` to the whitelist: {response}")
+                await ctx.send(f"❌ Failed to add `{player}` to the whitelist: {response}")
 
     @mcwhitelist.command(name="removebedrock", aliases=["rmbedrock", "bedrockremove"])
     @checks.admin_or_permissions(manage_guild=True)
@@ -115,14 +113,12 @@ class MCWhitelist(commands.Cog):
         
         Usage: [p]mcwhitelist removebedrock <player>
         """
-        prefix = await self.config.bedrock_prefix()
-        player_name = f"{prefix}{player}"
         async with ctx.typing():
-            success, response = await self._send_rcon(f'easywhitelist remove {player_name}')
+            success, response = await self._send_rcon(f'fwhitelist remove {player}')
             if success:
-                await ctx.send(f"✅ Successfully removed Bedrock player `{player_name}` from the whitelist.\n**Server response:** {response}")
+                await ctx.send(f"✅ Successfully removed Bedrock player `{player}` from the whitelist.\n**Server response:** {response}")
             else:
-                await ctx.send(f"❌ Failed to remove `{player_name}` from the whitelist: {response}")
+                await ctx.send(f"❌ Failed to remove `{player}` from the whitelist: {response}")
 
     @commands.group(name="mcset")
     @checks.is_owner()
