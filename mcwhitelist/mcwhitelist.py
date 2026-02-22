@@ -132,13 +132,20 @@ class MCWhitelist(commands.Cog):
                 await ctx.send(f"❌ Failed to fetch whitelist: {response}")
                 return
 
-            # Typical response: "There are 3 whitelisted players: player1, player2, player3"
-            # Or: "There are no whitelisted players"
-            if "players: " not in response:
+            # Typical responses: 
+            # "There are 3 whitelisted players: player1, player2, player3"
+            # "There are 1 whitelisted player(s): player1"
+            # "There are no whitelisted players"
+            
+            if ":" not in response:
+                await ctx.send("There are no whitelisted players or the server response was unexpected.")
+                return
+
+            players_str = response.split(":", 1)[1].strip()
+            if not players_str:
                 await ctx.send("There are no whitelisted players.")
                 return
 
-            players_str = response.split("players: ")[1]
             players = [p.strip() for p in players_str.split(", ")]
 
             b_prefix = await self.config.bedrock_prefix()

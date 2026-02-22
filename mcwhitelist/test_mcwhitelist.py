@@ -148,8 +148,8 @@ class TestMCWhitelist:
         with patch('mcwhitelist.mcwhitelist.Client') as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
-            # Mock response with mixed Java and Bedrock (prefixed with .) players
-            mock_client.send_cmd.return_value = ("There are 3 whitelisted players: JavaPlayer, .BedrockPlayer, OtherPlayer", 1)
+            # Mock response with mixed Java and Bedrock (prefixed with .) players, using player(s): format
+            mock_client.send_cmd.return_value = ("There are 3 whitelisted player(s): JavaPlayer, .BedrockPlayer, OtherPlayer", 1)
             
             await cog.mcwhitelist_list(ctx)
             
