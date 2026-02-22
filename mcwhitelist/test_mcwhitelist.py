@@ -148,8 +148,8 @@ class TestMCWhitelist:
         with patch('mcwhitelist.mcwhitelist.Client') as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
-            # Mock response with mixed Java and Bedrock (prefixed with .) players, using player(s): format
-            mock_client.send_cmd.return_value = ("There are 3 whitelisted player(s): JavaPlayer, .BedrockPlayer, OtherPlayer", 1)
+            # Mock response with color codes, mixed Java and Bedrock (prefixed with .) players, using player(s): format
+            mock_client.send_cmd.return_value = ("§7There are 3 whitelisted player(s): §fJavaPlayer, §a.BedrockPlayer, §fOtherPlayer", 1)
             
             await cog.mcwhitelist_list(ctx)
             
@@ -169,9 +169,10 @@ class TestMCWhitelist:
             assert "JavaPlayer" in fields["☕ Java Players"]
             assert "OtherPlayer" in fields["☕ Java Players"]
             assert "📱 Bedrock Players" in fields
-            # Prefix '.' should be removed for display
+            # Prefix '.' should be removed for display and color codes stripped
             assert "BedrockPlayer" in fields["📱 Bedrock Players"]
             assert ".BedrockPlayer" not in fields["📱 Bedrock Players"]
+            assert "§a.BedrockPlayer" not in fields["📱 Bedrock Players"]
 
     async def test_no_password_error(self, cog):
         """Test error when no password is set."""

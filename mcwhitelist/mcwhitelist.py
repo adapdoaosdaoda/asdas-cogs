@@ -132,21 +132,21 @@ class MCWhitelist(commands.Cog):
                 await ctx.send(f"❌ Failed to fetch whitelist: {response}")
                 return
 
-            # Typical responses: 
-            # "There are 3 whitelisted players: player1, player2, player3"
-            # "There are 1 whitelisted player(s): player1"
-            # "There are no whitelisted players"
-            
-            if ":" not in response:
+            # Strip Minecraft color codes (§0-§f, §k-§r)
+            import re
+            clean_response = re.sub(r'§[0-9a-fk-or]', '', response)
+
+            if ":" not in clean_response:
                 await ctx.send("There are no whitelisted players or the server response was unexpected.")
                 return
 
-            players_str = response.split(":", 1)[1].strip()
-            if not players_str:
+            players_str = clean_response.split(":", 1)[1].strip()
+            if not players_str or "no whitelisted players" in clean_response.lower():
                 await ctx.send("There are no whitelisted players.")
                 return
 
-            players = [p.strip() for p in players_str.split(", ")]
+            # Split by comma and handle potential lack of space
+            players = [p.strip() for p in re.split(r', ?', players_str) if p.strip()]
 
             b_prefix = await self.config.bedrock_prefix()
             j_prefix = await self.config.java_prefix()
@@ -156,11 +156,16 @@ class MCWhitelist(commands.Cog):
             unknown_players = []
 
             for player in players:
+                # Check Bedrock first
                 if b_prefix and player.startswith(b_prefix):
-                    display_name = player[len(b_prefix):] if b_prefix else player
+                    display_name = player[len(b_prefix):]
                     bedrock_players.append(display_name)
+                elif not b_prefix and player.startswith("."): # Fallback to dot if no prefix set
+                    display_name = player[1:]
+                    bedrock_players.append(display_name)
+                # Then Java
                 elif j_prefix and player.startswith(j_prefix):
-                    display_name = player[len(j_prefix):] if j_prefix else player
+                    display_name = player[len(j_prefix):]
                     java_players.append(display_name)
                 elif not j_prefix: # If java prefix is empty, assume others are java
                      java_players.append(player)
