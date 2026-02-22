@@ -64,7 +64,7 @@ class TestMCWhitelist:
             # Verify RCON was called correctly
             mock_client_class.assert_called_with("127.0.0.1", 25575, "password123")
             mock_client.connect.assert_called_once()
-            mock_client.send_cmd.assert_called_with("whitelist add PlayerX")
+            mock_client.send_cmd.assert_called_with("easywhitelist add PlayerX")
             mock_client.close.assert_called_once()
             
             # Verify response message
@@ -87,7 +87,7 @@ class TestMCWhitelist:
             await cog.mcwhitelist_remove(ctx, "PlayerX")
             
             # Verify RCON was called correctly
-            mock_client.send_cmd.assert_called_with("whitelist remove PlayerX")
+            mock_client.send_cmd.assert_called_with("easywhitelist remove PlayerX")
             
             # Verify response message
             ctx.send.assert_called()
