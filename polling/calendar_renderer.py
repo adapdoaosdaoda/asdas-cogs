@@ -717,9 +717,13 @@ class CalendarRenderer:
                     rect_x, rect_y, rect_x2, rect_y2 = rect
                     
                     # 1. Background
-                    color = self.EVENT_BG_COLORS.get(evt_name, self.CELL_BG)
-                    color_faded = self._fade_color(color)
-                    draw.rectangle(rect, fill=color_faded, outline=None)
+                    if evt_name == "Empty":
+                        # Empty cells shouldn't be faded
+                        draw.rectangle(rect, fill=self.CELL_BG, outline=None)
+                    else:
+                        color = self.EVENT_BG_COLORS.get(evt_name, self.CELL_BG)
+                        color_faded = self._fade_color(color)
+                        draw.rectangle(rect, fill=color_faded, outline=None)
                     
                     # 2. Borders
                     # Default widths (internal=2, external=3)
@@ -751,7 +755,9 @@ class CalendarRenderer:
                     # Skip Bottom Border?
                     skip_bottom = False
                     if is_cell_bottom and evt_name in multi_slot_events and evt_name in next_row_events:
-                        skip_bottom = True
+                        # Only skip if we are touching the event itself (Party breaks continuity)
+                        if "Party" not in next_row_events:
+                            skip_bottom = True
 
                     # Party specific: Top border always exists unless... well Party doesn't span rows.
                     # Party is short, so it never skips top/bottom borders based on continuity.
@@ -768,6 +774,69 @@ class CalendarRenderer:
                         top_width=top_w, left_width=left_w,
                         right_width=right_w, bottom_width=bottom_w
                     )
+
+                    # --- Special Case: Fix missing border segment for Full -> Split transition ---
+                    # If we skipped bottom border because WE continue, but the next row is split (e.g. BA | SD),
+                    # we need to draw the border segment for the OTHER event (SD).
+                    if skip_bottom and len([e for e in next_row_events if e != "Party"]) >= 2:
+                        # Identify the non-matching event's position
+                        # Sort next row events to find Left/Right
+                        next_others = sorted([e for e in next_row_events if e != "Party"], key=lambda name: (
+                            # Reconstruct sort key: start time then priority
+                            # We don't have start times here easily without full lookup.
+                            # Fallback: Assume alphabetical for stable sort if we can't get time?
+                            # Actually we need the time.
+                            # Look up in schedule using time_slots[row+1]
+                            0 # Placeholder, logic below
+                        ))
+                        
+                        # Better approach: We know we are Full Width (otherwise we wouldn't cover both).
+                        # Actually, we might be split too. But if we are split, we only cover our half.
+                        # If we are split, rect_width < CELL_WIDTH.
+                        # If we cover only our half, `skip_bottom` is correct because we only touch our half in next row.
+                        # The issue is specifically when we are FULL WIDTH (covering both) but next row is SPLIT.
+                        
+                        is_full_width = (rect_x2 - rect_x) >= self.CELL_WIDTH
+                        
+                        if is_full_width:
+                            # We need to know which half of the next row is occupied by the OTHER event.
+                            # We can re-fetch next row data properly.
+                            next_time_str = time_slots[row + 1]
+                            next_cell_data = schedule[next_time_str][day] # list of tuples
+                            
+                            # Filter and Sort
+                            next_real_events = [e for e in next_cell_data if e[1] != "Party"]
+                            next_real_events.sort(key=event_sort_key)
+                            
+                            # Determine split geometry
+                            mid_x = x + self.CELL_WIDTH // 2
+                            
+                            # Check Left Side
+                            if next_real_events[0][1] != evt_name:
+                                # Left side is NOT me. I need to draw bottom border on Left.
+                                self._draw_borders(draw, rect_x, rect_y2-1, mid_x-1, rect_y2-1, self.GRID_COLOR, bottom_width=2)
+                                
+                            # Check Right Side (if exists)
+                            if len(next_real_events) > 1 and next_real_events[1][1] != evt_name:
+                                # Right side is NOT me. I need to draw bottom border on Right.
+                                self._draw_borders(draw, mid_x, rect_y2-1, rect_x2-1, rect_y2-1, self.GRID_COLOR, bottom_width=2)
+
+                    # --- Special Case: Fix missing border segment for Split -> Full transition ---
+                    # If we skipped top border because WE continue, but WE are Full Width and prev row was Split.
+                    if skip_top and len([e for e in prev_row_events if e != "Party"]) >= 2:
+                         is_full_width = (rect_x2 - rect_x) >= self.CELL_WIDTH
+                         if is_full_width:
+                            prev_time_str = time_slots[row - 1]
+                            prev_cell_data = schedule[prev_time_str][day]
+                            prev_real_events = [e for e in prev_cell_data if e[1] != "Party"]
+                            prev_real_events.sort(key=event_sort_key)
+                            
+                            mid_x = x + self.CELL_WIDTH // 2
+                            
+                            if prev_real_events[0][1] != evt_name:
+                                self._draw_borders(draw, rect_x, rect_y, mid_x-1, rect_y, self.GRID_COLOR, top_width=2)
+                            if len(prev_real_events) > 1 and prev_real_events[1][1] != evt_name:
+                                self._draw_borders(draw, mid_x, rect_y, rect_x2-1, rect_y, self.GRID_COLOR, top_width=2)
 
                 # --- 3. Draw Text/Emojis ---
                 
