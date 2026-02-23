@@ -2813,11 +2813,9 @@ class EventPolling(commands.Cog):
                 "⚔️ **Sword Trial / (Echo)**\n"
                 "Mon(Echo)/Wed/Fri (30 min)\n"
                 "⚡ **Breaking Army**\n"
-                "Weekly (60 min, 2 slots)\n"
+                "Weekly (2h, 2 slots)\n"
                 "🏆 **Showdown**\n"
                 "Weekly (60 min, 2 slots)\n"
-                "🏰 **Guild War**\n"
-                "Sat (90 min, 20:30 - 23:00)\n"
                 "🎉 **Party**\n"
                 "Daily (10 min)"
             ),
@@ -2829,7 +2827,7 @@ class EventPolling(commands.Cog):
                 "🛡️ **Hero's Realm (Reset)**\n"
                 "Sun 22:00\n"
                 "🏰 **Guild War**\n"
-                "Sun 20:30-22:00"
+                "Sat/Sun 20:30 (90 min)"
             ),
             inline=True
         )

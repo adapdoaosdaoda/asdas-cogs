@@ -131,7 +131,7 @@ class EventPollView(discord.ui.View):
         
         # Party / Catch-up / Guild War button (Blue) - Row 0
         general_button = discord.ui.Button(
-            label="Party / Catch-up / Guild War",
+            label="Party / Catch-up",
             style=discord.ButtonStyle.primary,
             emoji="📋",
             custom_id="event_poll:simple_events",
