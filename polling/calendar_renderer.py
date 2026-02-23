@@ -689,103 +689,69 @@ class CalendarRenderer:
                         rects_to_draw.append((left_rect, other_events[0][1], False))
                         rects_to_draw.append((right_rect, other_events[1][1], False))
 
-                # Draw the calculated rectangles
-                for rect, evt_name, _ in rects_to_draw:
+                # --- 2. Draw Rectangles & Borders ---
+                
+                # Check adjacent rows for event continuity (for border skipping)
+                prev_row_events = cell_contents.get((row - 1, col), ())
+                next_row_events = cell_contents.get((row + 1, col), ())
+                multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
+
+                # Draw each rect with its specific background and borders
+                for rect, evt_name, is_party in rects_to_draw:
+                    rect_x, rect_y, rect_x2, rect_y2 = rect
+                    
+                    # 1. Background
                     color = self.EVENT_BG_COLORS.get(evt_name, self.CELL_BG)
                     color_faded = self._fade_color(color)
                     draw.rectangle(rect, fill=color_faded, outline=None)
-
-                # Draw Separator Lines
-                if has_party:
-                    # Horizontal line
-                    mid_y = y + self.CELL_HEIGHT // 2
-                    draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=3)
                     
-                    # Vertical line if split bottom
-                    if len(other_events) >= 2:
-                        mid_x = x + self.CELL_WIDTH // 2
-                        draw.line([(mid_x, mid_y), (mid_x, y + self.CELL_HEIGHT)], fill=self.GRID_COLOR, width=3)
-                else:
-                    # Vertical line if split full
-                    if len(other_events) >= 2:
-                        mid_x = x + self.CELL_WIDTH // 2
-                        draw.line([(mid_x, y), (mid_x, y + self.CELL_HEIGHT)], fill=self.GRID_COLOR, width=3)
+                    # 2. Borders
+                    # Default widths (internal=2, external=3)
+                    top_w = 2
+                    bottom_w = 2
+                    left_w = 2
+                    right_w = 2
+                    
+                    # Adjust for cell edges (External borders)
+                    is_cell_top = (rect_y == y)
+                    is_cell_bottom = (rect_y2 == y + self.CELL_HEIGHT)
+                    is_cell_left = (rect_x == x)
+                    is_cell_right = (rect_x2 == x + self.CELL_WIDTH)
+                    
+                    if is_cell_top and row == 0: top_w = 3
+                    if is_cell_bottom and row == len(time_slots) - 1: bottom_w = 3
+                    if is_cell_left and col == 0: left_w = 3
+                    if is_cell_right and col == len(days) - 1: right_w = 3
 
-                # --- 2. Draw Borders ---
-
-                # Determine if we should skip borders
-                current_content = cell_contents.get((row, col), ())
-                next_row_content = cell_contents.get((row + 1, col), None)
-                prev_row_content = cell_contents.get((row - 1, col), None)
-
-                # Multi-slot events that span multiple time slots
-                multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
-
-                # Skip bottom border if next row shares any multi-slot event
-                # BUT NOT if current cell is single event and next cell is combo (single->combo transition)
-                has_common_multislot_below = False
-                if next_row_content and current_content:
-                    common_events = [
-                        event for event in current_content
-                        if event in next_row_content and event in multi_slot_events
-                    ]
-                    if common_events:
-                        # Check if this is a single->combo transition
-                        is_current_single = len(current_content) == 1
-                        is_next_combo = len(next_row_content) >= 2
-                        # Skip border unless going from single to combo
-                        if not (is_current_single and is_next_combo):
-                            has_common_multislot_below = True
-                skip_bottom = has_common_multislot_below
-
-                # Skip top border only if previous row shares any multi-slot event
-                # BUT NOT if current cell is combo and previous cell is single (single->combo transition)
-                has_common_multislot_above = False
-                if prev_row_content and current_content:
-                    common_events = [
-                        event for event in current_content
-                        if event in prev_row_content and event in multi_slot_events
-                    ]
-                    if common_events:
-                        # Check if this is a single->combo transition
-                        is_prev_single = len(prev_row_content) == 1
-                        is_current_combo = len(current_content) >= 2
-                        # Skip border unless going from single to combo
-                        if not (is_prev_single and is_current_combo):
-                            has_common_multislot_above = True
-                skip_top = has_common_multislot_above
-
-                # Party combo cells always have a top border
-                has_party_in_content = "Party" in current_content
-                is_combo_cell = len(current_content) >= 2
-                if has_party_in_content and is_combo_cell:
+                    # Skip Top Border?
+                    # Only if this specific event continues from above
                     skip_top = False
+                    if is_cell_top and evt_name in multi_slot_events and evt_name in prev_row_events:
+                        # Check if it's a clean continuation (simple logic: just check existence)
+                        # The user issue was SD losing border when sharing with BA. 
+                        # By checking evt_name specifically, BA won't lose border if only SD continues.
+                        skip_top = True
+                    
+                    # Skip Bottom Border?
+                    skip_bottom = False
+                    if is_cell_bottom and evt_name in multi_slot_events and evt_name in next_row_events:
+                        skip_bottom = True
 
-                # Determine border widths: external borders are 4px, internal are 2px
-                is_first_row = (row == 0)
-                is_last_row = (row == len(time_slots) - 1)
-                is_first_col = (col == 0)
-                is_last_col = (col == len(days) - 1)
+                    # Party specific: Top border always exists unless... well Party doesn't span rows.
+                    # Party is short, so it never skips top/bottom borders based on continuity.
+                    if evt_name == "Party":
+                        skip_top = False
+                        skip_bottom = False
 
-                # Calculate width for each border individually
-                top_width = 0
-                if not skip_top:
-                    top_width = 3 if is_first_row else 2
-
-                left_width = 3 if is_first_col else 2
-                right_width = 3 if is_last_col else 2
-
-                bottom_width = 0
-                if not skip_bottom:
-                    bottom_width = 3 if is_last_row else 2
-
-                # Draw borders
-                self._draw_borders(
-                    draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
-                    self.GRID_COLOR,
-                    top_width=top_width, left_width=left_width,
-                    right_width=right_width, bottom_width=bottom_width
-                )
+                    if skip_top: top_w = 0
+                    if skip_bottom: bottom_w = 0
+                    
+                    self._draw_borders(
+                        draw, rect_x, rect_y, rect_x2 - 1, rect_y2 - 1,
+                        self.GRID_COLOR,
+                        top_width=top_w, left_width=left_w,
+                        right_width=right_w, bottom_width=bottom_w
+                    )
 
                 # --- 3. Draw Text/Emojis ---
                 
@@ -827,22 +793,62 @@ class CalendarRenderer:
                     else:
                         emoji = events.get(event_name, {}).get("emoji", "•")
 
-                    # Handle parentheses
-                    event_lines = []
-                    if "(" in event_name and ")" in event_name:
-                        parts = event_name.split("(", 1)
-                        event_lines.append(parts[0].strip())
-                        event_lines.append(f"({parts[1]}")
-                    else:
-                        event_lines = [event_name]
+                    # Helper to prepare text lines
+                    def prepare_lines(text):
+                        lines = []
+                        if "(" in text and ")" in text:
+                            parts = text.split("(", 1)
+                            lines.append(parts[0].strip())
+                            lines.append(f"({parts[1]}")
+                        else:
+                            lines.append(text)
+                        return lines
 
-                    # Create display text lines
-                    display_lines = [f"{emoji} {event_lines[0]}"]
-                    if len(event_lines) > 1:
-                        display_lines.append(event_lines[1])
+                    event_lines = prepare_lines(event_name)
+                    
+                    # Try Standard Font
+                    font_to_use = self.font_bold
+                    display_lines = [f"{emoji} {event_lines[0]}"] + event_lines[1:]
+                    
+                    # Check width and wrap if needed
+                    # Logic: 
+                    # 1. Try standard font.
+                    # 2. If too wide, try small font.
+                    # 3. If still too wide, wrap words.
+                    
+                    def check_fit(lines, font):
+                        for line in lines:
+                            w = draw.textbbox((0, 0), line, font=font)[2]
+                            if w > rect_width - 4: # 4px padding
+                                return False
+                        return True
+
+                    if not check_fit(display_lines, self.font_bold):
+                        if check_fit(display_lines, self.font_small):
+                            font_to_use = self.font_small
+                        else:
+                            # Need to wrap. Use small font for wrapped text.
+                            font_to_use = self.font_small
+                            # Simple word wrap for the name part
+                            words = event_name.split()
+                            wrapped_lines = []
+                            current_line = f"{emoji}"
+                            
+                            for word in words:
+                                test_line = f"{current_line} {word}".strip()
+                                if draw.textbbox((0, 0), test_line, font=font_to_use)[2] <= rect_width - 4:
+                                    current_line = test_line
+                                else:
+                                    wrapped_lines.append(current_line)
+                                    current_line = word
+                            wrapped_lines.append(current_line)
+                            display_lines = wrapped_lines
 
                     # Calculate positions
                     line_height = 15
+                    if font_to_use == self.font_small:
+                        line_height = 12
+                        
                     total_text_height = len(display_lines) * line_height
 
                     # Center text vertically in its rect
@@ -854,7 +860,7 @@ class CalendarRenderer:
                         self._emoji_positions = []
 
                     for line_idx, line_text in enumerate(display_lines):
-                        bbox = draw.textbbox((0, 0), line_text, font=self.font_bold)
+                        bbox = draw.textbbox((0, 0), line_text, font=font_to_use)
                         text_width = bbox[2] - bbox[0]
 
                         # Center horizontally in rect
@@ -862,9 +868,8 @@ class CalendarRenderer:
                         text_y = base_y + (line_idx * line_height)
                         
                         # Add boundary checks to avoid drawing outside rect
-                        # Simple clip: only draw if within Y bounds (X bounds usually ok)
-                        if text_y >= rect_y and text_y + line_height <= rect_y2 + 5:
-                             self._emoji_positions.append((text_x, text_y, line_text, self.font_bold))
+                        if text_y >= rect_y - 2 and text_y + line_height <= rect_y2 + 5:
+                             self._emoji_positions.append((text_x, text_y, line_text, font_to_use))
 
                     # Collect Overlays
                     if event_name == "Guild War" and start_time == time_str:

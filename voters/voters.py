@@ -148,55 +148,65 @@ class Voters(commands.Cog):
         if not ba_voters and not ep_voters_by_event:
             return await ctx.send("❌ No active votes found in either system.")
 
-        embeds = []
-        current_embed = discord.Embed(
-            title="🗳️ Voter Participation Report", 
-            description="List of users who voted in current active polls.",
-            color=discord.Color.blue()
-        )
-        
-        # Helper to add fields with pagination logic
-        def add_field_safe(name, value, inline=False):
-            nonlocal current_embed
-            # Check if adding this field would exceed limits
-            # Field value limit: 1024
-            # Embed total limit: 6000
-            
-            # Truncate value if too long for a single field
-            if len(value) > 1024:
-                value = value[:1000] + "\n... (truncated)"
-            
-            # Calculate new size
-            current_len = len(current_embed.title or "") + len(current_embed.description or "")
-            for f in current_embed.fields:
-                current_len += len(f.name) + len(f.value)
-            
-            if current_len + len(name) + len(value) > 5900 or len(current_embed.fields) >= 25:
-                embeds.append(current_embed)
-                current_embed = discord.Embed(
-                    title="🗳️ Voter Participation Report (Cont.)", 
-                    color=discord.Color.blue()
-                )
-            
-            current_embed.add_field(name=name, value=value, inline=inline)
-
-        # Breaking Army Field
+        # --- Embed 1: Breaking Army Season Votes ---
         if ba_voters:
+            ba_embeds = []
+            ba_current = discord.Embed(
+                title="🗳️ Breaking Army: Season Votes", 
+                description="Users who have voted for the upcoming season Boss Roster.",
+                color=discord.Color.gold()
+            )
+            
             ba_list = sorted(list(ba_voters))
-            ba_text = "\n".join(ba_list)
-            add_field_safe(f"⚡ Breaking Army ({len(ba_list)})", ba_text)
-        
-        # EventPolling Fields
-        for event_name in sorted(ep_voters_by_event.keys()):
-            voters = sorted(list(ep_voters_by_event[event_name]))
-            voters_text = "\n".join(voters)
-            add_field_safe(f"📅 {event_name} ({len(voters)})", voters_text)
+            # Chunk list if too long for one field (1024 chars) or embed (6000 chars)
+            # Simple chunking by count (e.g. 30 names per field)
+            chunk_size = 30
+            for i in range(0, len(ba_list), chunk_size):
+                chunk = ba_list[i:i + chunk_size]
+                field_val = "\n".join(chunk)
+                
+                if len(ba_current.fields) >= 20 or len(ba_current) + len(field_val) > 5500:
+                    ba_embeds.append(ba_current)
+                    ba_current = discord.Embed(
+                        title="🗳️ Breaking Army: Season Votes (Cont.)", 
+                        color=discord.Color.gold()
+                    )
+                
+                ba_current.add_field(name=f"Voters ({i+1}-{i+len(chunk)})", value=field_val, inline=True)
+            
+            ba_embeds.append(ba_current)
+            for e in ba_embeds:
+                await ctx.send(embed=e)
 
-        embeds.append(current_embed)
+        # --- Embed 2: Scheduling Votes ---
+        if ep_voters_by_event:
+            ep_embeds = []
+            ep_current = discord.Embed(
+                title="📅 Event Schedule: Voter Participation", 
+                description="Users who have voted for weekly event times.",
+                color=discord.Color.blue()
+            )
+            
+            for event_name in sorted(ep_voters_by_event.keys()):
+                voters = sorted(list(ep_voters_by_event[event_name]))
+                voters_text = "\n".join(voters)
+                
+                # Check limits
+                if len(voters_text) > 1024:
+                    voters_text = voters_text[:1000] + "\n... (truncated)"
+                
+                if len(ep_current.fields) >= 20 or len(ep_current) + len(voters_text) > 5500:
+                    ep_embeds.append(ep_current)
+                    ep_current = discord.Embed(
+                        title="📅 Event Schedule: Voter Participation (Cont.)", 
+                        color=discord.Color.blue()
+                    )
+                
+                ep_current.add_field(name=f"{event_name} ({len(voters)})", value=voters_text, inline=True)
 
-        # Send all embeds
-        for embed in embeds:
-            await ctx.send(embed=embed)
+            ep_embeds.append(ep_current)
+            for e in ep_embeds:
+                await ctx.send(embed=e)
 
     @voters.group(name="settings", aliases=["set"])
     @commands.admin_or_permissions(manage_guild=True)

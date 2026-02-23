@@ -65,19 +65,14 @@ class EventPolling(commands.Cog):
                 }
             },
             "Guild War": {
-                "type": "once",
+                "type": "locked",
                 "days": ["Saturday", "Sunday"],
-                "time_range": (20.5, 23),  # 20:30 to 23:00 (latest start 21:30)
                 "fixed_time": "20:30",
-                "duration": 90,  # 1.5 hours (e.g., 20:30-22:00 or 21:30-23:00)
+                "duration": 90,  # 1.5 hours (20:30-22:00)
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🏰",
                 "priority": 6,
-                "slots": 2,
-                "default_times": {
-                    "Saturday": "20:30",
-                    "Sunday": "20:30"
-                }
+                "slots": 2
             },
             "Hero's Realm (Catch-up)": {
                 "type": "once",
@@ -2938,6 +2933,10 @@ class EventPolling(commands.Cog):
 
         # Add results for each event
         for event_name, event_info in self.events.items():
+            # Skip locked events
+            if event_info.get("type") == "locked":
+                continue
+
             emoji = event_info["emoji"]
             event_slots = winning_times.get(event_name, {})
             
@@ -2945,37 +2944,33 @@ class EventPolling(commands.Cog):
             voters_count = 0
             for uid, user_votes in selections.items():
                 if event_name in user_votes and user_votes[event_name]:
-                    # Check if it's a list with at least one non-None item
                     if isinstance(user_votes[event_name], list):
                         if any(x is not None for x in user_votes[event_name]):
                             voters_count += 1
                     else:
                         voters_count += 1
 
-            # Format each slot for this event
+            # Collect active slots and their result text
+            active_slots = []
+            
             for slot_index in range(event_info["slots"]):
                 slot_data = event_slots.get(slot_index)
-                
-                # Determine display label
-                if event_info["slots"] > 1:
-                    if event_info["type"] == "fixed_days":
-                        day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
-                        label = f"{emoji} **{event_name} ({day_name[:3]})**"
-                    else:
-                        label = f"{emoji} **{event_name} Slot {slot_index + 1}**"
-                else:
-                    label = f"{emoji} **{event_name}**"
-
-                # Add voter count to label
-                label += f" ({voters_count} voters)"
-
                 if not slot_data:
-                    result_lines.append(f"{label}: *No votes yet*")
                     continue
 
                 winner_key, winner_points, all_entries = slot_data
                 
-                # Show top 3 entries if they exist
+                # Determine display label suffix
+                label_suffix = ""
+                if event_info["slots"] > 1:
+                    if event_info["type"] == "fixed_days":
+                        day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
+                        label_suffix = f" ({day_name[:3]})"
+                    else:
+                        label_suffix = f" Slot {slot_index + 1}"
+
+                # Generate result text
+                result_text = ""
                 if all_entries:
                     top_entries = []
                     for rank, (key, points) in enumerate(all_entries[:3], 1):
@@ -2988,17 +2983,44 @@ class EventPolling(commands.Cog):
                         
                         entry_text += f" ({points} pts)"
                         top_entries.append(entry_text)
-                    
-                    result_lines.append(f"{label}: {' **|** '.join(top_entries)}")
+                    result_text = ' **|** '.join(top_entries)
                 else:
-                    # Fallback for defaults (points = 0) or single winner
                     day, time = winner_key
                     if winner_points == 0:
-                        result_lines.append(f"{label}: *Default:* {time}")
+                        result_text = f"*Default:* {time}"
                     else:
-                        # Use winner_key if all_entries is somehow empty but we have points
                         display_day = f"{day[:3]} " if day and day not in ("Daily", "Fixed") else ""
-                        result_lines.append(f"{label}: **1.** {display_day}{time} ({winner_points} pts)")
+                        result_text = f"**1.** {display_day}{time} ({winner_points} pts)"
+                
+                active_slots.append({
+                    "suffix": label_suffix,
+                    "text": result_text
+                })
+
+            # Skip event if no active slots
+            if not active_slots:
+                continue
+
+            # Check for consolidation
+            # Consolidate if:
+            # 1. Not fixed_days (slots represent different specific days)
+            # 2. More than 1 active slot
+            # 3. All active slots have identical result text
+            should_consolidate = (
+                event_info["type"] != "fixed_days" and
+                len(active_slots) > 1 and
+                all(s["text"] == active_slots[0]["text"] for s in active_slots)
+            )
+
+            if should_consolidate:
+                # consolidated line
+                line = f"{emoji} **{event_name}** ({voters_count} voters): {active_slots[0]['text']}"
+                result_lines.append(line)
+            else:
+                # individual lines
+                for slot in active_slots:
+                    line = f"{emoji} **{event_name}{slot['suffix']}** ({voters_count} voters): {slot['text']}"
+                    result_lines.append(line)
 
         return "\n".join(result_lines)
 
