@@ -657,7 +657,8 @@ class CalendarRenderer:
                     
                     if not other_events:
                         # Empty bottom
-                        draw.rectangle(bottom_rect, fill=self.CELL_BG, outline=None)
+                        # Add to rects_to_draw so borders are drawn
+                        rects_to_draw.append((bottom_rect, "Empty", False))
                     elif len(other_events) == 1:
                         # Full Bottom
                         rects_to_draw.append((bottom_rect, other_events[0][1], False))
