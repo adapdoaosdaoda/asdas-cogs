@@ -1,0 +1,10 @@
+{
+    "author": ["Asdas"],
+    "description": "Displays lists of voters for active EventPoll and BreakingArmy polls",
+    "install_msg": "Cog installed. Use `[p]voters` to see who voted.",
+    "name": "Voters",
+    "short": "Voter participation lists",
+    "requirements": ["discord.py"],
+    "tags": ["utility", "polling"],
+    "min_bot_version": "3.5.0"
+}

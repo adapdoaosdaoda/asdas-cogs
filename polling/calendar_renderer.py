@@ -579,11 +579,6 @@ class CalendarRenderer:
         """Draw the calendar grid with times and events"""
         start_y = self.HEADER_HEIGHT + self.PADDING
 
-        day_full_names = {
-            "Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday",
-            "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"
-        }
-
         # Build a grid of cell contents for border optimization
         cell_contents = {}  # (row, col) -> sorted event names tuple
         overlays = []  # List of (x, y, height) for Guild War text
@@ -620,73 +615,103 @@ class CalendarRenderer:
                 if time_str in schedule and day in schedule[time_str]:
                     events_in_cell = schedule[time_str][day]
 
-                # Determine cell background color based on events
+                # --- 1. Determine Layout & Draw Backgrounds ---
+                
+                # Separate Party from others
+                party_event = None
+                other_events = []
+                
                 if events_in_cell:
-                    # Sort events first to determine display order
-                    sorted_events = self._sort_events_for_display(events_in_cell, time_str)
-                    event_names = [event_name for _, event_name, _, _, _ in sorted_events]
-
-                    # For cells with 2 events, draw dual-color split background
-                    if len(event_names) >= 2:
-                        # Top half: first event's color (faded)
-                        top_color = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
-                        top_color_faded = self._fade_color(top_color)
-                        draw.rectangle(
-                            [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT // 2],
-                            fill=top_color_faded,
-                            outline=None
-                        )
-
-                        # Bottom half: second event's color (faded)
-                        bottom_color = self.EVENT_BG_COLORS.get(event_names[1], self.CELL_BG)
-                        bottom_color_faded = self._fade_color(bottom_color)
-                        draw.rectangle(
-                            [x, y + self.CELL_HEIGHT // 2, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                            fill=bottom_color_faded,
-                            outline=None
-                        )
-
-                        # Draw solid horizontal line between the two events
-                        mid_y = y + self.CELL_HEIGHT // 2
-                        draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=3)
-                    else:
-                        # Single event: Party always renders as split cell (top half only)
-                        if event_names[0] == "Party":
-                            # Top half: Party color (faded)
-                            top_color = self.EVENT_BG_COLORS.get("Party", self.CELL_BG)
-                            top_color_faded = self._fade_color(top_color)
-                            draw.rectangle(
-                                [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT // 2],
-                                fill=top_color_faded,
-                                outline=None
-                            )
-
-                            # Bottom half: empty (default cell background)
-                            draw.rectangle(
-                                [x, y + self.CELL_HEIGHT // 2, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                                fill=self.CELL_BG,
-                                outline=None
-                            )
-
-                            # Draw solid horizontal line between the two halves
-                            mid_y = y + self.CELL_HEIGHT // 2
-                            draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=3)
+                    for evt in events_in_cell:
+                        if evt[1] == "Party":
+                            party_event = evt
                         else:
-                            # Other single events: use single color (faded)
-                            cell_bg = self.EVENT_BG_COLORS.get(event_names[0], self.CELL_BG)
-                            cell_bg_faded = self._fade_color(cell_bg)
-                            draw.rectangle(
-                                [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                                fill=cell_bg_faded,
-                                outline=None
-                            )
-                else:
-                    # Empty cell
-                    draw.rectangle(
-                        [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT],
-                        fill=self.CELL_BG,
-                        outline=None
+                            other_events.append(evt)
+
+                # Determine area for other events
+                has_party = (party_event is not None)
+                
+                # Sort other events by start time for Left/Right split
+                # evt structure: (priority, event_name, slot_num, start_time, duration)
+                # Sort by start_time (idx 3) then priority (idx 0)
+                def event_sort_key(e):
+                    # Parse time to comparable
+                    h, m = map(int, e[3].split(':'))
+                    # Handle post-midnight times
+                    if h < 5: h += 24 
+                    return (h * 60 + m, -e[0]) # Earlier time first, then higher priority
+                
+                other_events.sort(key=event_sort_key)
+                
+                # Define rects
+                rects_to_draw = [] # (rect_tuple, event_name, is_party)
+                
+                if has_party:
+                    # Top Half: Party
+                    rects_to_draw.append(
+                        ([x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT // 2], "Party", True)
                     )
+                    
+                    # Bottom Half: Others
+                    bottom_rect = [x, y + self.CELL_HEIGHT // 2, x + self.CELL_WIDTH, y + self.CELL_HEIGHT]
+                    
+                    if not other_events:
+                        # Empty bottom
+                        draw.rectangle(bottom_rect, fill=self.CELL_BG, outline=None)
+                    elif len(other_events) == 1:
+                        # Full Bottom
+                        rects_to_draw.append((bottom_rect, other_events[0][1], False))
+                    else:
+                        # Split Bottom Left/Right
+                        mid_x = x + self.CELL_WIDTH // 2
+                        left_rect = [x, y + self.CELL_HEIGHT // 2, mid_x, y + self.CELL_HEIGHT]
+                        right_rect = [mid_x, y + self.CELL_HEIGHT // 2, x + self.CELL_WIDTH, y + self.CELL_HEIGHT]
+                        
+                        rects_to_draw.append((left_rect, other_events[0][1], False))
+                        rects_to_draw.append((right_rect, other_events[1][1], False))
+                        
+                else:
+                    # No Party - Full Cell for Others
+                    full_rect = [x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT]
+                    
+                    if not other_events:
+                        # Empty Cell
+                        draw.rectangle(full_rect, fill=self.CELL_BG, outline=None)
+                    elif len(other_events) == 1:
+                        # Full Cell
+                        rects_to_draw.append((full_rect, other_events[0][1], False))
+                    else:
+                        # Split Full Cell Left/Right
+                        mid_x = x + self.CELL_WIDTH // 2
+                        left_rect = [x, y, mid_x, y + self.CELL_HEIGHT]
+                        right_rect = [mid_x, y, x + self.CELL_WIDTH, y + self.CELL_HEIGHT]
+                        
+                        rects_to_draw.append((left_rect, other_events[0][1], False))
+                        rects_to_draw.append((right_rect, other_events[1][1], False))
+
+                # Draw the calculated rectangles
+                for rect, evt_name, _ in rects_to_draw:
+                    color = self.EVENT_BG_COLORS.get(evt_name, self.CELL_BG)
+                    color_faded = self._fade_color(color)
+                    draw.rectangle(rect, fill=color_faded, outline=None)
+
+                # Draw Separator Lines
+                if has_party:
+                    # Horizontal line
+                    mid_y = y + self.CELL_HEIGHT // 2
+                    draw.line([(x, mid_y), (x + self.CELL_WIDTH, mid_y)], fill=self.GRID_COLOR, width=3)
+                    
+                    # Vertical line if split bottom
+                    if len(other_events) >= 2:
+                        mid_x = x + self.CELL_WIDTH // 2
+                        draw.line([(mid_x, mid_y), (mid_x, y + self.CELL_HEIGHT)], fill=self.GRID_COLOR, width=3)
+                else:
+                    # Vertical line if split full
+                    if len(other_events) >= 2:
+                        mid_x = x + self.CELL_WIDTH // 2
+                        draw.line([(mid_x, y), (mid_x, y + self.CELL_HEIGHT)], fill=self.GRID_COLOR, width=3)
+
+                # --- 2. Draw Borders ---
 
                 # Determine if we should skip borders
                 current_content = cell_contents.get((row, col), ())
@@ -695,10 +720,6 @@ class CalendarRenderer:
 
                 # Multi-slot events that span multiple time slots
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
-
-                # Skip borders ONLY for multi-slot event continuations
-                # This allows internal borders to overlap (2px + 2px = 4px)
-                # BUT: Don't skip when transitioning FROM single multi-slot TO combo with that multi-slot
 
                 # Skip bottom border if next row shares any multi-slot event
                 # BUT NOT if current cell is single event and next cell is combo (single->combo transition)
@@ -735,9 +756,9 @@ class CalendarRenderer:
                 skip_top = has_common_multislot_above
 
                 # Party combo cells always have a top border
-                has_party = "Party" in current_content
+                has_party_in_content = "Party" in current_content
                 is_combo_cell = len(current_content) >= 2
-                if has_party and is_combo_cell:
+                if has_party_in_content and is_combo_cell:
                     skip_top = False
 
                 # Determine border widths: external borders are 4px, internal are 2px
@@ -747,25 +768,18 @@ class CalendarRenderer:
                 is_last_col = (col == len(days) - 1)
 
                 # Calculate width for each border individually
-                # Internal borders are 2px and overlap with adjacent cells to appear as 4px
-                # External borders are 3px
-                # Top: 3px if first row (external), 2px if internal, 0 if skipped
                 top_width = 0
                 if not skip_top:
                     top_width = 3 if is_first_row else 2
 
-                # Left: 3px if first column (external), 2px if internal (always drawn)
                 left_width = 3 if is_first_col else 2
-
-                # Right: 3px if last column (external), 2px if internal (always drawn)
                 right_width = 3 if is_last_col else 2
 
-                # Bottom: 3px if last row (external), 2px if internal, 0 if skipped
                 bottom_width = 0
                 if not skip_bottom:
                     bottom_width = 3 if is_last_row else 2
 
-                # Draw borders with individual widths
+                # Draw borders
                 self._draw_borders(
                     draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
                     self.GRID_COLOR,
@@ -773,91 +787,97 @@ class CalendarRenderer:
                     right_width=right_width, bottom_width=bottom_width
                 )
 
-                # Draw events in this cell (support up to 2 events)
-                if events_in_cell:
-                        # Sort events based on dynamic ordering rules
-                        sorted_events = self._sort_events_for_display(events_in_cell, time_str)
+                # --- 3. Draw Text/Emojis ---
+                
+                # Prepare events list for text drawing
+                # We need to match the layout logic: Party first, then sorted others
+                events_to_text = []
+                
+                if party_event:
+                    # Party uses the first rect
+                    events_to_text.append((party_event, rects_to_draw[0][0]))
+                    
+                    # Add others
+                    if other_events:
+                        if len(other_events) == 1:
+                            # One other event -> second rect
+                            events_to_text.append((other_events[0], rects_to_draw[1][0]))
+                        else:
+                            # Two other events -> second and third rects
+                            events_to_text.append((other_events[0], rects_to_draw[1][0]))
+                            events_to_text.append((other_events[1], rects_to_draw[2][0]))
+                else:
+                    # No party
+                    if other_events:
+                        if len(other_events) == 1:
+                             events_to_text.append((other_events[0], rects_to_draw[0][0]))
+                        else:
+                             events_to_text.append((other_events[0], rects_to_draw[0][0]))
+                             events_to_text.append((other_events[1], rects_to_draw[1][0]))
 
-                        # Draw up to 2 events per cell
-                        num_events_to_show = min(2, len(sorted_events))
+                # Draw text for each mapped event
+                for (priority, event_name, slot_num, start_time, duration), rect in events_to_text:
+                    rect_x, rect_y, rect_x2, rect_y2 = rect
+                    rect_width = rect_x2 - rect_x
+                    rect_height = rect_y2 - rect_y
+                    
+                    # Get emoji
+                    if event_name == "Guild War":
+                        emoji = "🏰"
+                    else:
+                        emoji = events.get(event_name, {}).get("emoji", "•")
 
-                        for event_idx in range(num_events_to_show):
-                            priority, event_name, slot_num, start_time, duration = sorted_events[event_idx]
+                    # Handle parentheses
+                    event_lines = []
+                    if "(" in event_name and ")" in event_name:
+                        parts = event_name.split("(", 1)
+                        event_lines.append(parts[0].strip())
+                        event_lines.append(f"({parts[1]}")
+                    else:
+                        event_lines = [event_name]
 
-                            # Get emoji (handle Guild War specially since it's not in events dict)
-                            if event_name == "Guild War":
-                                emoji = "🏰"
-                            else:
-                                emoji = events.get(event_name, {}).get("emoji", "•")
+                    # Create display text lines
+                    display_lines = [f"{emoji} {event_lines[0]}"]
+                    if len(event_lines) > 1:
+                        display_lines.append(event_lines[1])
 
-                            # Split event name into multiple lines if it contains parentheses
-                            # E.g., "Hero's Realm (Catch-up)" becomes ["Hero's Realm", "(Catch-up)"]
-                            event_lines = []
-                            if "(" in event_name and ")" in event_name:
-                                # Split at opening parenthesis
-                                parts = event_name.split("(", 1)
-                                event_lines.append(parts[0].strip())
-                                event_lines.append(f"({parts[1]}")
-                            else:
-                                event_lines = [event_name]
+                    # Calculate positions
+                    line_height = 15
+                    total_text_height = len(display_lines) * line_height
 
-                            # Create display text lines with emoji on first line only
-                            display_lines = [f"{emoji} {event_lines[0]}"]
-                            if len(event_lines) > 1:
-                                display_lines.append(event_lines[1])
+                    # Center text vertically in its rect
+                    # Special adjustment for Party to move up 2px
+                    y_offset = -2 if event_name == "Party" else 0
+                    base_y = rect_y + (rect_height - total_text_height) // 2 + y_offset
 
-                            # Calculate positions for multi-line text
-                            line_height = 15  # Spacing between lines
-                            total_height = len(display_lines) * line_height
+                    if not hasattr(self, '_emoji_positions'):
+                        self._emoji_positions = []
 
-                            # Position events vertically based on index
-                            if num_events_to_show == 1:
-                                # Single event: center vertically, except Party which goes to top
-                                if event_name == "Party":
-                                    # Party takes top half even when alone (short duration event)
-                                    # Center in top half, moved up 2px
-                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2 - 2
-                                else:
-                                    # Other events center vertically in full cell
-                                    base_y = y + (self.CELL_HEIGHT - total_height) // 2
-                            else:
-                                # Multiple events: split cell
-                                if event_idx == 0:
-                                    # First event (Party) centered in top half, moved up 2px
-                                    base_y = y + (self.CELL_HEIGHT // 2 - total_height) // 2 - 2
-                                else:
-                                    # Second event centered in bottom half, moved up 2px
-                                    base_y = y + (self.CELL_HEIGHT // 2) + (self.CELL_HEIGHT // 2 - total_height) // 2 - 2
+                    for line_idx, line_text in enumerate(display_lines):
+                        bbox = draw.textbbox((0, 0), line_text, font=self.font_bold)
+                        text_width = bbox[2] - bbox[0]
 
-                            # Draw each line
-                            if not hasattr(self, '_emoji_positions'):
-                                self._emoji_positions = []
+                        # Center horizontally in rect
+                        text_x = rect_x + (rect_width - text_width) // 2
+                        text_y = base_y + (line_idx * line_height)
+                        
+                        # Add boundary checks to avoid drawing outside rect
+                        # Simple clip: only draw if within Y bounds (X bounds usually ok)
+                        if text_y >= rect_y and text_y + line_height <= rect_y2 + 5:
+                             self._emoji_positions.append((text_x, text_y, line_text, self.font_bold))
 
-                            for line_idx, line_text in enumerate(display_lines):
-                                # Calculate text width for centering
-                                bbox = draw.textbbox((0, 0), line_text, font=self.font_bold)
-                                text_width = bbox[2] - bbox[0]
+                    # Collect Overlays
+                    if event_name == "Guild War" and start_time == time_str:
+                        num_slots = max(1, duration // 30)
+                        overlay_height = num_slots * self.CELL_HEIGHT
+                        overlay_text = "2 Games / Locked" if priority == 0 else "2 Games"
+                        # Use x, y from loop (cell origin)
+                        overlays.append((x, y, overlay_height, overlay_text))
 
-                                # Center horizontally
-                                text_x = x + (self.CELL_WIDTH - text_width) // 2
-                                text_y = base_y + (line_idx * line_height)
-
-                                self._emoji_positions.append((text_x, text_y, line_text, self.font_bold))
-
-                            # Collect Guild War overlay if start of event (draw later to span cells)
-                            if event_name == "Guild War" and start_time == time_str:
-                                # Calculate total height based on duration
-                                num_slots = max(1, duration // 30)
-                                total_height = num_slots * self.CELL_HEIGHT
-                                overlay_text = "2 Games / Locked" if priority == 0 else "2 Games"
-                                overlays.append((x, y, total_height, overlay_text))
-
-                            # Collect Hero's Realm (Reset) overlay
-                            if event_name == "Hero's Realm (Reset)" and start_time == time_str:
-                                # Calculate total height based on duration
-                                num_slots = max(1, duration // 30)
-                                total_height = num_slots * self.CELL_HEIGHT
-                                overlays.append((x, y, total_height, "Locked"))
+                    if event_name == "Hero's Realm (Reset)" and start_time == time_str:
+                        num_slots = max(1, duration // 30)
+                        overlay_height = num_slots * self.CELL_HEIGHT
+                        overlays.append((x, y, overlay_height, "Locked"))
 
         # Draw overlays for multi-slot events
         for x, y, height, text in overlays:

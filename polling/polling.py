@@ -136,7 +136,7 @@ class EventPolling(commands.Cog):
                 "type": "once",
                 "time_range": (17, 26),  # 17:00 to 02:00
                 "interval": 30,
-                "duration": 60,  # 1 hour
+                "duration": 120,  # 2 hours
                 "slots": 2,  # Two weekly slots
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "⚡",
@@ -2940,6 +2940,17 @@ class EventPolling(commands.Cog):
         for event_name, event_info in self.events.items():
             emoji = event_info["emoji"]
             event_slots = winning_times.get(event_name, {})
+            
+            # Count voters for this event
+            voters_count = 0
+            for uid, user_votes in selections.items():
+                if event_name in user_votes and user_votes[event_name]:
+                    # Check if it's a list with at least one non-None item
+                    if isinstance(user_votes[event_name], list):
+                        if any(x is not None for x in user_votes[event_name]):
+                            voters_count += 1
+                    else:
+                        voters_count += 1
 
             # Format each slot for this event
             for slot_index in range(event_info["slots"]):
@@ -2954,6 +2965,9 @@ class EventPolling(commands.Cog):
                         label = f"{emoji} **{event_name} Slot {slot_index + 1}**"
                 else:
                     label = f"{emoji} **{event_name}**"
+
+                # Add voter count to label
+                label += f" ({voters_count} voters)"
 
                 if not slot_data:
                     result_lines.append(f"{label}: *No votes yet*")
@@ -3005,8 +3019,18 @@ class EventPolling(commands.Cog):
         if not event_info:
             return f"Event '{event_name}' not found."
 
-        emoji = event_info["emoji"]
-        event_slots = winning_times.get(event_name, {})
+        # Calculate voter count for this event
+        voters_count = 0
+        for uid, user_votes in selections.items():
+            if event_name in user_votes and user_votes[event_name]:
+                if isinstance(user_votes[event_name], list):
+                    if any(x is not None for x in user_votes[event_name]):
+                        voters_count += 1
+                else:
+                    voters_count += 1
+
+        summary_lines.append(f"**Total Voters for {event_name}: {voters_count}**")
+        summary_lines.append("")
 
         if event_slots:
             for slot_index in range(event_info["slots"]):

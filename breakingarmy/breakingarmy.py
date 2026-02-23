@@ -65,6 +65,10 @@ class BreakingArmy(commands.Cog):
         self.config.register_guild(**default_guild)
         self.schedule_checker.start()
 
+    async def cog_load(self):
+        """Called when the cog is loaded"""
+        self.bot.add_view(BossPollView(self))
+
     def cog_unload(self):
         self.schedule_checker.cancel()
 

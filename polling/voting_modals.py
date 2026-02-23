@@ -226,9 +226,8 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up / Guild War"):
             self.selects["Guild War"] = {"sat": sat_select, "sun": sun_select}
             
             if Label_cls:
-                self.add_item(Label_cls("🏰 Guild War", sat_select, description="Choose Sat & Sun times"))
-                self.add_item(sat_select)
-                self.add_item(sun_select)
+                self.add_item(Label_cls("🏰 Guild War Saturday", sat_select, description="Choose Saturday time"))
+                self.add_item(Label_cls("🏰 Guild War Sunday", sun_select, description="Choose Sunday time"))
             else:
                 self.add_item(sat_select)
                 self.add_item(sun_select)
