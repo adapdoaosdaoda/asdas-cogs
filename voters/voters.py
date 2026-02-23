@@ -126,6 +126,10 @@ class Voters(commands.Cog):
                             name = f"{member.display_name} ({member.name})" if member else f"Unknown User ({user_id_str})"
                             
                             for event_name, choice_data in user_choices.items():
+                                # Skip Guild War as it's locked
+                                if event_name == "Guild War":
+                                    continue
+
                                 # Verify if choice is valid (not None or empty)
                                 is_valid = False
                                 if isinstance(choice_data, list):

@@ -696,6 +696,21 @@ class CalendarRenderer:
                 next_row_events = cell_contents.get((row + 1, col), ())
                 multi_slot_events = ["Breaking Army", "Showdown", "Guild War"]
 
+                # If cell is empty, draw default border
+                if not rects_to_draw:
+                    # Determine border widths for empty cell
+                    top_w = 3 if row == 0 else 2
+                    bottom_w = 3 if row == len(time_slots) - 1 else 2
+                    left_w = 3 if col == 0 else 2
+                    right_w = 3 if col == len(days) - 1 else 2
+                    
+                    self._draw_borders(
+                        draw, x, y, x + self.CELL_WIDTH - 1, y + self.CELL_HEIGHT - 1,
+                        self.GRID_COLOR,
+                        top_width=top_w, left_width=left_w,
+                        right_width=right_w, bottom_width=bottom_w
+                    )
+
                 # Draw each rect with its specific background and borders
                 for rect, evt_name, is_party in rects_to_draw:
                     rect_x, rect_y, rect_x2, rect_y2 = rect
