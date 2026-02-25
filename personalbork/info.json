@@ -1,0 +1,16 @@
+{
+    "author": [
+        "adapdoaosdaoda"
+    ],
+    "description": "Track and display days since owners last 'borked' (made a mistake, crashed, etc.). Features personal streaks, bork history, and longest streak tracking.",
+    "install_msg": "Thank you for installing PersonalBork! Use `[p]bork` to mark yourself as borked and `[p]borked` to check your current streak.",
+    "short": "Track days since owners last borked",
+    "tags": [
+        "utility",
+        "stats",
+        "personal",
+        "tracking"
+    ],
+    "type": "COG",
+    "end_user_data_statement": "This cog stores user IDs and timestamps of when they 'borked' to track streaks and history."
+}

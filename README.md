@@ -17,6 +17,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]cog install asdas-cogs forumthreadmessage
 [p]cog install asdas-cogs mcwhitelist
 [p]cog install asdas-cogs msgmover
+[p]cog install asdas-cogs personalbork
 [p]cog install asdas-cogs polling
 [p]cog install asdas-cogs reminders
 [p]cog install asdas-cogs tradecommission
@@ -29,6 +30,7 @@ A collection of custom cogs for Red-Discord bot, featuring automated event manag
 [p]load forumthreadmessage
 [p]load mcwhitelist
 [p]load msgmover
+[p]load personalbork
 [p]load polling
 [p]load reminders
 [p]load tradecommission
@@ -117,6 +119,20 @@ Event scheduling polling system with visual calendar images and conflict detecti
 - Beautiful calendar visualizations
 - Text label fallback if pilmoji is not installed
 
+### PersonalBork
+Track and display days since owners last "borked" (made a mistake, crashed, etc.).
+
+**Key Features:**
+- Personal streak tracking for bot owners
+- Simple `[p]bork luo` command to reset Luo's counter
+- `[p]bork melon` command to reset the bot's crash counter (BorkedSince)
+- `[p]undo luo` and `[p]undo melon` support for accidental borks
+- `[p]borked [user/keyword]` command to check how long since someone last borked
+- Special keywords: `!borked melon` shows bot crash history, `!borked luo` shows Luo's status
+- Response message: "Luo last borked X days ago"
+- Personal bork history and longest streak tracking
+- Thousand separator (period) for high day counts
+
 ### Reminders
 [AAA3A's](https://github.com/AAA3A-AAA3A/AAA3A-cogs) reminders with added time variable.
 
@@ -180,6 +196,7 @@ For help, questions, or feature requests:
 - **EventRoleReadd** - Custom development for Red-Discord Bot
 - **ForumThreadMessage** - Custom development for Red-Discord Bot
 - **MsgMover** - Cloned from [coffeebank's MsgMover cog](https://github.com/coffeebank/coffee-cogs)
+- **PersonalBork** - Cloned from BorkedSince, adapted for personal tracking
 - **Polling** - Custom development for Red-Discord Bot
 - **Reminders** - Cloned from [AAA3A's Reminders cog](https://github.com/AAA3A-AAA3A/AAA3A-cogs), enhanced with `{time}` variable support
 - **TradeCommission** - Custom development for Red-Discord Bot
