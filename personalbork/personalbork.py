@@ -40,6 +40,73 @@ class PersonalBork(commands.Cog):
         now = datetime.now(timezone.utc)
         return (now - last_dt).days
 
+    async def _show_luo_history(self, ctx: commands.Context, limit: int):
+        """Show Luo's bork history in an embed identical to borkedsince history."""
+        if limit < 1:
+            limit = 1
+        elif limit > 50:
+            limit = 50
+
+        # Get Luo (first owner)
+        target_user = None
+        if self.bot.owner_ids:
+            owner_id = list(self.bot.owner_ids)[0]
+            target_user = self.bot.get_user(owner_id)
+        
+        if not target_user:
+            target_user = ctx.author
+
+        user_config = self.config.user(target_user)
+        bork_history = await user_config.bork_history()
+
+        if not bork_history:
+            await ctx.send(
+                f"✅ **{target_user.display_name}** has no borks recorded!\n\n"
+                "Either they have never borked, or history was recently cleared."
+            )
+            return
+
+        # Sort by streak length (descending) for highscores
+        sorted_borks = sorted(bork_history, key=lambda x: x["streak_length"], reverse=True)
+
+        # Determine embed color: bot's role color in guild, or #58b99c fallback
+        embed_color = discord.Color(0x58b99c)
+        if ctx.guild and ctx.guild.me:
+            bot_color = ctx.guild.me.color
+            if bot_color.value != 0:
+                embed_color = bot_color
+
+        embed = discord.Embed(
+            title="🏆 Bork History - Longest Streaks",
+            description=f"Showing top {min(limit, len(sorted_borks))} longest streaks before borking",
+            color=embed_color,
+        )
+
+        for i, bork in enumerate(sorted_borks[:limit], 1):
+            timestamp = datetime.fromisoformat(bork["timestamp"])
+            streak = bork["streak_length"]
+            streak_formatted = self._format_days(streak)
+
+            if i == 1:
+                emoji = "🥇"
+            elif i == 2:
+                emoji = "🥈"
+            elif i == 3:
+                emoji = "🥉"
+            else:
+                emoji = f"#{i}"
+
+            embed.add_field(
+                name=f"{emoji} {streak_formatted} day{'s' if streak != 1 else ''}",
+                value=f"Borked <t:{int(timestamp.timestamp())}:R>",
+                inline=False
+            )
+
+        total_borks = len(bork_history)
+        embed.set_footer(text=f"Borks on record: {total_borks}")
+
+        await ctx.send(embed=embed)
+
     @commands.command(name="bork")
     @commands.is_owner()
     async def bork(self, ctx: commands.Context, target: str, *, reason: Optional[str] = None):
@@ -120,33 +187,30 @@ class PersonalBork(commands.Cog):
             await ctx.send("Invalid target. Use `!undo luo` or `!undo melon`.")
 
     @commands.command(name="borked")
-    async def borked(self, ctx: commands.Context, *, user_or_keyword: Optional[str] = None):
+    async def borked(self, ctx: commands.Context, target: str, limit: int = 10):
         """Check how long it has been since a user last borked.
 
-        - `!borked luo`: Show Luo's bork status.
-        - `!borked melon`: Show the bot's crash history (BorkedSince history).
+        - `!borked luo [limit]`: Show Luo's bork history.
+        - `!borked melon [limit]`: Show the bot's crash history (BorkedSince history).
+        - `!borked <user>`: Check how long ago a specific user last borked.
         """
-        if user_or_keyword and user_or_keyword.lower() == "melon":
+        if target.lower() == "melon":
             bs_command = self.bot.get_command("borkedsince history")
             if bs_command:
-                await ctx.invoke(bs_command)
+                await ctx.invoke(bs_command, limit=limit)
             else:
                 await ctx.send("Could not find BorkedSince history command.")
             return
 
-        target_user = None
-        if not user_or_keyword or user_or_keyword.lower() == "luo":
-            if self.bot.owner_ids:
-                owner_id = list(self.bot.owner_ids)[0]
-                target_user = self.bot.get_user(owner_id)
-            else:
-                target_user = ctx.author
-        else:
-            try:
-                target_user = await commands.UserConverter().convert(ctx, user_or_keyword)
-            except commands.BadArgument:
-                await ctx.send(f"Could not find user '{user_or_keyword}'.")
-                return
+        if target.lower() == "luo":
+            await self._show_luo_history(ctx, limit)
+            return
+
+        try:
+            target_user = await commands.UserConverter().convert(ctx, target)
+        except commands.BadArgument:
+            await ctx.send(f"Could not find user '{target}'.")
+            return
 
         if not target_user:
             await ctx.send("Could not determine target user.")
