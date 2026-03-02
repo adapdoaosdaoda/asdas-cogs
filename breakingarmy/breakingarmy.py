@@ -387,8 +387,8 @@ class BreakingArmy(commands.Cog):
                 boss_info = await self._get_current_boss_info(guild)
                 await channel.send(f"⚔️ **Next Boss:** {boss_info}")
 
-    async def _get_upcoming_boss_info(self, guild: discord.Guild) -> str:
-        """Returns boss info for the current week, even if run isn't active yet."""
+    async def _get_upcoming_boss_info(self, guild: discord.Guild, slot_idx: Optional[int] = None) -> str:
+        """Returns boss info for the current week. If slot_idx is provided, returns only that boss."""
         season = await self.config.guild(guild).season_data()
         if not season["is_active"]: return "No Active Season"
         
@@ -399,11 +399,15 @@ class BreakingArmy(commands.Cog):
         new_emote = await self.config.guild(guild).new_boss_emote()
         priority = season.get("priority_bosses", [])
         
-        res = []
-        for b in bosses:
-            emoji = boss_pool.get(b, "⚔️")
-            suffix = f" {new_emote}" if b in priority else ""
-            res.append(f"{emoji} {b}{suffix}")
+        def format_boss(name):
+            emoji = boss_pool.get(name, "⚔️")
+            suffix = f" {new_emote}" if name in priority else ""
+            return f"{emoji} {name}{suffix}"
+
+        if slot_idx is not None and 0 <= slot_idx < len(bosses):
+            return format_boss(bosses[slot_idx])
+            
+        res = [format_boss(b) for b in bosses]
         return " & ".join(res)
 
     async def _get_current_boss_info(self, guild: discord.Guild) -> str:
