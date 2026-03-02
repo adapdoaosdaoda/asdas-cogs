@@ -338,11 +338,71 @@ class EventPolling(commands.Cog):
 
                 polls = guild_data.get("polls", {})
                 for poll_id, poll_data in polls.items():
-                    # Update all weekly calendar messages for this poll
-                    await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
+                    # Only update if it has weekly calendar messages
+                    if "weekly_calendar_messages" in poll_data and poll_data["weekly_calendar_messages"]:
+                        # 1. Store Old winners for comparison
+                        old_snapshot = poll_data.get("weekly_snapshot_winning_times", {})
+                        
+                        # 2. Update all weekly calendar messages for this poll
+                        await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
+                        
+                        # 3. Notify owner if schedule changed
+                        # Re-fetch poll data to get new snapshot
+                        updated_polls = await self.config.guild(guild).polls()
+                        new_snapshot = updated_polls.get(poll_id, {}).get("weekly_snapshot_winning_times", {})
+                        
+                        if self._snapshot_has_changed(old_snapshot, new_snapshot):
+                            summary = self._get_snapshot_summary(new_snapshot)
+                            await self.bot.send_to_owners(
+                                f"📅 **Schedule Change Detected** for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n"
+                                f"The new winning times for this week are:\n{summary}"
+                            )
 
         except Exception as e:
             print(f"Error during weekly calendar update: {e}")
+
+    def _snapshot_has_changed(self, old: Dict, new: Dict) -> bool:
+        """Compare two snapshots to see if winning times changed"""
+        if not old: return True
+        
+        # Check if all events in new exist in old and match
+        for event_name, new_slots in new.items():
+            old_slots = old.get(event_name, {})
+            # new_slots is a dict of {slot_idx: (winner_key, points, all_entries)}
+            # winner_key is (day, time)
+            
+            # If number of slots changed, it's a change
+            if len(new_slots) != len(old_slots): return True
+            
+            for slot_idx, new_data in new_slots.items():
+                old_data = old_slots.get(slot_idx)
+                if not old_data: return True
+                
+                # Compare the winner_key (day, time)
+                if new_data[0] != old_data[0]: return True
+        return False
+
+    def _get_snapshot_summary(self, snapshot: Dict) -> str:
+        """Create a text summary of winning times"""
+        lines = []
+        for event_name, slots in snapshot.items():
+            event_info = self.events.get(event_name, {})
+            emoji = event_info.get("emoji", "•")
+            
+            # Sort slots by index
+            sorted_slots = sorted(slots.items(), key=lambda x: int(x[0]))
+            
+            for slot_idx, data in sorted_slots:
+                day, time = data[0]
+                label = f"{event_name}"
+                if len(slots) > 1:
+                    label += f" #{int(slot_idx)+1}"
+                
+                if day == "Daily" or day == "Fixed":
+                    lines.append(f"{emoji} {label}: **{time}**")
+                else:
+                    lines.append(f"{emoji} {label}: **{day} {time}**")
+        return "\n".join(lines)
 
     @weekly_calendar_update.before_loop
     async def before_weekly_calendar_update(self):

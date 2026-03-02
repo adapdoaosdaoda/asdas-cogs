@@ -247,16 +247,21 @@ class BreakingArmy(commands.Cog):
 
                 # 2. Season Reset / Week Advancement (Sunday 22:00)
                 if day_name == "Sunday" and time_str == "22:00":
+                    msg = ""
                     async with self.config.guild(guild).season_data() as s:
                         if s["is_active"]:
                             s["current_week"] += 1
                             if s["current_week"] > 6:
                                 s["is_active"] = False
+                                msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
+                            else:
+                                msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name}."
                         
                         # Trigger New Season Setup if cycle ended
                         if not s["is_active"] and s.get("current_week", 1) > 6:
                             setup_embed = await self._setup_new_season_logic(guild)
                             if setup_embed:
+                                msg = f"🚀 **New Breaking Army Season Started** in {guild.name}!"
                                 poll_data = await self.config.guild(guild).active_poll()
                                 channel = guild.get_channel(poll_data["channel_id"])
                                 if channel: await channel.send(embed=setup_embed)
@@ -268,6 +273,11 @@ class BreakingArmy(commands.Cog):
                         await self.config.guild(guild).active_run.set({
                             "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
                         })
+                        boss_info = await self._get_upcoming_boss_info(guild)
+                        msg += f"\nScheduled Bosses: {boss_info}"
+                    
+                    if msg:
+                        await self.bot.send_to_owners(msg)
                     
                     await self._refresh_live_season_view(guild)
 
