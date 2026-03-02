@@ -416,7 +416,7 @@ class UtilsMixin:
 
     async def _get_role_member_count(self, guild: discord.Guild, role: discord.Role, event_name: str = None) -> tuple[int, bool]:
         """
-        Get the member count for a role with diagnostic logging.
+        Get the member count for a role with diagnostic logging and automatic cache refreshing.
 
         Returns:
             tuple[int, bool]: (member_count, is_reliable)
@@ -425,31 +425,51 @@ class UtilsMixin:
         """
         member_count = len(role.members)
         is_reliable = True
-
-        # Check if guild is chunked (indicates GUILD_MEMBERS intent is working)
-        if not guild.chunked:
+        
+        # Check if the cache is obviously incomplete
+        cache_count = len(guild.members)
+        total_count = guild.member_count or cache_count
+        
+        # Determine if we should trust the current count
+        if not guild.chunked or cache_count < total_count:
             is_reliable = False
+            
+        # Additional diagnostic: Check if member count is suspiciously low
+        # If a role has very few cached members but the guild is large, it's likely incomplete
+        if member_count > 0 and member_count < 5 and total_count > 100:
+            is_reliable = False
+            
+        # If the count is potentially unreliable and we have the intent, try to refresh the cache
+        if not is_reliable and self.bot.intents.members:
+            log.info(f"Refreshing member cache for guild '{guild.name}' to ensure accurate role count for '{role.name}'...")
+            try:
+                # For smaller guilds, fetch_members is faster and ensures 100% accuracy via REST
+                if total_count < 2000:
+                    async for _ in guild.fetch_members(limit=None):
+                        pass
+                else:
+                    # For larger guilds, chunk() via gateway is more efficient
+                    await guild.chunk()
+                
+                # Recalculate after refresh
+                member_count = len(role.members)
+                is_reliable = True
+                log.info(f"Cache refreshed. New count for role '{role.name}': {member_count}")
+            except Exception as e:
+                log.warning(f"Failed to refresh member cache for {guild.name}: {e}")
+
+        # Final diagnostic logging if still unreliable
+        if not is_reliable:
             log.warning(
                 f"⚠️ Member count for role '{role.name}' may be INCOMPLETE! "
-                f"Guild '{guild.name}' is not chunked, indicating missing GUILD_MEMBERS intent or incomplete cache. "
-                f"Reported count: {member_count}, but actual count may be higher. "
-                f"Enable GUILD_MEMBERS intent in the Discord Developer Portal to get accurate counts."
+                f"Guild '{guild.name}' reported count: {member_count}, but actual count may be higher. "
+                f"Intent: {self.bot.intents.members}, Chunked: {guild.chunked}, Cached: {cache_count}/{total_count}"
             )
             if event_name:
                 log.warning(
                     f"Event '{event_name}': Role member count ({member_count}) may be unreliable. "
                     f"This could cause incorrect minimum role checks or voice channel calculations."
                 )
-
-        # Additional diagnostic: Check if member count is suspiciously low
-        # If a role has very few cached members but the guild is large, it's likely incomplete
-        if member_count > 0 and member_count < 5 and guild.member_count > 100:
-            log.warning(
-                f"⚠️ Role '{role.name}' shows only {member_count} member(s), "
-                f"which seems low for a guild with {guild.member_count} total members. "
-                f"This may indicate incomplete member cache. Verify GUILD_MEMBERS intent is enabled."
-            )
-            is_reliable = False
 
         # If whitelisted roles are configured, check if they're affecting the count
         whitelisted_role_ids = await self.config.guild(guild).whitelisted_roles()
