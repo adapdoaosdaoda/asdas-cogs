@@ -368,14 +368,13 @@ class EventPolling(commands.Cog):
         # Check if all events in new exist in old and match
         for event_name, new_slots in new.items():
             old_slots = old.get(event_name, {})
-            # new_slots is a dict of {slot_idx: (winner_key, points, all_entries)}
-            # winner_key is (day, time)
             
             # If number of slots changed, it's a change
             if len(new_slots) != len(old_slots): return True
             
             for slot_idx, new_data in new_slots.items():
-                old_data = old_slots.get(slot_idx)
+                # Config/JSON stores keys as strings, but code uses ints
+                old_data = old_slots.get(slot_idx) or old_slots.get(str(slot_idx))
                 if not old_data: return True
                 
                 # Compare the winner_key (day, time)
@@ -385,7 +384,15 @@ class EventPolling(commands.Cog):
     def _get_snapshot_summary(self, snapshot: Dict) -> str:
         """Create a text summary of winning times"""
         lines = []
-        for event_name, slots in snapshot.items():
+        # Sort events by priority (Hero's Realm first, etc.)
+        sorted_events = sorted(
+            snapshot.keys(), 
+            key=lambda e: self.events.get(e, {}).get("priority", 0), 
+            reverse=True
+        )
+
+        for event_name in sorted_events:
+            slots = snapshot[event_name]
             event_info = self.events.get(event_name, {})
             emoji = event_info.get("emoji", "•")
             
@@ -398,11 +405,11 @@ class EventPolling(commands.Cog):
                 if len(slots) > 1:
                     label += f" #{int(slot_idx)+1}"
                 
-                if day == "Daily" or day == "Fixed":
+                if day in ("Daily", "Fixed"):
                     lines.append(f"{emoji} {label}: **{time}**")
                 else:
                     lines.append(f"{emoji} {label}: **{day} {time}**")
-        return "\n".join(lines)
+        return "\n".join(lines) if lines else "No events scheduled."
 
     @weekly_calendar_update.before_loop
     async def before_weekly_calendar_update(self):
