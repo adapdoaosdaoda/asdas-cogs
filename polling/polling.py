@@ -2136,7 +2136,7 @@ class EventPolling(commands.Cog):
         if "{boss}" in message and "Breaking Army" in matched_event:
             ba_cog = self.bot.get_cog("BreakingArmy")
             if ba_cog:
-                boss_info = await ba_cog._get_current_boss_info(ctx.guild)
+                boss_info = await ba_cog._get_upcoming_boss_info(ctx.guild)
                 message = message.replace("{boss}", boss_info or "*(No Active Run)*")
             else:
                 message = message.replace("{boss}", "*(BreakingArmy Cog Not Found)*")
