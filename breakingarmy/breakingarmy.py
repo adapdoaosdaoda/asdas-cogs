@@ -35,6 +35,7 @@ class BreakingArmy(commands.Cog):
             "boss_pool": {}, 
             "admin_roles": [],
             "seen_bosses": [],
+            "notification_channel": None,
             "new_boss_emote": "✨",
             "max_bosses_in_run": 5,
             "min_vote_threshold": 3,
@@ -232,12 +233,16 @@ class BreakingArmy(commands.Cog):
                 now = datetime.now(server_tz)
                 day_name = now.strftime("%A")
                 time_str = now.strftime("%H:%M")
+                
+                # Night logic: Times 00:00 - 16:59 are considered part of the "night" of the previous day
+                is_next_day = now.hour < 17
+                prev_day_name = (now - timedelta(days=1)).strftime("%A")
 
-                # 1. Auto-Death (1 hour)
+                # 1. Auto-Death (2 hours)
                 run = await self.config.guild(guild).active_run()
                 if run["is_running"] and run["current_index"] == 0 and run["start_time"]:
                     start = datetime.fromisoformat(run["start_time"])
-                    if datetime.now(timezone.utc) >= start + timedelta(hours=1):
+                    if datetime.now(timezone.utc) >= start + timedelta(hours=2):
                         await self._advance_run(guild)
 
                 # 2. Season Reset / Week Advancement (Sunday 22:00)
@@ -279,8 +284,18 @@ class BreakingArmy(commands.Cog):
                 ba_winners = winners.get("Breaking Army", {})
                 trigger = False
                 for slot in ba_winners.values():
-                    if slot[0][0] == day_name and slot[0][1] == time_str:
-                        trigger = True; break
+                    win_day = slot[0][0]
+                    win_time = slot[0][1]
+                    h = int(win_time.split(":")[0])
+                    
+                    slot_is_next_day = h < 17
+                    if slot_is_next_day:
+                        if win_day == prev_day_name and time_str == win_time:
+                            trigger = True; break
+                    else:
+                        if win_day == day_name and time_str == win_time:
+                            trigger = True; break
+                            
                 if trigger:
                     last = await self.config.guild(guild).active_run.last_auto_trigger()
                     if last != now.strftime("%Y-%m-%dT%H:%M"):
@@ -326,9 +341,15 @@ class BreakingArmy(commands.Cog):
 
     async def _auto_start_run(self, guild):
         season = await self.config.guild(guild).season_data()
+        notif_channel_id = await self.config.guild(guild).notification_channel()
+        channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
+
         if not season["is_active"]:
             setup_embed = await self._setup_new_season_logic(guild)
-            if not setup_embed: return
+            if not setup_embed:
+                if channel:
+                    await channel.send("⚠️ **Breaking Army:** Run scheduled but no active season/votes found. Please use `[p]ba season setup`!")
+                return
             season = await self.config.guild(guild).season_data()
             
         boss_list = self._get_bosses_for_week(season, season["current_week"])
@@ -336,6 +357,16 @@ class BreakingArmy(commands.Cog):
         await self.config.guild(guild).active_run.set({
             "boss_order": boss_list, "current_index": 0, "is_running": True, "start_time": now_utc
         })
+        
+        if channel:
+            boss_info = await self._get_current_boss_info(guild)
+            embed = discord.Embed(
+                title="⚔️ Breaking Army Starting!", 
+                description=f"Today's Boss: **{boss_info}**\nUse `[p]ba run next` when the boss is down!",
+                color=discord.Color.red()
+            )
+            await channel.send(embed=embed)
+
         await self._refresh_live_season_view(guild)
 
     async def _advance_run(self, guild: discord.Guild):
@@ -344,7 +375,36 @@ class BreakingArmy(commands.Cog):
             run["current_index"] += 1
             if run["current_index"] >= len(run["boss_order"]):
                 run["is_running"] = False
+        
         await self._refresh_live_season_view(guild)
+        
+        # Notify next boss if run is still going
+        run = await self.config.guild(guild).active_run()
+        if run["is_running"]:
+            notif_channel_id = await self.config.guild(guild).notification_channel()
+            channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
+            if channel:
+                boss_info = await self._get_current_boss_info(guild)
+                await channel.send(f"⚔️ **Next Boss:** {boss_info}")
+
+    async def _get_upcoming_boss_info(self, guild: discord.Guild) -> str:
+        """Returns boss info for the current week, even if run isn't active yet."""
+        season = await self.config.guild(guild).season_data()
+        if not season["is_active"]: return "No Active Season"
+        
+        bosses = self._get_bosses_for_week(season, season["current_week"])
+        if not bosses: return "No Bosses Scheduled"
+        
+        boss_pool = await self.config.guild(guild).boss_pool()
+        new_emote = await self.config.guild(guild).new_boss_emote()
+        priority = season.get("priority_bosses", [])
+        
+        res = []
+        for b in bosses:
+            emoji = boss_pool.get(b, "⚔️")
+            suffix = f" {new_emote}" if b in priority else ""
+            res.append(f"{emoji} {b}{suffix}")
+        return " & ".join(res)
 
     async def _get_current_boss_info(self, guild: discord.Guild) -> str:
         """Returns a formatted string (Emoji Name [New]) for the current active boss."""
@@ -400,6 +460,16 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(ctx.guild).admin_roles() as r:
             if role.id not in r: r.append(role.id)
         await ctx.tick()
+
+    @ba_config.command(name="notifchannel")
+    async def config_notif_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """Set the channel for Breaking Army start/advance notifications. Leave empty to disable."""
+        if channel:
+            await self.config.guild(ctx.guild).notification_channel.set(channel.id)
+            await ctx.send(f"✅ Notifications will be sent to {channel.mention}")
+        else:
+            await self.config.guild(ctx.guild).notification_channel.set(None)
+            await ctx.send("✅ Notifications disabled.")
 
     @ba_config.command(name="addboss")
     async def config_add_boss(self, ctx: commands.Context, name: str, emote: str = "⚔️"):

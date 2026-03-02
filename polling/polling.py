@@ -430,20 +430,13 @@ class EventPolling(commands.Cog):
                             should_fire = False
                             
                             if is_next_day:
-                                # It's actually the next day relative to win_day
-                                prev_day_date = now - timedelta(days=1)
-                                prev_day_name = prev_day_date.strftime("%A")
-                                
-                                if win_day == prev_day_name and now.hour == h and now.minute == m:
+                                # For post-midnight events, they are voted as occurring on the calendar day they start.
+                                # Example: Monday 01:00 is voted as "Monday", time "01:00".
+                                # This code runs at 01:00 on Monday. day_name is "Monday".
+                                if win_day == day_name and now.hour == h and now.minute == m:
                                     should_fire = True
-
-                                # Daily event special case
-                                if event_info["type"] == "daily":
-                                    if now.hour == h and now.minute == m:
-                                        should_fire = True
-
                             else:
-                                # Same day event
+                                # Same day event (17:00 - 23:59)
                                 if win_day == day_name and now.hour == h and now.minute == m:
                                     should_fire = True
                                     
@@ -489,7 +482,7 @@ class EventPolling(commands.Cog):
                                     if "{boss}" in message and "Breaking Army" in event_name:
                                         ba_cog = self.bot.get_cog("BreakingArmy")
                                         if ba_cog:
-                                            boss_info = await ba_cog._get_current_boss_info(guild)
+                                            boss_info = await ba_cog._get_upcoming_boss_info(guild)
                                             message = message.replace("{boss}", boss_info or "Unknown Boss")
                                         else:
                                             message = message.replace("{boss}", "Unknown Boss")
