@@ -387,8 +387,8 @@ class BreakingArmy(commands.Cog):
                 boss_info = await self._get_current_boss_info(guild)
                 await channel.send(f"⚔️ **Next Boss:** {boss_info}")
 
-    async def _get_upcoming_boss_info(self, guild: discord.Guild, slot_idx: Optional[int] = None) -> str:
-        """Returns boss info for the current week. If slot_idx is provided, returns only that boss."""
+    async def _get_upcoming_boss_info(self, guild: discord.Guild, day_name: Optional[str] = None, slot_idx: Optional[int] = None) -> str:
+        """Returns boss info for the current week. Chronologically maps bosses to winning days."""
         season = await self.config.guild(guild).season_data()
         if not season["is_active"]: return "No Active Season"
         
@@ -404,8 +404,28 @@ class BreakingArmy(commands.Cog):
             suffix = f" {new_emote}" if name in priority else ""
             return f"{emoji} {name}{suffix}"
 
-        if slot_idx is not None and 0 <= slot_idx < len(bosses):
-            return format_boss(bosses[slot_idx])
+        # Determine which boss index to use based on day_name chronological order
+        idx = slot_idx
+        if day_name:
+            polling_cog = self.bot.get_cog("EventPolling")
+            if polling_cog:
+                polls = await polling_cog.config.guild(guild).polls()
+                if polls:
+                    latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+                    poll_data = polls[latest_poll_id]
+                    snap = poll_data.get("weekly_snapshot_winning_times")
+                    winners = snap if snap else polling_cog._calculate_winning_times_weighted(poll_data.get("selections", {}))
+                    ba_winners = winners.get("Breaking Army", {})
+                    
+                    dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                    # Get unique days and sort them chronologically to map to boss indices
+                    win_days = sorted(list(set(s[0][0] for s in ba_winners.values())), key=lambda d: dow_order.index(d))
+                    
+                    if day_name in win_days:
+                        idx = win_days.index(day_name)
+
+        if idx is not None and 0 <= idx < len(bosses):
+            return format_boss(bosses[idx])
             
         res = [format_boss(b) for b in bosses]
         return " & ".join(res)

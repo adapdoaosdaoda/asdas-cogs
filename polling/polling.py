@@ -482,7 +482,7 @@ class EventPolling(commands.Cog):
                                     if "{boss}" in message and "Breaking Army" in event_name:
                                         ba_cog = self.bot.get_cog("BreakingArmy")
                                         if ba_cog:
-                                            boss_info = await ba_cog._get_upcoming_boss_info(guild, slot_idx=slot_idx)
+                                            boss_info = await ba_cog._get_upcoming_boss_info(guild, day_name=win_day)
                                             message = message.replace("{boss}", boss_info or "Unknown Boss")
                                         else:
                                             message = message.replace("{boss}", "Unknown Boss")
@@ -2136,8 +2136,8 @@ class EventPolling(commands.Cog):
         if "{boss}" in message and "Breaking Army" in matched_event:
             ba_cog = self.bot.get_cog("BreakingArmy")
             if ba_cog:
-                # Default to first boss for test preview
-                boss_info = await ba_cog._get_upcoming_boss_info(ctx.guild, slot_idx=0)
+                # Use current day name for test preview
+                boss_info = await ba_cog._get_upcoming_boss_info(ctx.guild, day_name=now.strftime("%A"))
                 message = message.replace("{boss}", boss_info or "*(No Active Run)*")
             else:
                 message = message.replace("{boss}", "*(BreakingArmy Cog Not Found)*")
