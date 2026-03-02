@@ -478,6 +478,17 @@ class EventPolling(commands.Cog):
                                                       .replace("{timestamp}", discord_ts)\
                                                       .replace("{time_str}", f"{now.hour:02d}:{now.minute:02d}")
                                     
+                                    # Handle {duration} variable
+                                    if "{duration}" in message:
+                                        duration_mins = event_info.get("duration", 0)
+                                        if duration_mins >= 60:
+                                            duration_str = f"{duration_mins // 60} hour{'s' if duration_mins // 60 > 1 else ''}"
+                                            if duration_mins % 60 > 0:
+                                                duration_str += f" {duration_mins % 60} minutes"
+                                        else:
+                                            duration_str = f"{duration_mins} minutes"
+                                        message = message.replace("{duration}", duration_str)
+                                    
                                     # Handle {boss} variable for Breaking Army
                                     if "{boss}" in message and "Breaking Army" in event_name:
                                         ba_cog = self.bot.get_cog("BreakingArmy")
@@ -2131,6 +2142,17 @@ class EventPolling(commands.Cog):
         message = msg_tmpl.replace("{event}", event_display)\
                           .replace("{timestamp}", discord_ts)\
                           .replace("{time_str}", f"{now.hour:02d}:{now.minute:02d}")
+
+        # Handle {duration} variable
+        if "{duration}" in message:
+            duration_mins = self.events[matched_event].get("duration", 0)
+            if duration_mins >= 60:
+                duration_str = f"{duration_mins // 60} hour{'s' if duration_mins // 60 > 1 else ''}"
+                if duration_mins % 60 > 0:
+                    duration_str += f" {duration_mins % 60} minutes"
+            else:
+                duration_str = f"{duration_mins} minutes"
+            message = message.replace("{duration}", duration_str)
 
         # Boss Variable
         if "{boss}" in message and "Breaking Army" in matched_event:
