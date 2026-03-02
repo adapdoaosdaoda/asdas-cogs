@@ -2136,8 +2136,37 @@ class EventPolling(commands.Cog):
         if "{boss}" in message and "Breaking Army" in matched_event:
             ba_cog = self.bot.get_cog("BreakingArmy")
             if ba_cog:
-                # Use current day name for test preview
-                boss_info = await ba_cog._get_upcoming_boss_info(ctx.guild, day_name=now.strftime("%A"))
+                # Be smart: find the next upcoming or active boss day
+                test_day = now.strftime("%A")
+                
+                # Check if today's run is already done
+                ba_run = await ba_cog.config.guild(ctx.guild).active_run()
+                if ba_run["is_running"]:
+                    # If running, use the current day context
+                    pass 
+                elif ba_run["current_index"] >= 0:
+                    # If not running but index set, today might be done. Find next day.
+                    polls = await self.config.guild(ctx.guild).polls()
+                    if polls:
+                        latest_id = max(polls.keys(), key=lambda pid: int(pid))
+                        poll = polls[latest_id]
+                        snap = poll.get("weekly_snapshot_winning_times")
+                        win = snap if snap else self._calculate_winning_times_weighted(poll.get("selections", {}))
+                        ba_win = win.get("Breaking Army", {})
+                        
+                        dow = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                        days = sorted(list(set(s[0][0] for s in ba_win.values())), key=lambda d: dow.index(d))
+                        
+                        # If today is one of the days, and we are "done" for today, pick the next day
+                        if test_day in days:
+                            cur_idx = days.index(test_day)
+                            if cur_idx + 1 < len(days):
+                                test_day = days[cur_idx + 1]
+                            else:
+                                # Cycle back to first if all done
+                                test_day = days[0]
+
+                boss_info = await ba_cog._get_upcoming_boss_info(ctx.guild, day_name=test_day)
                 message = message.replace("{boss}", boss_info or "*(No Active Run)*")
             else:
                 message = message.replace("{boss}", "*(BreakingArmy Cog Not Found)*")

@@ -300,7 +300,10 @@ class BreakingArmy(commands.Cog):
                     last = await self.config.guild(guild).active_run.last_auto_trigger()
                     if last != now.strftime("%Y-%m-%dT%H:%M"):
                         await self.config.guild(guild).active_run.last_auto_trigger.set(now.strftime("%Y-%m-%dT%H:%M"))
-                        await self._auto_start_run(guild)
+                        
+                        # Determine which day name triggered it (could be day_name or prev_day_name)
+                        trigger_day = prev_day_name if slot_is_next_day else day_name
+                        await self._auto_start_run(guild, day_name=trigger_day)
         except Exception as e: log.error(f"Checker error: {e}")
 
     async def _setup_new_season_logic(self, guild: discord.Guild) -> Optional[discord.Embed]:
@@ -339,7 +342,31 @@ class BreakingArmy(commands.Cog):
         embed.add_field(name="Guests", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(g)]), inline=True)
         return embed
 
-    async def _auto_start_run(self, guild):
+    async def _get_boss_index_for_day(self, guild: discord.Guild, day_name: str) -> int:
+        """Determines which boss index (0 or 1) corresponds to a given day name."""
+        polling_cog = self.bot.get_cog("EventPolling")
+        if not polling_cog: return 0
+        
+        polls = await polling_cog.config.guild(guild).polls()
+        if not polls: return 0
+        
+        latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+        poll_data = polls[latest_poll_id]
+        winners = poll_data.get("weekly_snapshot_winning_times")
+        if not winners:
+            winners = polling_cog._calculate_winning_times_weighted(poll_data.get("selections", {}))
+            
+        ba_winners = winners.get("Breaking Army", {})
+        dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        # Get unique days and sort them chronologically
+        win_days = sorted(list(set(s[0][0] for s in ba_winners.values())), key=lambda d: dow_order.index(d))
+        
+        try:
+            return win_days.index(day_name)
+        except ValueError:
+            return 0
+
+    async def _auto_start_run(self, guild, day_name: Optional[str] = None):
         season = await self.config.guild(guild).season_data()
         notif_channel_id = await self.config.guild(guild).notification_channel()
         channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
@@ -353,9 +380,15 @@ class BreakingArmy(commands.Cog):
             season = await self.config.guild(guild).season_data()
             
         boss_list = self._get_bosses_for_week(season, season["current_week"])
+        
+        # Determine starting index based on the day
+        start_idx = 0
+        if day_name:
+            start_idx = await self._get_boss_index_for_day(guild, day_name)
+            
         now_utc = datetime.now(timezone.utc).isoformat()
         await self.config.guild(guild).active_run.set({
-            "boss_order": boss_list, "current_index": 0, "is_running": True, "start_time": now_utc
+            "boss_order": boss_list, "current_index": start_idx, "is_running": True, "start_time": now_utc
         })
         
         if channel:
