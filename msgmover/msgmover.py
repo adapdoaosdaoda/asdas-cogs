@@ -59,7 +59,7 @@ class Msgmover(commands.Cog):
     # msgcopy
 
     @commands.command(name="msgcopy", aliases=["msgmove", "msgmover"])
-    @commands.has_permissions(manage_messages=True)
+    @commands.is_owner()
     @commands.bot_has_permissions(add_reactions=True, read_message_history=True)
     async def msgcopy(self, ctx, fromChannel: discord.TextChannel, toChannel: typing.Union[discord.TextChannel, str], maxMessages:int, skipMessages:int=0):
         """Copies messages from one channel to another
@@ -146,7 +146,7 @@ class Msgmover(commands.Cog):
     # msgrelay
 
     @commands.group(name="msgrelay")
-    @commands.has_permissions(administrator=True)
+    @commands.is_owner()
     @commands.bot_has_permissions(add_reactions=True, embed_links=True)
     async def msgrelay(self, ctx: commands.Context):
         """Forward new messages to other channels/servers
@@ -160,7 +160,7 @@ class Msgmover(commands.Cog):
             pass
 
     @msgrelay.command(name="settings")
-    @commands.has_permissions(administrator=True)
+    @commands.is_owner()
     @commands.bot_has_permissions(embed_links=True)
     async def mmmrsettings(self, ctx):
         """See relay settings (⚠️ Sensitive info)

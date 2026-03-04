@@ -286,6 +286,7 @@ class Reminders(DashboardIntegration, Cog):
         return reminder
 
     @commands.hybrid_command()
+    @commands.is_owner()
     @app_commands.allowed_installs(guilds=True, users=True)
     async def remindme(
         self, ctx: commands.Context, time: str, *, message_or_text: str = None
@@ -429,6 +430,7 @@ class Reminders(DashboardIntegration, Cog):
 
     @commands.guild_only()
     @commands.hybrid_command()
+    @commands.is_owner()
     async def remind(
         self,
         ctx: commands.Context,
@@ -624,6 +626,7 @@ class Reminders(DashboardIntegration, Cog):
             self.views[message] = view
 
     @commands.hybrid_group(aliases=["reminders"])
+    @commands.is_owner()
     async def reminder(self, ctx: commands.Context) -> None:
         """List, edit and delete existing reminders, or create FIFO/commands or Say reminders."""
         pass
