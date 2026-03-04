@@ -225,6 +225,49 @@ class EventPolling(commands.Cog):
         self.event_notification_task.cancel()
         self.website_export_task.cancel()
 
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        """Remove votes when a user leaves the server"""
+        async with self.config.guild(member.guild).polls() as polls:
+            user_id_str = str(member.id)
+            updated = False
+            for poll_id, poll_data in polls.items():
+                if user_id_str in poll_data.get("selections", {}):
+                    del poll_data["selections"][user_id_str]
+                    updated = True
+                    log.info(f"Removed EventPolling votes for user {member.id} in poll {poll_id} because they left.")
+                    # Update results messages for this poll
+                    await self._update_results_messages(member.guild, poll_data, poll_id)
+            
+            if updated:
+                # Trigger a manual backup and website export if votes were removed
+                await self._export_to_json()
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        """Remove votes when a user loses the required roles (@Member or @Friend of the Guild)"""
+        # Specific role IDs: @Member and @Friend of the Guild
+        target_role_ids = {1439747785644703754, 1452430729115078850}
+        
+        def has_any_target_role(member):
+            return any(role.id in target_role_ids for role in member.roles)
+
+        if has_any_target_role(before) and not has_any_target_role(after):
+            async with self.config.guild(after.guild).polls() as polls:
+                user_id_str = str(after.id)
+                updated = False
+                for poll_id, poll_data in polls.items():
+                    if user_id_str in poll_data.get("selections", {}):
+                        del poll_data["selections"][user_id_str]
+                        updated = True
+                        log.info(f"Removed EventPolling votes for user {after.id} in poll {poll_id} because they lost member roles.")
+                        # Update results messages for this poll
+                        await self._update_results_messages(after.guild, poll_data, poll_id)
+                
+                if updated:
+                    # Trigger a manual backup and website export if votes were removed
+                    await self._export_to_json()
+
     def _get_embed_color(self, guild: discord.Guild) -> discord.Color:
         """Get the poll embed color (0x5a61ee)"""
         return discord.Color(0x5a61ee)
@@ -1679,6 +1722,55 @@ class EventPolling(commands.Cog):
                 await ctx.send(f"Cleared votes for {user.mention}")
             else:
                 await ctx.send(f"{user.mention} hasn't voted in this poll.")
+
+    @eventpoll.command(name="cleanup")
+    async def eventpoll_cleanup(self, ctx: commands.Context):
+        """Remove votes from users who left or lost their member roles in all active polls."""
+        # Specific role IDs: @Member and @Friend of the Guild
+        target_role_ids = {1439747785644703754, 1452430729115078850}
+        
+        total_removed = 0
+        any_updated = False
+        
+        async with self.config.guild(ctx.guild).polls() as polls:
+            for poll_id, poll_data in polls.items():
+                selections = poll_data.get("selections", {})
+                user_ids = list(selections.keys())
+                poll_removed_count = 0
+                
+                for user_id_str in user_ids:
+                    user_id = int(user_id_str)
+                    member = ctx.guild.get_member(user_id)
+                    
+                    should_remove = False
+                    reason = ""
+                    
+                    if not member:
+                        should_remove = True
+                        reason = "left the server"
+                    else:
+                        has_role = any(role.id in target_role_ids for role in member.roles)
+                        if not has_role:
+                            should_remove = True
+                            reason = "lost member roles"
+                    
+                    if should_remove:
+                        del selections[user_id_str]
+                        poll_removed_count += 1
+                        total_removed += 1
+                        log.info(f"Cleanup: Removed EventPolling votes for user {user_id} in poll {poll_id} because they {reason}.")
+                
+                if poll_removed_count > 0:
+                    any_updated = True
+                    # Update results messages for this specific poll
+                    await self._update_results_messages(ctx.guild, poll_data, poll_id)
+        
+        if any_updated:
+            # Trigger a manual backup and website export if votes were removed
+            await self._export_to_json()
+            await ctx.send(f"✅ Cleanup complete. Removed **{total_removed}** ineligible vote(s) across all polls.")
+        else:
+            await ctx.send("✅ Cleanup complete. No ineligible voters found.")
 
     @eventpoll.command(name="calendar")
     async def post_calendar(self, ctx: commands.Context, message_id: str):

@@ -73,6 +73,33 @@ class BreakingArmy(commands.Cog):
     def cog_unload(self):
         self.schedule_checker.cancel()
 
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        """Remove votes when a user leaves the server"""
+        async with self.config.guild(member.guild).active_poll.votes() as votes:
+            user_id_str = str(member.id)
+            if user_id_str in votes:
+                del votes[user_id_str]
+                log.info(f"Removed Breaking Army votes for user {member.id} because they left the server.")
+                await self._update_poll_embed(member.guild)
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        """Remove votes when a user loses the required roles (@Member or @Friend of the Guild)"""
+        # Specific role IDs: @Member and @Friend of the Guild
+        target_role_ids = {1439747785644703754, 1452430729115078850}
+        
+        def has_any_target_role(member):
+            return any(role.id in target_role_ids for role in member.roles)
+
+        if has_any_target_role(before) and not has_any_target_role(after):
+            async with self.config.guild(after.guild).active_poll.votes() as votes:
+                user_id_str = str(after.id)
+                if user_id_str in votes:
+                    del votes[user_id_str]
+                    log.info(f"Removed Breaking Army votes for user {after.id} because they lost their member roles.")
+                    await self._update_poll_embed(after.guild)
+
     async def is_ba_admin(self, member: discord.Member) -> bool:
         if member.guild_permissions.manage_guild: return True
         admin_roles = await self.config.guild(member.guild).admin_roles()
@@ -692,6 +719,42 @@ class BreakingArmy(commands.Cog):
     async def poll_reset_votes(self, ctx: commands.Context):
         async with self.config.guild(ctx.guild).active_poll() as p: p["votes"] = {}
         await self._update_poll_embed(ctx.guild); await ctx.send("Votes cleared.")
+
+    @ba_poll.command(name="cleanup")
+    async def poll_cleanup(self, ctx: commands.Context):
+        """Remove votes from users who left or lost their member roles."""
+        # Specific role IDs: @Member and @Friend of the Guild
+        target_role_ids = {1439747785644703754, 1452430729115078850}
+        
+        removed_count = 0
+        async with self.config.guild(ctx.guild).active_poll.votes() as votes:
+            user_ids = list(votes.keys())
+            for user_id_str in user_ids:
+                user_id = int(user_id_str)
+                member = ctx.guild.get_member(user_id)
+                
+                should_remove = False
+                reason = ""
+                
+                if not member:
+                    should_remove = True
+                    reason = "left the server"
+                else:
+                    has_role = any(role.id in target_role_ids for role in member.roles)
+                    if not has_role:
+                        should_remove = True
+                        reason = "lost member roles"
+                
+                if should_remove:
+                    del votes[user_id_str]
+                    removed_count += 1
+                    log.info(f"Cleanup: Removed Breaking Army votes for user {user_id} because they {reason}.")
+        
+        if removed_count > 0:
+            await self._update_poll_embed(ctx.guild)
+            await ctx.send(f"✅ Cleanup complete. Removed votes from **{removed_count}** user(s) who are no longer eligible.")
+        else:
+            await ctx.send("✅ Cleanup complete. No ineligible voters found.")
 
     async def _start_run_display(self, ctx, boss_list):
         embed = await self._generate_run_embed(ctx.guild, boss_list, -1, False)
