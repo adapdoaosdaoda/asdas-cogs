@@ -1,5 +1,4 @@
 import asyncio
-# Force update cache
 import aiohttp
 import typing
 
@@ -98,6 +97,9 @@ class Msgmover(commands.Cog):
                     # https://stackoverflow.com/a/37105499
                     msgList = msgList[:-skipMessages or None]
 
+                if not msgList:
+                    return await ctx.send("No messages to copy found.")
+
                 # Send them via webhook
                 msgItemLast = msgList[0].created_at
                 for msgItem in msgList:
@@ -137,9 +139,11 @@ class Msgmover(commands.Cog):
         Reply to a message to use this command."""
         if ctx.message.reference:
             await ctx.message.add_reaction("⏳")
-            messages = [message async for message in ctx.channel.history(limit=None, after=ctx.message.reference.resolved)]
+            count = 0
+            async for _ in ctx.channel.history(limit=None, after=ctx.message.reference.resolved):
+                count += 1
             await ctx.message.add_reaction("✅")
-            return await ctx.send(str(len(messages))+" + 2 (your bot command and this message)")
+            return await ctx.send(str(count)+" + 2 (your bot command and this message)")
         else:
             return await ctx.send("Please reply to a message to use this command!")
 
@@ -316,13 +320,13 @@ class Msgmover(commands.Cog):
                         endMsg = await message.channel.fetch_message(message.id)
                     except discord.NotFound:
                         for wf in hookData:
-                            configJson = relayGetData(wh)
+                            configJson = relayGetData(wf)
                             webhook = Webhook.from_url(wf["toWebhook"], session=session)
                             await msgFormatter(self, webhook, message, configJson, deleteMsgId=wf.get("whResult", None))
                     else:
                         if endMsg.edited_at:
                             for wf in hookData:
-                                configJson = relayGetData(wh)
+                                configJson = relayGetData(wf)
                                 webhook = Webhook.from_url(wf["toWebhook"], session=session)
                                 await msgFormatter(self, webhook, endMsg, configJson, editMsgId=wf.get("whResult", None))
         finally:

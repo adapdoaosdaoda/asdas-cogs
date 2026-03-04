@@ -40,6 +40,14 @@ class ActivityLogger(commands.Cog):
     def cog_unload(self):
         self.cleanup_task.cancel()
 
+    async def cog_load(self):
+        # Repopulate vc_joins for members already in voice channels
+        now = datetime.now().timestamp()
+        for guild in self.bot.guilds:
+            for vc in guild.voice_channels:
+                for member in vc.members:
+                    self.vc_joins[(guild.id, member.id)] = now
+
     @tasks.loop(hours=24)
     async def cleanup_task(self):
         """Daily task to anonymize/purge data older than 1 year, and remove users who left 30+ days ago."""

@@ -55,45 +55,46 @@ class EventsMixin:
     async def on_guild_role_delete(self, role: discord.Role):
         """Handle event role deletion - recreate if channels exist, or clean up properly."""
         guild = role.guild
-        stored = await self.config.guild(guild).event_channels()
+        async with self._config_lock:
+            stored = await self.config.guild(guild).event_channels()
 
-        # Find events associated with this role
-        events_to_handle = []
-        for event_id, data in stored.items():
-            if data.get("role") == role.id:
-                events_to_handle.append((event_id, data))
-                log.info(f"Event role '{role.name}' was deleted externally for event {event_id}")
+            # Find events associated with this role
+            events_to_handle = []
+            for event_id, data in stored.items():
+                if data.get("role") == role.id:
+                    events_to_handle.append((event_id, data))
+                    log.info(f"Event role '{role.name}' was deleted externally for event {event_id}")
 
-        for event_id, data in events_to_handle:
-            # Check if channels still exist
-            text_channel_id = data.get("text")
-            text_channel = guild.get_channel(text_channel_id) if text_channel_id else None
+            for event_id, data in events_to_handle:
+                # Check if channels still exist
+                text_channel_id = data.get("text")
+                text_channel = guild.get_channel(text_channel_id) if text_channel_id else None
 
-            voice_channel_ids = data.get("voice", [])
-            if isinstance(voice_channel_ids, int):
-                voice_channel_ids = [voice_channel_ids]
-            voice_channels_exist = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
+                voice_channel_ids = data.get("voice", [])
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+                voice_channels_exist = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
 
-            # Check if there's an active task (meaning cleanup is scheduled)
-            has_active_task = int(event_id) in self.active_tasks
+                # Check if there's an active task (meaning cleanup is scheduled)
+                has_active_task = int(event_id) in self.active_tasks
 
-            # Decide whether to recreate or cleanup
-            should_cleanup = False
+                # Decide whether to recreate or cleanup
+                should_cleanup = False
 
-            if (text_channel or voice_channels_exist) and has_active_task:
-                # Channels still exist and task is running - RECREATE the role
-                log.info(f"Recreating role '{role.name}' for event {event_id} - channels still exist and cleanup is scheduled")
-                try:
-                    # Recreate the role with the same name
-                    new_role = await guild.create_role(
-                        name=role.name,
-                        reason=f"Role was deleted early but event channels still exist - recreating for proper archival"
-                    )
-                    log.info(f"Recreated role '{new_role.name}' (new ID: {new_role.id}) for event {event_id}")
+                if (text_channel or voice_channels_exist) and has_active_task:
+                    # Channels still exist and task is running - RECREATE the role
+                    log.info(f"Recreating role '{role.name}' for event {event_id} - channels still exist and cleanup is scheduled")
+                    try:
+                        # Recreate the role with the same name
+                        new_role = await guild.create_role(
+                            name=role.name,
+                            reason=f"Role was deleted early but event channels still exist - recreating for proper archival"
+                        )
+                        log.info(f"Recreated role '{new_role.name}' (new ID: {new_role.id}) for event {event_id}")
 
-                    # Update stored config with new role ID
-                    stored[event_id]["role"] = new_role.id
-                    await self.config.guild(guild).event_channels.set(stored)
+                        # Update stored config with new role ID
+                        stored[event_id]["role"] = new_role.id
+                        await self.config.guild(guild).event_channels.set(stored)
 
                     # Add permissions to existing channels
                     if text_channel:
@@ -430,73 +431,74 @@ class EventsMixin:
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
         """Clean up stored data when event channels are deleted externally."""
         guild = channel.guild
-        stored = await self.config.guild(guild).event_channels()
+        async with self._config_lock:
+            stored = await self.config.guild(guild).event_channels()
 
-        # Check if this is a divider channel
-        divider_channel_id = await self.config.guild(guild).divider_channel_id()
-        if divider_channel_id == channel.id:
-            log.info(f"Divider channel '{channel.name}' was deleted externally - clearing stored data")
-            await self.config.guild(guild).divider_channel_id.set(None)
-            return
+            # Check if this is a divider channel
+            divider_channel_id = await self.config.guild(guild).divider_channel_id()
+            if divider_channel_id == channel.id:
+                log.info(f"Divider channel '{channel.name}' was deleted externally - clearing stored data")
+                await self.config.guild(guild).divider_channel_id.set(None)
+                return
 
-        # Check if this is an event channel
-        event_to_remove = None
-        for event_id, data in stored.items():
-            # Check if it's the text channel
-            is_text_channel = channel.id == data.get("text")
+            # Check if this is an event channel
+            event_to_remove = None
+            for event_id, data in stored.items():
+                # Check if it's the text channel
+                is_text_channel = channel.id == data.get("text")
 
-            # Check if it's a voice channel
-            voice_channel_ids = data.get("voice", [])
-            # Handle both old format (single ID) and new format (list of IDs)
-            if isinstance(voice_channel_ids, int):
-                voice_channel_ids = [voice_channel_ids]
-            is_voice_channel = channel.id in voice_channel_ids
+                # Check if it's a voice channel
+                voice_channel_ids = data.get("voice", [])
+                # Handle both old format (single ID) and new format (list of IDs)
+                if isinstance(voice_channel_ids, int):
+                    voice_channel_ids = [voice_channel_ids]
+                is_voice_channel = channel.id in voice_channel_ids
 
-            if is_text_channel or is_voice_channel:
-                log.info(f"Event channel '{channel.name}' was deleted externally - checking if cleanup is needed")
+                if is_text_channel or is_voice_channel:
+                    log.info(f"Event channel '{channel.name}' was deleted externally - checking if cleanup is needed")
 
-                # Check if all channels are gone
-                text_channel = guild.get_channel(data.get("text")) if data.get("text") else None
-                voice_channels_exist = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
+                    # Check if all channels are gone
+                    text_channel = guild.get_channel(data.get("text")) if data.get("text") else None
+                    voice_channels_exist = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
 
-                if not text_channel and not voice_channels_exist:
-                    # All channels are gone, clean up completely
-                    log.info(f"All event channels are gone for event {event_id} - cleaning up completely")
-                    event_to_remove = event_id
+                    if not text_channel and not voice_channels_exist:
+                        # All channels are gone, clean up completely
+                        log.info(f"All event channels are gone for event {event_id} - cleaning up completely")
+                        event_to_remove = event_id
 
-                    # Delete the role if it exists
-                    role_id = data.get("role")
-                    if role_id:
-                        role = guild.get_role(role_id)
-                        if role:
-                            # Remove from divider first
-                            await self._update_divider_permissions(guild, role, add=False)
-                            try:
-                                await role.delete(reason="Event channels were deleted")
-                                log.info(f"Deleted role for event {event_id} - channels were deleted externally")
-                            except discord.Forbidden:
-                                log.warning(f"Could not delete role for event {event_id}")
+                        # Delete the role if it exists
+                        role_id = data.get("role")
+                        if role_id:
+                            role = guild.get_role(role_id)
+                            if role:
+                                # Remove from divider first
+                                await self._update_divider_permissions(guild, role, add=False)
+                                try:
+                                    await role.delete(reason="Event channels were deleted")
+                                    log.info(f"Deleted role for event {event_id} - channels were deleted externally")
+                                except discord.Forbidden:
+                                    log.warning(f"Could not delete role for event {event_id}")
 
-                    # Cancel any active task and retry tasks
-                    self._cancel_event_tasks(int(event_id))
+                        # Cancel any active task and retry tasks
+                        self._cancel_event_tasks(int(event_id))
 
-                break
+                    break
 
-        # Remove event from storage
-        if event_to_remove:
-            # Get thread_id before removing from storage
-            event_data = stored.get(event_to_remove)
-            thread_id = event_data.get("forum_thread") if event_data else None
+            # Remove event from storage
+            if event_to_remove:
+                # Get thread_id before removing from storage
+                event_data = stored.get(event_to_remove)
+                thread_id = event_data.get("forum_thread") if event_data else None
 
-            stored.pop(event_to_remove, None)
-            await self.config.guild(guild).event_channels.set(stored)
+                stored.pop(event_to_remove, None)
+                await self.config.guild(guild).event_channels.set(stored)
 
-            # Also remove from thread_event_links
-            if thread_id:
-                thread_links = await self.config.guild(guild).thread_event_links()
-                thread_links.pop(str(thread_id), None)
-                await self.config.guild(guild).thread_event_links.set(thread_links)
-                log.info(f"Removed thread link for thread {thread_id} (channels deleted)")
+                # Also remove from thread_event_links
+                if thread_id:
+                    thread_links = await self.config.guild(guild).thread_event_links()
+                    thread_links.pop(str(thread_id), None)
+                    await self.config.guild(guild).thread_event_links.set(thread_links)
+                    log.info(f"Removed thread link for thread {thread_id} (channels deleted)")
 
-            # Check if divider should be deleted (no more event roles)
-            await self._cleanup_divider_if_empty(guild)
+                # Check if divider should be deleted (no more event roles)
+                await self._cleanup_divider_if_empty(guild)

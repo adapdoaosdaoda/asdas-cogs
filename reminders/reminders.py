@@ -4,7 +4,6 @@ from redbot.core.bot import Red  # isort:skip
 from redbot.core.i18n import Translator, cog_i18n  # isort:skip
 import discord  # isort:skip
 import typing  # isort:skip
-# Force update cache
 
 import datetime
 import io

@@ -143,7 +143,7 @@ class GuildOps(commands.Cog):
 
                 # 3. Role Priority
                 if not role:
-                    r_prio = 0
+                    r_prio = 99
                 else:
                     r_prio = role_priority.get(role, 10) # 'other' is 10
                 

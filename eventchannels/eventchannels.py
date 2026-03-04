@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
-# Force update cache
 
 import discord
 from redbot.core import commands, Config

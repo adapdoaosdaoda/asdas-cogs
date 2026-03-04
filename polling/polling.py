@@ -45,7 +45,9 @@ class EventPolling(commands.Cog):
 
         self.config.register_global(
             website_export_path=None,
-            export_guild_id=None
+            export_guild_id=None,
+            last_weekly_results_update=None,
+            last_weekly_calendar_update=None
         )
 
         # Event definitions (ordered: Party, Guild War, Hero's Realm, Sword Trial, Breaking Army, Showdown)
@@ -337,6 +339,13 @@ class EventPolling(commands.Cog):
             if now.weekday() != 0 or now.hour != 10:
                 return
 
+            last_run = await self.config.last_weekly_results_update()
+            today_str = now.date().isoformat()
+            if last_run == today_str:
+                return
+            
+            await self.config.last_weekly_results_update.set(today_str)
+
             # Get all guilds
             all_guilds = await self.config.all_guilds()
 
@@ -370,6 +379,13 @@ class EventPolling(commands.Cog):
             # Check if it's Monday (0 = Monday) and between 10:00-10:59 AM
             if now.weekday() != 0 or now.hour != 10:
                 return
+
+            last_run = await self.config.last_weekly_calendar_update()
+            today_str = now.date().isoformat()
+            if last_run == today_str:
+                return
+            
+            await self.config.last_weekly_calendar_update.set(today_str)
 
             # Get all guilds
             all_guilds = await self.config.all_guilds()

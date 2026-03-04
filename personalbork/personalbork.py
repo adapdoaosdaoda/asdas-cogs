@@ -187,6 +187,7 @@ class PersonalBork(commands.Cog):
             await ctx.send("Invalid target. Use `!undo luo` or `!undo melon`.")
 
     @commands.command(name="borked")
+    @commands.guild_only()
     async def borked(self, ctx: commands.Context, target: str, limit: int = 10):
         """Check how long it has been since a user last borked.
 

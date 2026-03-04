@@ -267,7 +267,7 @@ class BreakingArmy(commands.Cog):
 
                 # 1. Auto-Death (2 hours)
                 run = await self.config.guild(guild).active_run()
-                if run["is_running"] and run["current_index"] == 0 and run["start_time"]:
+                if run["is_running"] and run["current_index"] >= 0 and run["start_time"]:
                     start = datetime.fromisoformat(run["start_time"])
                     if datetime.now(timezone.utc) >= start + timedelta(hours=2):
                         await self._advance_run(guild)
