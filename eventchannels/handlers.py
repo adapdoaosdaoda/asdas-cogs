@@ -222,17 +222,30 @@ class HandlersMixin:
                 minimum_required = voice_minimum_roles.get(matched_keyword)
 
                 if minimum_required:
-                    role_member_count, count_is_reliable = await self._get_role_member_count(guild, role, event.name)
+                    # Re-fetch the event and role to ensure we have the absolute latest data (bypass cache issues)
+                    try:
+                        event = await guild.fetch_scheduled_event(event.id)
+                        # Re-fetch role from guild to get latest member list
+                        role = guild.get_role(role.id)
+                        if not role:
+                            log.warning(f"Event '{event.name}': Role {role.id} disappeared during re-fetch.")
+                            return
+                    except Exception as e:
+                        log.warning(f"Event '{event.name}': Failed to re-fetch event/role for accurate check: {e}")
 
-                    # Log warning if count may be unreliable
-                    if not count_is_reliable:
-                        log.warning(
-                            f"Event '{event.name}': Checking minimum role requirement with potentially incomplete count. "
-                            f"Current count: {role_member_count}, Required: {minimum_required}. "
-                            f"Enable GUILD_MEMBERS intent for accurate counting."
-                        )
+                    role_member_count, count_is_reliable = await self._get_role_member_count(guild, role, event.name, force_refresh=True)
+                    
+                    # Also consider people who are 'Interested' in the event but might not have the role yet
+                    event_user_count = getattr(event, 'user_count', 0) or 0
+                    
+                    # The 'actual' count for the check is the higher of the two
+                    actual_count = max(role_member_count, event_user_count)
 
-                    if role_member_count < minimum_required:
+                    # Log diagnostic if counts differ or if we're close to the minimum
+                    if role_member_count != event_user_count:
+                        log.info(f"Event '{event.name}': Count discrepancy - Role members: {role_member_count}, Interested: {event_user_count}. Using max: {actual_count}")
+
+                    if actual_count < minimum_required:
                         # Check if we should retry
                         retry_intervals = await self.config.guild(guild).minimum_retry_intervals()
 
@@ -246,7 +259,7 @@ class HandlersMixin:
                             # Only schedule retry if we haven't passed the retry time yet
                             if time_until_retry > 0:
                                 log.info(
-                                    f"Event '{event.name}': minimum not met ({role_member_count}/{minimum_required} members). "
+                                    f"Event '{event.name}': minimum not met ({actual_count}/{minimum_required} members). "
                                     f"Scheduling retry attempt {next_retry} at T-{retry_minutes} minutes "
                                     f"(in {int(time_until_retry/60)} minutes)"
                                 )
@@ -259,13 +272,13 @@ class HandlersMixin:
                                 return
                             else:
                                 log.info(
-                                    f"Event '{event.name}': minimum not met ({role_member_count}/{minimum_required} members) "
+                                    f"Event '{event.name}': minimum not met ({actual_count}/{minimum_required} members) "
                                     f"and retry time T-{retry_minutes}min already passed. No more retries."
                                 )
                                 return
                         else:
                             log.info(
-                                f"Event '{event.name}': minimum not met ({role_member_count}/{minimum_required} members) "
+                                f"Event '{event.name}': minimum not met ({actual_count}/{minimum_required} members) "
                                 f"and all retry attempts exhausted. Skipping channel creation."
                             )
                             return
@@ -274,30 +287,29 @@ class HandlersMixin:
                         if retry_count > 0:
                             log.info(
                                 f"Event '{event.name}': minimum requirement met on retry attempt {retry_count} "
-                                f"({role_member_count}/{minimum_required} members). Proceeding with channel creation."
+                                f"({actual_count}/{minimum_required} members). Proceeding with channel creation."
                             )
                         else:
                             log.info(
                                 f"Event '{event.name}': minimum requirement met "
-                                f"({role_member_count}/{minimum_required} members). Proceeding with channel creation."
+                                f"({actual_count}/{minimum_required} members). Proceeding with channel creation."
                             )
 
             # Calculate number of voice channels based on role member count
             if matched_keyword and voice_multiplier_capacity and role:
-                role_member_count, count_is_reliable = await self._get_role_member_count(guild, role, event.name)
-
-                # Log warning if count may be unreliable
-                if not count_is_reliable:
-                    log.warning(
-                        f"Event '{event.name}': Calculating voice channels with potentially incomplete count. "
-                        f"Current count: {role_member_count}. Enable GUILD_MEMBERS intent for accurate counting."
-                    )
+                # Use actual_count if we already calculated it above, otherwise calculate it
+                if 'actual_count' in locals():
+                    member_count_for_voice = actual_count
+                else:
+                    role_member_count, _ = await self._get_role_member_count(guild, role, event.name)
+                    event_user_count = getattr(event, 'user_count', 0) or 0
+                    member_count_for_voice = max(role_member_count, event_user_count)
 
                 # Formula: max(1, floor(members / multiplier))
-                voice_count = max(1, role_member_count // voice_multiplier_capacity)
+                voice_count = max(1, member_count_for_voice // voice_multiplier_capacity)
                 # User limit is multiplier + 1
                 user_limit = voice_multiplier_capacity + 1
-                log.info(f"Voice multiplier active for keyword '{matched_keyword}': {role_member_count} members / {voice_multiplier_capacity} = {voice_count} channel(s) with limit {user_limit}")
+                log.info(f"Voice multiplier active for keyword '{matched_keyword}': {member_count_for_voice} members / {voice_multiplier_capacity} = {voice_count} channel(s) with limit {user_limit}")
             else:
                 voice_count = 1
                 user_limit = 0  # 0 = unlimited

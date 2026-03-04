@@ -414,7 +414,7 @@ class UtilsMixin:
                         pass
                 return None
 
-    async def _get_role_member_count(self, guild: discord.Guild, role: discord.Role, event_name: str = None) -> tuple[int, bool]:
+    async def _get_role_member_count(self, guild: discord.Guild, role: discord.Role, event_name: str = None, force_refresh: bool = False) -> tuple[int, bool]:
         """
         Get the member count for a role with diagnostic logging and automatic cache refreshing.
 
@@ -439,22 +439,31 @@ class UtilsMixin:
         if member_count > 0 and member_count < 5 and total_count > 100:
             is_reliable = False
             
-        # If the count is potentially unreliable and we have the intent, try to refresh the cache
-        if not is_reliable and self.bot.intents.members:
-            log.info(f"Refreshing member cache for guild '{guild.name}' to ensure accurate role count for '{role.name}'...")
+        # If the count is potentially unreliable (or refresh is forced) and we have the intent, try to refresh the cache
+        if (not is_reliable or force_refresh) and self.bot.intents.members:
+            if force_refresh:
+                log.info(f"Force-refreshing member cache for guild '{guild.name}' to check for new members for role '{role.name}'...")
+            else:
+                log.info(f"Refreshing member cache for guild '{guild.name}' to ensure accurate role count for '{role.name}'...")
+            
             try:
                 # For smaller guilds, fetch_members is faster and ensures 100% accuracy via REST
                 if total_count < 2000:
-                    async for _ in guild.fetch_members(limit=None):
-                        pass
+                    member_count = 0
+                    async for member in guild.fetch_members(limit=None):
+                        if any(r.id == role.id for r in member.roles):
+                            member_count += 1
                 else:
                     # For larger guilds, chunk() via gateway is more efficient
                     await guild.chunk()
+                    # Give the cache a small moment to stabilize after chunking
+                    await asyncio.sleep(1)
+                    member_count = len(role.members)
                 
-                # Recalculate after refresh
-                member_count = len(role.members)
+                # Recalculate after refresh (if not already done manually)
                 is_reliable = True
-                log.info(f"Cache refreshed. New count for role '{role.name}': {member_count}")
+                if not force_refresh:
+                    log.info(f"Cache refreshed. New count for role '{role.name}': {member_count}")
             except Exception as e:
                 log.warning(f"Failed to refresh member cache for {guild.name}: {e}")
 
