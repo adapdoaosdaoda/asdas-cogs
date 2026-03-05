@@ -96,54 +96,54 @@ class EventsMixin:
                         stored[event_id]["role"] = new_role.id
                         await self.config.guild(guild).event_channels.set(stored)
 
-                    # Add permissions to existing channels
-                    if text_channel:
-                        try:
-                            await text_channel.set_permissions(
-                                new_role,
-                                view_channel=True,
-                                send_messages=True,
-                                reason="Reapplying permissions after role recreation"
-                            )
-                            log.info(f"Applied permissions for recreated role to {text_channel.name}")
-                        except discord.Forbidden:
-                            log.warning(f"Could not apply permissions to {text_channel.name}")
-
-                    for vc_id in voice_channel_ids:
-                        voice_channel = guild.get_channel(vc_id)
-                        if voice_channel:
+                        # Add permissions to existing channels
+                        if text_channel:
                             try:
-                                await voice_channel.set_permissions(
+                                await text_channel.set_permissions(
                                     new_role,
                                     view_channel=True,
-                                    connect=True,
-                                    speak=True,
+                                    send_messages=True,
                                     reason="Reapplying permissions after role recreation"
                                 )
-                                log.info(f"Applied permissions for recreated role to {voice_channel.name}")
+                                log.info(f"Applied permissions for recreated role to {text_channel.name}")
                             except discord.Forbidden:
-                                log.warning(f"Could not apply permissions to {voice_channel.name}")
+                                log.warning(f"Could not apply permissions to {text_channel.name}")
 
-                    # Update divider permissions
-                    await self._update_divider_permissions(guild, new_role, add=True)
+                        for vc_id in voice_channel_ids:
+                            voice_channel = guild.get_channel(vc_id)
+                            if voice_channel:
+                                try:
+                                    await voice_channel.set_permissions(
+                                        new_role,
+                                        view_channel=True,
+                                        connect=True,
+                                        speak=True,
+                                        reason="Reapplying permissions after role recreation"
+                                    )
+                                    log.info(f"Applied permissions for recreated role to {voice_channel.name}")
+                                except discord.Forbidden:
+                                    log.warning(f"Could not apply permissions to {voice_channel.name}")
 
-                    # Role recreated successfully, continue to next event
-                    continue
+                        # Update divider permissions
+                        await self._update_divider_permissions(guild, new_role, add=True)
 
-                except discord.Forbidden:
-                    log.error(f"Could not recreate role '{role.name}' - missing permissions.")
+                        # Role recreated successfully, continue to next event
+                        continue
 
-                    # Check if extended before deciding to cleanup
-                    deletion_extensions = await self.config.guild(guild).deletion_extensions()
-                    if str(event_id) in deletion_extensions:
-                        log.info(f"Archiving is extended for event {event_id}. Keeping channels despite role recreation failure (access may be limited).")
-                        should_cleanup = False
-                    else:
-                        log.info("Channels will be cleaned up without role.")
-                        should_cleanup = True
-            else:
-                # No active task or no channels - need to clean up
-                should_cleanup = True
+                    except discord.Forbidden:
+                        log.error(f"Could not recreate role '{role.name}' - missing permissions.")
+
+                        # Check if extended before deciding to cleanup
+                        deletion_extensions = await self.config.guild(guild).deletion_extensions()
+                        if str(event_id) in deletion_extensions:
+                            log.info(f"Archiving is extended for event {event_id}. Keeping channels despite role recreation failure (access may be limited).")
+                            should_cleanup = False
+                        else:
+                            log.info("Channels will be cleaned up without role.")
+                            should_cleanup = True
+                else:
+                    # No active task or no channels - need to clean up
+                    should_cleanup = True
 
             # Clean up if needed
             if should_cleanup:
