@@ -3,7 +3,6 @@ import aiohttp
 import typing
 
 from redbot.core import Config, commands
-from redbot.core.commands import is_owner
 import discord
 from discord import Webhook
 
