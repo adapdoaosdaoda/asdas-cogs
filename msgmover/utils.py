@@ -139,13 +139,13 @@ async def handle_message_lifecycle(
         try:
             return await webhook.edit_message(
                 message_id=edit_msg_id,
-                content=message.clean_content
+                content=message.content.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
             )
         except discord.HTTPException:
             try:
                 return await webhook.edit_message(
                     message_id=edit_msg_id,
-                    content="**Discord:** Unsupported content\n" + str(message.clean_content)
+                    content="**Discord:** Unsupported content\n" + str(message.content.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere"))
                 )
             except (discord.HTTPException, discord.NotFound):
                 return False
@@ -177,7 +177,7 @@ async def msgFormatter(self, webhook, message, json, editMsgId=None, deleteMsgId
 
     # Determine message content based on message type
     if message.type in (discord.MessageType.default, discord.MessageType.reply):
-        msg_content = message.clean_content
+        msg_content = message.content.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
     else:
         msg_content = "**Discord:** " + str(message.type)
 
