@@ -6,7 +6,15 @@ import io
 
 try:
     from pilmoji import Pilmoji
+    from pilmoji.source import Twemoji
     PILMOJI_AVAILABLE = True
+
+    class TwemojiWithTimeout(Twemoji):
+        """Twemoji source with a network timeout to prevent hanging the executor thread"""
+        def request(self, url: str) -> bytes:
+            # Add a 10s timeout to avoid hanging indefinitely
+            with self._requests_session.get(url, timeout=10, **self.REQUEST_KWARGS) as response:
+                return response.content
 except ImportError:
     PILMOJI_AVAILABLE = False
 
@@ -310,7 +318,8 @@ class CalendarRenderer:
         # Render all emojis using pilmoji if available
         if PILMOJI_AVAILABLE:
             # Use emoji_scale_factor to make emojis larger and more prominent
-            with Pilmoji(img, emoji_scale_factor=0.95) as pilmoji:
+            # Use TwemojiWithTimeout to avoid hanging the process if network is slow
+            with Pilmoji(img, emoji_scale_factor=0.95, source=TwemojiWithTimeout) as pilmoji:
                 # Draw calendar cell emojis
                 for text_x, text_y, display_text, font in self._emoji_positions:
                     # Guild War emoji gets moved up by an additional 2px (total 4px)

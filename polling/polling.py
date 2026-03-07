@@ -14,6 +14,7 @@ import hashlib
 from pathlib import Path
 import importlib
 import logging
+import functools
 
 from .views import EventPollView
 from . import calendar_renderer
@@ -684,8 +685,13 @@ class EventPolling(commands.Cog):
                     # Format: data:image/png;base64,iVBORw0KGgo...
                     if "," in str(url_or_data):
                         header, data_str = str(url_or_data).split(",", 1)
-                        with open(local_path, "wb") as f:
-                            f.write(base64.b64decode(data_str))
+                        image_data = base64.b64decode(data_str)
+                        
+                        def write_data():
+                            with open(local_path, "wb") as f:
+                                f.write(image_data)
+                        
+                        await self.bot.loop.run_in_executor(None, write_data)
                         return True
                 except Exception as e:
                     log.error(f"Failed to save data URL image to {local_path}: {e}")
@@ -696,8 +702,13 @@ class EventPolling(commands.Cog):
                     async with aiohttp.ClientSession() as session:
                         async with session.get(url_or_data) as resp:
                             if resp.status == 200:
-                                with open(local_path, "wb") as f:
-                                    f.write(await resp.read())
+                                image_data = await resp.read()
+                                
+                                def write_data():
+                                    with open(local_path, "wb") as f:
+                                        f.write(image_data)
+                                
+                                await self.bot.loop.run_in_executor(None, write_data)
                                 return True
                             else:
                                 log.error(f"Failed to download image from {url_or_data}: Status {resp.status}")
@@ -910,15 +921,23 @@ class EventPolling(commands.Cog):
             # Export calendar image for this guild (if it's the target guild)
             try:
                 # Generate calendar image
-                image_buffer = self.calendar_renderer.render_calendar(
-                    prepared_data,
-                    self.events,
-                    self.blocked_times,
-                    len(guild_data.get("polls", {}).get(latest_poll_id, {}).get("selections", {})) if polls else 0
+                image_buffer = await self.bot.loop.run_in_executor(
+                    None,
+                    functools.partial(
+                        self.calendar_renderer.render_calendar,
+                        prepared_data,
+                        self.events,
+                        self.blocked_times,
+                        len(guild_data.get("polls", {}).get(latest_poll_id, {}).get("selections", {})) if polls else 0
+                    )
                 )
                 img_path = Path(export_path).parent / "calendar.png"
-                with open(img_path, 'wb') as f:
-                    f.write(image_buffer.getvalue())
+                
+                def save_image():
+                    with open(img_path, 'wb') as f:
+                        f.write(image_buffer.getvalue())
+                
+                await self.bot.loop.run_in_executor(None, save_image)
 
                 # Export banner image
                 if guild.banner:
@@ -929,25 +948,29 @@ class EventPolling(commands.Cog):
                         async with session.get(str(guild.banner.url)) as resp:
                             if resp.status == 200:
                                 banner_bytes = await resp.read()
-                                with Image.open(io.BytesIO(banner_bytes)) as img:
-                                    img = img.convert("RGBA")
-                                    # Create a red glow overlay (matching blossom-dark color)
-                                    # Hex #831843 -> RGB (131, 24, 67)
-                                    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
-                                    draw = ImageDraw.Draw(glow)
-                                    
-                                    # Draw horizontal gradient glow
-                                    w, h = img.size
-                                    for x in range(w):
-                                        # Calculate intensity: higher in middle, lower at edges
-                                        # Similar to bg-gradient-to-r from-stone-900/80 via-blossom-dark/40 to-stone-900/80
-                                        dist_from_center = abs(x - w/2) / (w/2)
-                                        opacity = int(max(0, 1 - dist_from_center) * 102) # 40% of 255 is ~102
-                                        draw.line([(x, 0), (x, h)], fill=(131, 24, 67, opacity))
-                                    
-                                    # Composite the glow on top
-                                    result = Image.alpha_composite(img, glow)
-                                    result.save(banner_path, "PNG")
+                                
+                                def process_banner():
+                                    with Image.open(io.BytesIO(banner_bytes)) as img:
+                                        img = img.convert("RGBA")
+                                        # Create a red glow overlay (matching blossom-dark color)
+                                        # Hex #831843 -> RGB (131, 24, 67)
+                                        glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                                        draw = ImageDraw.Draw(glow)
+                                        
+                                        # Draw horizontal gradient glow
+                                        w, h = img.size
+                                        for x in range(w):
+                                            # Calculate intensity: higher in middle, lower at edges
+                                            # Similar to bg-gradient-to-r from-stone-900/80 via-blossom-dark/40 to-stone-900/80
+                                            dist_from_center = abs(x - w/2) / (w/2)
+                                            opacity = int(max(0, 1 - dist_from_center) * 102) # 40% of 255 is ~102
+                                            draw.line([(x, 0), (x, h)], fill=(131, 24, 67, opacity))
+                                        
+                                        # Composite the glow on top
+                                        result = Image.alpha_composite(img, glow)
+                                        result.save(banner_path, "PNG")
+                                
+                                await self.bot.loop.run_in_executor(None, process_banner)
             except Exception as e:
                 log.error(f"Failed to export assets: {e}")
 
@@ -956,8 +979,12 @@ class EventPolling(commands.Cog):
             path = Path(export_path).resolve()
             # Ensure directory exists
             path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            
+            def save_json():
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, indent=2, ensure_ascii=False)
+            
+            await self.bot.loop.run_in_executor(None, save_json)
         except Exception as e:
             log.error(f"Failed to export schedule to JSON at {export_path}: {e}")
 
@@ -2735,11 +2762,15 @@ class EventPolling(commands.Cog):
 
         # Generate calendar image
         calendar_data = self._prepare_calendar_data(winning_times)
-        image_buffer = self.calendar_renderer.render_calendar(
-            calendar_data,
-            self.events,
-            self.blocked_times,
-            len(selections)
+        image_buffer = await self.bot.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.calendar_renderer.render_calendar,
+                calendar_data,
+                self.events,
+                self.blocked_times,
+                len(selections)
+            )
         )
 
         # Create file attachment
@@ -2782,11 +2813,15 @@ class EventPolling(commands.Cog):
 
         # Generate calendar image
         calendar_data = self._prepare_calendar_data(winning_times)
-        image_buffer = self.calendar_renderer.render_calendar(
-            calendar_data,
-            self.events,
-            self.blocked_times,
-            len(selections)
+        image_buffer = await self.bot.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.calendar_renderer.render_calendar,
+                calendar_data,
+                self.events,
+                self.blocked_times,
+                len(selections)
+            )
         )
 
         # Create file attachment
