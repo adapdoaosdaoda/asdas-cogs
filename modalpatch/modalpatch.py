@@ -179,7 +179,7 @@ def _patched_to_dict(self):
 
     return payload
 
-def _patched_refresh(self, interaction: discord.Interaction, components: List[Dict[str, Any]] = None):
+def _patched_refresh(self, interaction: discord.Interaction, components: List[Dict[str, Any]] = None, resolved: Dict[str, Any] = None):
     """
     Patched hydration loop to handle new component types.
     """
