@@ -445,6 +445,9 @@ class BreakingArmy(commands.Cog):
             run["current_index"] += 1
             if run["current_index"] >= len(run["boss_order"]):
                 run["is_running"] = False
+                run["start_time"] = None
+            else:
+                run["start_time"] = datetime.now(timezone.utc).isoformat()
         
         await self._refresh_live_season_view(guild)
         
@@ -467,9 +470,14 @@ class BreakingArmy(commands.Cog):
             
             run["current_index"] -= 1
             
-            # Ensure it doesn't go below -1
-            if run["current_index"] < -1:
+            # If we went back to before the first boss, the run is no longer "running"
+            if run["current_index"] < 0:
+                run["is_running"] = False
                 run["current_index"] = -1
+                run["start_time"] = None
+            else:
+                # Reset timer for the reverted boss so it doesn't immediately auto-death
+                run["start_time"] = datetime.now(timezone.utc).isoformat()
 
         await self._refresh_live_season_view(guild)
         
