@@ -174,7 +174,6 @@ class CommandsConfigMixin:
                     try:
                         await text_channel.edit(name=new_text_name, reason=f"Channel format updated by {ctx.author}")
                         renamed_count += 1
-                        log.info(f"Renamed text channel to '{new_text_name}'")
                     except discord.Forbidden:
                         pass
                     except Exception as e:
@@ -200,7 +199,6 @@ class CommandsConfigMixin:
                             try:
                                 await voice_channel.edit(name=new_vc_name, reason=f"Channel format updated by {ctx.author}")
                                 renamed_count += 1
-                                log.info(f"Renamed voice channel to '{new_vc_name}'")
                             except discord.Forbidden:
                                 pass
                             except Exception as e:
@@ -611,7 +609,6 @@ class CommandsConfigMixin:
                 if divider_channel:
                     try:
                         await divider_channel.edit(name=divider_name, reason=f"Divider name updated by {ctx.author}")
-                        log.info(f"Renamed divider channel to '{divider_name}'")
                     except discord.Forbidden:
                         await ctx.send("⚠️ Settings updated but couldn't rename existing divider - missing permissions.")
                         return
@@ -694,7 +691,6 @@ class CommandsConfigMixin:
                 await self.config.guild(ctx.guild).event_channels.set(event_channels)
                 role_id = event_channels[event_id_str].get("role")
                 role = ctx.guild.get_role(role_id) if role_id else None
-                log.info(f"Manually linked forum thread '{thread.name}' (ID: {thread.id}) to event '{event.name}' (ID: {event_id}) with existing channels by {ctx.author}")
 
                 await ctx.send(
                     f"✅ Successfully linked forum thread **'{thread.name}'** to event **'{event.name}'** (ID: {event_id})\n"
@@ -703,8 +699,6 @@ class CommandsConfigMixin:
                     f"Event channels exist. You can now use `[p]forumthreadmessage addbutton {thread.id}` to add the role button."
                 )
             else:
-                log.info(f"Manually linked forum thread '{thread.name}' (ID: {thread.id}) to event '{event.name}' (ID: {event_id}) (channels will be created later) by {ctx.author}")
-
                 await ctx.send(
                     f"✅ Successfully linked forum thread **'{thread.name}'** to event **'{event.name}'** (ID: {event_id})\n"
                     f"Thread: {thread.mention}\n"

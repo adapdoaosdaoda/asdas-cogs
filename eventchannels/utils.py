@@ -33,7 +33,6 @@ class UtilsMixin:
             # Only update if the message is exactly the old default
             if current_message == OLD_DEFAULT:
                 await self.config.guild(guild).deletion_warning_message.set(NEW_DEFAULT)
-                log.info(f"Migrated deletion warning message to new default for guild '{guild.name}'")
         except Exception as e:
             log.error(f"Error migrating deletion warning message for guild '{guild.name}': {e}")
 
@@ -77,8 +76,6 @@ class UtilsMixin:
                 
                 if not channels:
                     continue
-                    
-                log.info(f"Refreshing member permissions for event {event_id} (Role: {role.name}, {len(role.members)} members)")
                 
                 # Update each channel
                 for channel in channels:
@@ -104,7 +101,6 @@ class UtilsMixin:
                         
                         if overwrites_changed:
                             await channel.edit(overwrites=current_overwrites, reason="Refreshing event channel member permissions")
-                            log.info(f"Updated permissions for channel {channel.name}")
                             
                     except discord.Forbidden:
                         log.warning(f"Could not update permissions for channel {channel.name} - missing permissions")
@@ -156,7 +152,6 @@ class UtilsMixin:
                     if divider_channel:
                         try:
                             await divider_channel.delete(reason="No event channels remain - cleaning up divider channel")
-                            log.info(f"Deleted divider channel in '{guild.name}' - no event channels remain")
                         except (discord.Forbidden, discord.NotFound):
                             pass
 
@@ -175,7 +170,6 @@ class UtilsMixin:
         async with self._divider_lock:
             divider_enabled = await self.config.guild(guild).divider_enabled()
             if not divider_enabled:
-                log.info(f"Divider not enabled, skipping permission update for role '{role.name}'")
                 return
 
             divider_channel_id = await self.config.guild(guild).divider_channel_id()
@@ -195,7 +189,6 @@ class UtilsMixin:
                 return
 
             divider_roles = await self.config.guild(guild).divider_roles()
-            log.info(f"Updating divider permissions: add={add}, role='{role.name}', current_roles={divider_roles}")
 
             try:
                 if add and role.id not in divider_roles:
@@ -251,7 +244,6 @@ class UtilsMixin:
 
                     divider_roles.append(role.id)
                     await self.config.guild(guild).divider_roles.set(divider_roles)
-                    log.info(f"✅ Successfully added role '{role.name}' to divider channel permissions - can view but not send messages")
                 elif not add and role.id in divider_roles:
                     # Build complete overwrites dictionary without the removed role
                     overwrites = {
@@ -299,7 +291,6 @@ class UtilsMixin:
 
                     divider_roles.remove(role.id)
                     await self.config.guild(guild).divider_roles.set(divider_roles)
-                    log.info(f"✅ Removed role '{role.name}' from divider channel permissions")
                 else:
                     log.info(f"Skipping divider permission update for role '{role.name}' - add={add}, already_tracked={role.id in divider_roles}")
             except discord.Forbidden as e:
@@ -441,33 +432,27 @@ class UtilsMixin:
             
         # If the count is potentially unreliable (or refresh is forced) and we have the intent, try to refresh the cache
         if (not is_reliable or force_refresh) and self.bot.intents.members:
-            if force_refresh:
-                log.info(f"Force-refreshing member cache for guild '{guild.name}' to check for new members for role '{role.name}'...")
-            else:
-                log.info(f"Refreshing member cache for guild '{guild.name}' to ensure accurate role count for '{role.name}'...")
-            
-            try:
-                # For smaller guilds, fetch_members is faster and ensures 100% accuracy via REST
-                if total_count < 2000:
-                    member_count = 0
-                    async for member in guild.fetch_members(limit=None):
-                        if any(r.id == role.id for r in member.roles):
-                            member_count += 1
-                else:
-                    # For larger guilds, chunk() via gateway is more efficient
-                    await guild.chunk()
-                    # Give the cache a small moment to stabilize after chunking
-                    await asyncio.sleep(1)
-                    member_count = len(role.members)
-                
-                # Recalculate after refresh (if not already done manually)
-                is_reliable = True
-                if not force_refresh:
-                    log.info(f"Cache refreshed. New count for role '{role.name}': {member_count}")
-            except Exception as e:
-                log.warning(f"Failed to refresh member cache for {guild.name}: {e}")
+        try:
+        # For smaller guilds, fetch_members is faster and ensures 100% accuracy via REST
+        if total_count < 2000:
+            member_count = 0
+            async for member in guild.fetch_members(limit=None):
+                if any(r.id == role.id for r in member.roles):
+                    member_count += 1
+        else:
+            # For larger guilds, chunk() via gateway is more efficient
+            await guild.chunk()
+            # Give the cache a small moment to stabilize after chunking
+            await asyncio.sleep(1)
+            member_count = len(role.members)
+
+        # Recalculate after refresh (if not already done manually)
+        is_reliable = True
+        except Exception as e:
+        log.warning(f"Failed to refresh member cache for {guild.name}: {e}")
 
         # Final diagnostic logging if still unreliable
+
         if not is_reliable:
             log.warning(
                 f"⚠️ Member count for role '{role.name}' may be INCOMPLETE! "
@@ -490,7 +475,7 @@ class UtilsMixin:
                 f"Note: Whitelisted roles do NOT affect setminimumroles calculations - only the event role members are counted."
             )
 
-        log.info(
+        log.debug(
             f"Role '{role.name}' member count: {member_count} "
             f"(reliable: {is_reliable}, chunked: {guild.chunked}, "
             f"guild members: {guild.member_count})"

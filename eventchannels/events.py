@@ -26,7 +26,6 @@ class EventsMixin:
         async with self._config_lock:
             deletion_extensions = await self.config.guild(event.guild).deletion_extensions()
             if str(event.id) in deletion_extensions:
-                log.info(f"Event '{event.name}' (ID: {event.id}) was deleted, but archiving is extended. Keeping channels open until extended archiving time.")
                 return
 
         self._cancel_event_tasks(event.id)
@@ -39,7 +38,6 @@ class EventsMixin:
             async with self._config_lock:
                 deletion_extensions = await self.config.guild(after.guild).deletion_extensions()
                 if str(after.id) in deletion_extensions:
-                    log.info(f"Event '{after.name}' (ID: {after.id}) was cancelled, but archiving is extended. Keeping channels open.")
                     return
 
             self._cancel_event_tasks(after.id)
@@ -63,7 +61,6 @@ class EventsMixin:
             for event_id, data in stored.items():
                 if data.get("role") == role.id:
                     events_to_handle.append((event_id, data))
-                    log.info(f"Event role '{role.name}' was deleted externally for event {event_id}")
 
             for event_id, data in events_to_handle:
                 # Check if channels still exist
@@ -83,14 +80,12 @@ class EventsMixin:
 
                 if (text_channel or voice_channels_exist) and has_active_task:
                     # Channels still exist and task is running - RECREATE the role
-                    log.info(f"Recreating role '{role.name}' for event {event_id} - channels still exist and cleanup is scheduled")
                     try:
                         # Recreate the role with the same name
                         new_role = await guild.create_role(
                             name=role.name,
                             reason=f"Role was deleted early but event channels still exist - recreating for proper archival"
                         )
-                        log.info(f"Recreated role '{new_role.name}' (new ID: {new_role.id}) for event {event_id}")
 
                         # Update stored config with new role ID
                         stored[event_id]["role"] = new_role.id
@@ -105,7 +100,6 @@ class EventsMixin:
                                     send_messages=True,
                                     reason="Reapplying permissions after role recreation"
                                 )
-                                log.info(f"Applied permissions for recreated role to {text_channel.name}")
                             except discord.Forbidden:
                                 log.warning(f"Could not apply permissions to {text_channel.name}")
 
@@ -120,7 +114,6 @@ class EventsMixin:
                                         speak=True,
                                         reason="Reapplying permissions after role recreation"
                                     )
-                                    log.info(f"Applied permissions for recreated role to {voice_channel.name}")
                                 except discord.Forbidden:
                                     log.warning(f"Could not apply permissions to {voice_channel.name}")
 
@@ -136,10 +129,8 @@ class EventsMixin:
                         # Check if extended before deciding to cleanup
                         deletion_extensions = await self.config.guild(guild).deletion_extensions()
                         if str(event_id) in deletion_extensions:
-                            log.info(f"Archiving is extended for event {event_id}. Keeping channels despite role recreation failure (access may be limited).")
                             should_cleanup = False
                         else:
-                            log.info("Channels will be cleaned up without role.")
                             should_cleanup = True
                 else:
                     # No active task or no channels - need to clean up
@@ -147,8 +138,6 @@ class EventsMixin:
 
                 # Clean up if needed
                 if should_cleanup:
-                    log.info(f"Cleaning up channels for event {event_id} (active_task={has_active_task}, channels_exist={text_channel or voice_channels_exist})")
-
                     # Handle text channel - archive if it has user messages
                     if text_channel:
                         has_user_messages = await self._has_user_messages(text_channel)
@@ -160,9 +149,7 @@ class EventsMixin:
 
                             # Archive the channel (pass the role even though it was deleted)
                             archived = await self._archive_text_channel(guild, text_channel, role, event_name, event_id)
-                            if archived:
-                                log.info(f"Archived text channel for event {event_id} after role deletion")
-                            else:
+                            if not archived:
                                 # If archiving failed, delete the channel
                                 try:
                                     await text_channel.delete(reason=f"Event role '{role.name}' was deleted (archive failed)")
@@ -172,7 +159,6 @@ class EventsMixin:
                             # No user messages, delete the channel
                             try:
                                 await text_channel.delete(reason=f"Event role '{role.name}' was deleted")
-                                log.info(f"Deleted channel {text_channel.name} - associated role was deleted")
                             except (discord.NotFound, discord.Forbidden) as e:
                                 log.warning(f"Could not delete channel {text_channel_id}: {e}")
 
@@ -182,7 +168,6 @@ class EventsMixin:
                         if voice_channel:
                             try:
                                 await voice_channel.delete(reason=f"Event role '{role.name}' was deleted")
-                                log.info(f"Deleted voice channel {voice_channel.name} - associated role was deleted")
                             except (discord.NotFound, discord.Forbidden) as e:
                                 log.warning(f"Could not delete channel {vc_id}: {e}")
 
@@ -197,7 +182,6 @@ class EventsMixin:
                         thread_links = await self.config.guild(guild).thread_event_links()
                         thread_links.pop(str(data["forum_thread"]), None)
                         await self.config.guild(guild).thread_event_links.set(thread_links)
-                        log.info(f"Removed thread link for event {event_id} (role deleted)")
 
                     # Clean up deletion extensions tracking
                     deletion_extensions = await self.config.guild(guild).deletion_extensions()
@@ -213,7 +197,6 @@ class EventsMixin:
         if role.id in divider_roles:
             divider_roles.remove(role.id)
             await self.config.guild(guild).divider_roles.set(divider_roles)
-            log.info(f"Removed deleted role '{role.name}' from divider permissions tracking")
 
         # Check if divider should be deleted (no more event roles)
         await self._cleanup_divider_if_empty(guild)
@@ -278,7 +261,6 @@ class EventsMixin:
                                 speak=True,
                                 reason="Member received event role (granting persistent access)"
                             )
-                            log.info(f"Granted persistent access to {after.name} for channel {channel.name}")
                         else:
                             log.warning(f"Could not grant persistent access to {after.name} for channel {channel.name} - 100 overwrite limit reached")
                     except discord.Forbidden:
@@ -297,8 +279,6 @@ class EventsMixin:
         if not guild:
             return
 
-        log.info(f"Forum thread created: '{thread.name}' (ID: {thread.id}) - attempting to link to event")
-
         # Retry with delays in case scheduled_events cache isn't populated yet
         # Retry intervals: 0s, 2s, 5s (total ~7s of retries)
         retry_delays = [0, 2, 5]
@@ -307,11 +287,9 @@ class EventsMixin:
             # Wait before checking (skip on first attempt)
             if attempt > 1:
                 await asyncio.sleep(delay)
-                log.info(f"Retry attempt {attempt} for thread '{thread.name}' after {delay}s delay")
 
             # Get all scheduled events in the guild
             scheduled_events = guild.scheduled_events
-            log.info(f"Checking {len(scheduled_events)} scheduled events for thread '{thread.name}' (attempt {attempt})")
 
             # Try to match thread name to an event (case-insensitive exact match)
             for scheduled_event in scheduled_events:
@@ -323,20 +301,17 @@ class EventsMixin:
                         thread_links = await self.config.guild(guild).thread_event_links()
                         thread_links[str(thread.id)] = event_id_str
                         await self.config.guild(guild).thread_event_links.set(thread_links)
-                        log.info(f"✅ Linked forum thread '{thread.name}' (ID: {thread.id}) to event '{scheduled_event.name}' (ID: {scheduled_event.id}) on attempt {attempt}")
 
                         # If event channels already exist, also add to event_channels
                         event_channels = await self.config.guild(guild).event_channels()
                         if event_id_str in event_channels:
                             event_channels[event_id_str]["forum_thread"] = thread.id
                             await self.config.guild(guild).event_channels.set(event_channels)
-                            log.info(f"✅ Also added thread link to existing event channels for event {scheduled_event.name}")
 
                             # Trigger role button addition since channels already exist
                             # (normally this happens in on_guild_channel_create, but that already fired)
                             forumthreadmessage_cog = self.bot.get_cog("ForumThreadMessage")
                             if forumthreadmessage_cog:
-                                log.info(f"Triggering role button addition for thread {thread.name} since event channels already exist")
                                 asyncio.create_task(forumthreadmessage_cog.add_role_button_to_thread(guild, thread))
                             else:
                                 log.warning("ForumThreadMessage cog not loaded, cannot add role button")
@@ -345,10 +320,6 @@ class EventsMixin:
 
             # No match found in this attempt
             event_names = ', '.join(repr(e.name) for e in scheduled_events) if scheduled_events else 'none'
-            if attempt < len(retry_delays):
-                log.info(f"No matching event found for thread '{thread.name}' on attempt {attempt}. Available events: {event_names}. Will retry in {retry_delays[attempt]}s")
-            else:
-                log.warning(f"⚠️ No matching event found for thread '{thread.name}' after {attempt} attempts. Available events: {event_names}")
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -393,8 +364,6 @@ class EventsMixin:
             deletion_extensions[event_id_str]["delete_time"] = new_delete_time.timestamp()
             await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
 
-            log.info(f"Extended archiving time for event {event_id_str} by {EXTENSION_HOURS} hours to {new_delete_time}")
-
         # Get the channel and update the warning message
         text_channel_id = deletion_extensions[event_id_str].get("text_channel_id")
         if text_channel_id:
@@ -419,7 +388,6 @@ class EventsMixin:
                     else:
                         await warning_message.edit(content=f"{warning_message.content}{extension_msg}")
 
-                    log.info(f"Updated archiving warning message with extension notification")
                 except discord.NotFound:
                     log.warning(f"Could not find archiving warning message {payload.message_id}")
                 except discord.Forbidden:
@@ -437,7 +405,6 @@ class EventsMixin:
             # Check if this is a divider channel
             divider_channel_id = await self.config.guild(guild).divider_channel_id()
             if divider_channel_id == channel.id:
-                log.info(f"Divider channel '{channel.name}' was deleted externally - clearing stored data")
                 await self.config.guild(guild).divider_channel_id.set(None)
                 return
 
@@ -455,15 +422,12 @@ class EventsMixin:
                 is_voice_channel = channel.id in voice_channel_ids
 
                 if is_text_channel or is_voice_channel:
-                    log.info(f"Event channel '{channel.name}' was deleted externally - checking if cleanup is needed")
-
                     # Check if all channels are gone
                     text_channel = guild.get_channel(data.get("text")) if data.get("text") else None
                     voice_channels_exist = any(guild.get_channel(vc_id) for vc_id in voice_channel_ids)
 
                     if not text_channel and not voice_channels_exist:
                         # All channels are gone, clean up completely
-                        log.info(f"All event channels are gone for event {event_id} - cleaning up completely")
                         event_to_remove = event_id
 
                         # Delete the role if it exists
@@ -475,7 +439,6 @@ class EventsMixin:
                                 await self._update_divider_permissions(guild, role, add=False)
                                 try:
                                     await role.delete(reason="Event channels were deleted")
-                                    log.info(f"Deleted role for event {event_id} - channels were deleted externally")
                                 except discord.Forbidden:
                                     log.warning(f"Could not delete role for event {event_id}")
 
@@ -498,7 +461,6 @@ class EventsMixin:
                     thread_links = await self.config.guild(guild).thread_event_links()
                     thread_links.pop(str(thread_id), None)
                     await self.config.guild(guild).thread_event_links.set(thread_links)
-                    log.info(f"Removed thread link for thread {thread_id} (channels deleted)")
 
                 # Check if divider should be deleted (no more event roles)
                 await self._cleanup_divider_if_empty(guild)

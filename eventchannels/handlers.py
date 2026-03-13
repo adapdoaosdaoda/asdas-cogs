@@ -32,7 +32,6 @@ class HandlersMixin:
                     # Use the retry interval for this attempt
                     retry_minutes = retry_intervals[retry_count - 1]
                     create_time = start_time - timedelta(minutes=retry_minutes)
-                    log.info(f"Retry attempt {retry_count} for event '{event.name}': checking at T-{retry_minutes} minutes")
 
             # If event starts in less than configured minutes, create channels immediately
             if now >= create_time:
@@ -120,11 +119,9 @@ class HandlersMixin:
 
             # Check bot permissions
             bot_perms = guild.me.guild_permissions
-            log.info(f"Bot permissions - manage_channels: {bot_perms.manage_channels}, administrator: {bot_perms.administrator}")
 
             if category:
                 cat_perms = category.permissions_for(guild.me)
-                log.info(f"Bot permissions in category '{category.name}' - manage_channels: {cat_perms.manage_channels}, manage_permissions: {cat_perms.manage_permissions}")
 
             # Check if bot's role is higher than the event role
             bot_top_role = guild.me.top_role
@@ -353,7 +350,6 @@ class HandlersMixin:
                 await text_channel.edit(overwrites=overwrites)
                 for voice_channel in voice_channels:
                     await voice_channel.edit(overwrites=overwrites)
-                log.info(f"Successfully applied permissions to {len(voice_channels) + 1} channel(s) for event '{event.name}'")
 
                 # Add role to divider permissions
                 await self._update_divider_permissions(guild, role, add=True)
