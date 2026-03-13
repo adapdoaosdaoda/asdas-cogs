@@ -457,6 +457,31 @@ class BreakingArmy(commands.Cog):
                 boss_info = await self._get_current_boss_info(guild)
                 await channel.send(f"⚔️ **Next Boss:** {boss_info}")
 
+    async def _revert_run(self, guild: discord.Guild):
+        async with self.config.guild(guild).active_run() as run:
+            if run["current_index"] <= -1: return
+            
+            # If the run was finished (is_running=False but index at the end), restart it
+            if not run["is_running"] and run["current_index"] >= len(run["boss_order"]) - 1:
+                run["is_running"] = True
+            
+            run["current_index"] -= 1
+            
+            # Ensure it doesn't go below -1
+            if run["current_index"] < -1:
+                run["current_index"] = -1
+
+        await self._refresh_live_season_view(guild)
+        
+        # Notify current boss (the one we went back to)
+        run = await self.config.guild(guild).active_run()
+        if run["is_running"] and run["current_index"] >= 0:
+            notif_channel_id = await self.config.guild(guild).notification_channel()
+            channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
+            if channel:
+                boss_info = await self._get_current_boss_info(guild)
+                await channel.send(f"⏪ **Reverted to Boss:** {boss_info}")
+
     async def _get_upcoming_boss_info(self, guild: discord.Guild, day_name: Optional[str] = None, slot_idx: Optional[int] = None) -> str:
         """Returns boss info for the current week. Chronologically maps bosses to winning days."""
         season = await self.config.guild(guild).season_data()
@@ -677,6 +702,34 @@ class BreakingArmy(commands.Cog):
     async def run_next(self, ctx: commands.Context):
         await self._advance_run(ctx.guild)
         await ctx.tick()
+
+    @ba_run.command(name="back", aliases=["undo", "prev"])
+    async def run_back(self, ctx: commands.Context):
+        """Mark the last defeated boss as undefeated (go back 1 boss)."""
+        if not await self.is_ba_admin(ctx.author):
+            return await ctx.send("Permission denied.")
+        
+        run = await self.config.guild(ctx.guild).active_run()
+        if run["current_index"] <= -1:
+            return await ctx.send("❌ **Error:** No progress to revert.")
+        
+        await self._revert_run(ctx.guild)
+        await ctx.tick()
+
+    @ba_run.command(name="setindex")
+    async def run_set_index(self, ctx: commands.Context, index: int):
+        """Manually set the current boss index for the active run."""
+        async with self.config.guild(ctx.guild).active_run() as run:
+            if not run["is_running"]:
+                return await ctx.send("❌ **Error:** No run is currently active.")
+            
+            if index < -1 or index >= len(run["boss_order"]):
+                return await ctx.send(f"❌ **Error:** Index must be between -1 and {len(run['boss_order']) - 1}.")
+            
+            run["current_index"] = index
+        
+        await self._refresh_live_season_view(ctx.guild)
+        await ctx.send(f"✅ **Success:** Current boss index set to {index}.")
 
     @ba_run.command(name="cancel")
     async def run_cancel(self, ctx: commands.Context):
