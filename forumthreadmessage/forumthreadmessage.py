@@ -70,7 +70,6 @@ class RoleButton(discord.ui.Button):
                     f"Successfully removed the {role.mention} role from you!",
                     ephemeral=True
                 )
-                log.info(f"Removed role {role.name} from {member.name} ({member.id}) via button")
             else:
                 # Add the role
                 await member.add_roles(role, reason="User requested event role via button")
@@ -78,7 +77,6 @@ class RoleButton(discord.ui.Button):
                     f"Successfully added the {role.mention} role to you!",
                     ephemeral=True
                 )
-                log.info(f"Added role {role.name} to {member.name} ({member.id}) via button")
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -185,8 +183,6 @@ class ForceCreateButton(discord.ui.Button):
                 eventchannels_cog._force_create_event_channels(interaction.guild, event, member.display_name)
             )
             eventchannels_cog.active_tasks[f"{event.id}_force"] = task
-
-            log.info(f"User {member.name} ({member.id}) forced creation of channels for event '{event.name}' ({event.id})")
 
         except Exception as e:
             await interaction.response.send_message(
@@ -552,8 +548,6 @@ class ForumThreadMessage(commands.Cog):
                 content=message_content,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
-            timing_label = "15 minutes before start" if timing == "15min" else "at start"
-            log.info(f"✅ Updated thread message for event '{event.name}' ({timing_label})")
         except discord.NotFound:
             log.warning(f"Message {message_id} not found in thread {thread_id}")
         except discord.Forbidden:
@@ -638,8 +632,6 @@ class ForumThreadMessage(commands.Cog):
                 content=message_content,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
-            role_count = len(role.members)
-            log.info(f"🔄 Updated role count for event '{event.name}' ({role_count} members)")
         except discord.NotFound:
             log.warning(f"Message {message_id} not found in thread {thread_id}")
         except discord.Forbidden:
@@ -650,7 +642,6 @@ class ForumThreadMessage(commands.Cog):
     async def _event_monitor_loop(self):
         """Background task that monitors events and updates messages at appropriate times."""
         await self.bot.wait_until_ready()
-        log.info("Event monitor loop started")
 
         # Track which events we've already updated (to avoid duplicate updates)
         updated_15min = set()  # event_id
@@ -716,7 +707,6 @@ class ForumThreadMessage(commands.Cog):
                         if enabled_15min and event.id not in updated_15min:
                             # Update if between 14-16 minutes before start (2 minute window)
                             if 14 * 60 <= time_until_start <= 16 * 60:
-                                log.info(f"Triggering 15-min update for event '{event.name}' ({time_until_start:.0f}s until start)")
                                 await self._update_event_thread_message(guild, event, role, "15min")
                                 updated_15min.add(event.id)
 
@@ -724,7 +714,6 @@ class ForumThreadMessage(commands.Cog):
                         if enabled_start and event.id not in updated_start:
                             # Update if within 2 minutes of start
                             if -60 <= time_until_start <= 60:
-                                log.info(f"Triggering start update for event '{event.name}' ({time_until_start:.0f}s until start)")
                                 await self._update_event_thread_message(guild, event, role, "start")
                                 updated_start.add(event.id)
 
@@ -816,7 +805,6 @@ class ForumThreadMessage(commands.Cog):
                     last_role_count_update = {eid: ts for eid, ts in last_role_count_update.items() if eid in current_event_ids}
 
             except asyncio.CancelledError:
-                log.info("Event monitor loop cancelled")
                 break
             except Exception as e:
                 log.error(f"Error in event monitor loop: {e}", exc_info=True)
@@ -1854,7 +1842,6 @@ class ForumThreadMessage(commands.Cog):
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
 
-            log.info(f"✅ Added role button for {role.name} to thread {thread.name} ({thread.id})")
             return True
 
         except discord.NotFound:
@@ -1923,7 +1910,6 @@ class ForumThreadMessage(commands.Cog):
                 initial_message,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
-            log.info(f"Test: Sent initial message in {ctx.channel.name}")
 
             # Step 2: Wait 20s and edit (20s mark)
             await ctx.send(f"**[Test]** Waiting 20 seconds before editing...")
@@ -1934,7 +1920,6 @@ class ForumThreadMessage(commands.Cog):
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
             await ctx.send(f"**[Test]** Message edited at 20s mark!")
-            log.info(f"Test: Edited message in {ctx.channel.name}")
 
             # Step 3: Wait 20s more and add button (40s mark)
             if role:
@@ -1947,7 +1932,6 @@ class ForumThreadMessage(commands.Cog):
                     allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
                 )
                 await ctx.send(f"**[Test]** Role button added at 40s mark! Button will add {role.mention}")
-                log.info(f"Test: Added role button for {role.name} in {ctx.channel.name}")
 
                 # Step 4: Wait final 20s (60s total)
                 await ctx.send(f"**[Test]** Waiting final 20 seconds...")
@@ -1959,7 +1943,6 @@ class ForumThreadMessage(commands.Cog):
 
             # Complete
             await ctx.send(f"✅ **[Test Complete]** Full flow finished at 60s mark!")
-            log.info(f"Test: Flow completed in {ctx.channel.name}")
 
         except discord.HTTPException as e:
             await ctx.send(f"❌ **[Test Failed]** HTTP error: {e}")
@@ -2086,7 +2069,6 @@ class ForumThreadMessage(commands.Cog):
                         silent=True,
                         allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
                     )
-                    log.info(f"Sent initial message in thread {thread.name} ({thread.id}) in guild {guild.name}")
                     break  # Success!
                 except discord.HTTPException as e:
                     # Error 40058: Cannot message this thread until author posts first
@@ -2111,7 +2093,6 @@ class ForumThreadMessage(commands.Cog):
                     "thread_name": thread.name,
                 }
                 await self.config.guild(guild).thread_messages.set(thread_messages)
-                log.info(f"Stored message reference for thread {thread.name} ({thread.id})")
 
             # Wait 2 seconds
             await asyncio.sleep(2)
@@ -2121,7 +2102,6 @@ class ForumThreadMessage(commands.Cog):
                 content=formatted_edited,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
-            log.info(f"Edited message (first edit) in thread {thread.name} ({thread.id}) in guild {guild.name}")
 
             # Wait another 2 seconds
             await asyncio.sleep(2)
@@ -2131,13 +2111,11 @@ class ForumThreadMessage(commands.Cog):
                 content=formatted_third,
                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
             )
-            log.info(f"Edited message (second edit) in thread {thread.name} ({thread.id}) in guild {guild.name}")
 
             # If deletion is enabled, wait another 2 seconds and delete
             if delete_enabled:
                 await asyncio.sleep(2)
                 await message.delete()
-                log.info(f"Deleted message in thread {thread.name} ({thread.id}) in guild {guild.name}")
 
         except discord.HTTPException as e:
             log.error(f"Failed to send/edit/delete message in thread {thread.id}: {e}")
@@ -2191,7 +2169,6 @@ class ForumThreadMessage(commands.Cog):
 
                 # If we found the event and it has a forum thread, proceed
                 if matching_event_id and matching_thread_id:
-                    log.info(f"Found event {matching_event_id} with forum thread {matching_thread_id} on attempt {attempt}")
                     break
 
                 # If we found the event but no forum thread yet, check if this is the last attempt
@@ -2222,8 +2199,6 @@ class ForumThreadMessage(commands.Cog):
             if not event:
                 log.warning(f"Could not find scheduled event {matching_event_id}")
                 return
-
-            log.info(f"Event channel created for '{event.name}' with role {role.name}")
 
             # Check if role buttons are enabled
             role_button_enabled = await self.config.guild(guild).role_button_enabled()
@@ -2262,7 +2237,6 @@ class ForumThreadMessage(commands.Cog):
                                 allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=True)
                             )
 
-                            log.info(f"✅ Added role button for {role.name} to message in thread {thread.name} ({thread.id})")
                         except discord.NotFound:
                             log.warning(f"❌ Could not find message {message_id} in thread {thread.id} - message may have been deleted")
                         except discord.Forbidden:
