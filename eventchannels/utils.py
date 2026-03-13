@@ -432,24 +432,24 @@ class UtilsMixin:
             
         # If the count is potentially unreliable (or refresh is forced) and we have the intent, try to refresh the cache
         if (not is_reliable or force_refresh) and self.bot.intents.members:
-        try:
-        # For smaller guilds, fetch_members is faster and ensures 100% accuracy via REST
-        if total_count < 2000:
-            member_count = 0
-            async for member in guild.fetch_members(limit=None):
-                if any(r.id == role.id for r in member.roles):
-                    member_count += 1
-        else:
-            # For larger guilds, chunk() via gateway is more efficient
-            await guild.chunk()
-            # Give the cache a small moment to stabilize after chunking
-            await asyncio.sleep(1)
-            member_count = len(role.members)
-
-        # Recalculate after refresh (if not already done manually)
-        is_reliable = True
-        except Exception as e:
-        log.warning(f"Failed to refresh member cache for {guild.name}: {e}")
+            try:
+                # For smaller guilds, fetch_members is faster and ensures 100% accuracy via REST
+                if total_count < 2000:
+                    member_count = 0
+                    async for member in guild.fetch_members(limit=None):
+                        if any(r.id == role.id for r in member.roles):
+                            member_count += 1
+                else:
+                    # For larger guilds, chunk() via gateway is more efficient
+                    await guild.chunk()
+                    # Give the cache a small moment to stabilize after chunking
+                    await asyncio.sleep(1)
+                    member_count = len(role.members)
+                
+                # Recalculate after refresh (if not already done manually)
+                is_reliable = True
+            except Exception as e:
+                log.warning(f"Failed to refresh member cache for {guild.name}: {e}")
 
         # Final diagnostic logging if still unreliable
 
