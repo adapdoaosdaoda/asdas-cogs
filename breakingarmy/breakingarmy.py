@@ -228,7 +228,10 @@ class BreakingArmy(commands.Cog):
             if w < season["current_week"]:
                 sched += f"💀 ~~**Week {w}**: {n1} & {n2}{enc}~~\n"
             elif w == season["current_week"] and season["is_active"]:
-                sched += f"⚔️ **__Week {w}__: {n1} & {n2}{enc}** (Active)\n"
+                if run["is_running"]:
+                    sched += f"⚔️ **__Week {w}__: {n1} & {n2}{enc}** (Active)\n"
+                else:
+                    sched += f"⏳ **Week {w}__: {n1} & {n2}{enc}** (Waiting)\n"
             else:
                 sched += f"⏳ **Week {w}**: {n1} & {n2}{enc}\n"
         sched_embed.description = sched
