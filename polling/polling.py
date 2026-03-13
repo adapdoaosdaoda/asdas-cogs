@@ -20,8 +20,7 @@ from .views import EventPollView
 from . import calendar_renderer
 
 log = logging.getLogger("red.asdas-cogs.polling")
-log.setLevel(logging.ERROR)  # Only show errors in terminal, not info messages
-
+# log.setLevel(logging.ERROR)  # Removed to allow info messages
 
 class EventPolling(commands.Cog):
     """Event scheduling polling system with conflict detection"""
@@ -198,27 +197,58 @@ class EventPolling(commands.Cog):
         # Reinitialize the calendar renderer with the reloaded class
         self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
 
-        # Restore views for all existing polls after bot restart
-        # Don't wait for ready during reload - bot is already running
-        all_guilds = await self.config.all_guilds()
-        for guild_id, guild_data in all_guilds.items():
-            guild = self.bot.get_guild(guild_id)
-            if not guild:
-                continue
-
-            polls = guild_data.get("polls", {})
-            for poll_id, poll_data in polls.items():
-                await self._restore_poll_view(guild, poll_data, poll_id)
-                await self._restore_calendar_views(guild, poll_data, poll_id)
-                # Add small delay between restores to avoid rate limiting
-                import asyncio
-                await asyncio.sleep(0.5)
+        # Start initialization task to restore views after bot is ready
+        self.bot.loop.create_task(self.initialize())
 
         self.backup_task.start()
         self.weekly_results_update.start()
         self.weekly_calendar_update.start()
         self.event_notification_task.start()
         self.website_export_task.start()
+
+    async def initialize(self):
+        """Wait for bot to be ready and restore persistent views"""
+        await self.bot.wait_until_red_ready()
+
+        # Check if ModalPatch is loaded
+        if not self.bot.get_cog("ModalPatch"):
+            log.error("CRITICAL: ModalPatch cog is not loaded! EventPoll voting modals will fail with 'Interaction failed'.")
+            # Also try to notify owners
+            try:
+                await self.bot.send_to_owners("⚠️ **EventPolling Warning**: `ModalPatch` cog is not loaded. Voting modals will not work correctly.")
+            except:
+                pass
+
+        # 1. Register ONE generic view for all main polls
+        # Since EventPollView is now generic and uses interaction.guild.id, 
+        # one instance can handle all polls across all guilds.
+        try:
+            generic_view = EventPollView(
+                self,
+                0, # guild_id
+                0, # creator_id
+                self.events,
+                self.days_of_week,
+                self.blocked_times
+            )
+            self.bot.add_view(generic_view)
+            log.info("EventPolling: Registered generic poll view.")
+        except Exception as e:
+            log.error(f"Failed to register generic poll view: {e}")
+
+        # 2. Restore calendar views (these have unique custom_ids per poll)
+        all_guilds = await self.config.all_guilds()
+        for guild_id_str, guild_data in all_guilds.items():
+            guild_id = int(guild_id_str)
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+
+            polls = guild_data.get("polls", {})
+            for poll_id, poll_data in polls.items():
+                await self._restore_calendar_views(guild, poll_data, poll_id)
+                
+        log.info("EventPolling: All persistent views have been restored.")
 
     def cog_unload(self):
         """Called when the cog is unloaded"""
@@ -992,7 +1022,7 @@ class EventPolling(commands.Cog):
         """Get hex color for an event based on its name"""
         # Strip parentheses for sub-events like "Hero's Realm (Catch-up)"
         base_name = event_name.split('(')[0].strip()
-        
+
         colors = {
             "Hero's Realm": "#5C6BC0",
             "Sword Trial": "#FFCA28",
@@ -1003,73 +1033,8 @@ class EventPolling(commands.Cog):
         }
         return colors.get(base_name, "#fbcfe8")
 
-    async def _restore_poll_view(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
-        """Restore the poll view to an existing poll message after import
-
-        Args:
-            guild: The guild containing the poll
-            poll_data: The poll data dictionary
-            poll_id: The poll ID
-        """
-        try:
-            channel_id = poll_data.get("channel_id")
-            message_id = poll_data.get("message_id")
-
-            if not channel_id or not message_id:
-                return
-
-            channel = guild.get_channel(channel_id)
-            if not channel:
-                # Channel not found - remove the poll from storage
-                print(f"Channel {channel_id} for poll {poll_id} not found, removing from storage")
-                async with self.config.guild(guild).polls() as polls:
-                    if poll_id in polls:
-                        del polls[poll_id]
-                        print(f"✓ Removed poll {poll_id} from guild {guild.id}")
-                return
-
-            message = await channel.fetch_message(message_id)
-            if not message:
-                return
-
-            # Create a new view for this poll
-            view = EventPollView(
-                self,
-                guild.id,
-                poll_data.get("creator_id"),
-                self.events,
-                self.days_of_week,
-                self.blocked_times
-            )
-            view.poll_id = poll_id
-
-            # Update the message with the new view
-            await message.edit(view=view)
-
-        except discord.NotFound:
-            # Message not found (404) - remove the poll from storage
-            print(f"Poll {poll_id} not found (404), removing from storage")
-            async with self.config.guild(guild).polls() as polls:
-                if poll_id in polls:
-                    del polls[poll_id]
-                    print(f"✓ Removed poll {poll_id} from guild {guild.id}")
-        except discord.HTTPException as e:
-            # Handle rate limiting and other HTTP errors gracefully
-            if e.status == 429:  # Rate limited
-                log.warning(f"Rate limited when restoring poll {poll_id}, will retry later")
-            elif e.status == 404:  # Handle 404 if it comes through as HTTPException
-                print(f"Poll {poll_id} not found (404 via HTTPException), removing from storage")
-                async with self.config.guild(guild).polls() as polls:
-                    if poll_id in polls:
-                        del polls[poll_id]
-                        print(f"✓ Removed poll {poll_id} from guild {guild.id}")
-            else:
-                log.error(f"HTTP error when restoring poll {poll_id}: {e}")
-        except Exception as e:
-            # Silently fail if we can't restore the view
-            print(f"Could not restore poll view for poll {poll_id}: {e}")
-
     async def _restore_calendar_views(self, guild: discord.Guild, poll_data: Dict, poll_id: str):
+
         """Restore views for calendar messages after bot restart
 
         Args:
@@ -1083,13 +1048,10 @@ class EventPolling(commands.Cog):
         calendar_messages = poll_data.get("calendar_messages", [])
         for cal_msg_data in calendar_messages:
             try:
-                channel = guild.get_channel(cal_msg_data["channel_id"])
-                if channel:
-                    message = await channel.fetch_message(cal_msg_data["message_id"])
-                    view = CalendarTimezoneView(self, guild.id, poll_id)
-                    await message.edit(view=view)
+                view = CalendarTimezoneView(self, guild.id, poll_id)
+                self.bot.add_view(view)
             except Exception as e:
-                print(f"Could not restore calendar view for poll {poll_id}: {e}")
+                log.error(f"Could not restore calendar view for poll {poll_id}: {e}")
 
         # Restore weekly calendar views
         weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
@@ -1100,13 +1062,10 @@ class EventPolling(commands.Cog):
             
             for cal_msg_data in weekly_calendar_messages:
                 try:
-                    channel = guild.get_channel(cal_msg_data["channel_id"])
-                    if channel:
-                        message = await channel.fetch_message(cal_msg_data["message_id"])
-                        view = CalendarTimezoneView(self, guild.id, poll_id, is_weekly=True, poll_url=poll_url)
-                        await message.edit(view=view)
+                    view = CalendarTimezoneView(self, guild.id, poll_id, is_weekly=True, poll_url=poll_url)
+                    self.bot.add_view(view)
                 except Exception as e:
-                    print(f"Could not restore weekly calendar view for poll {poll_id}: {e}")
+                    log.error(f"Could not restore weekly calendar view for poll {poll_id}: {e}")
 
     async def _update_poll_message(self, guild_id: int, poll_id: str, poll_data: Dict):
         """Update the poll message embed and related calendar messages"""

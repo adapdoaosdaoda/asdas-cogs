@@ -193,9 +193,10 @@ class EventPollView(discord.ui.View):
             try:
                 # Get poll_id from the message
                 poll_id = str(interaction.message.id)
+                guild_id = interaction.guild.id
 
                 # Get user's current selections
-                polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+                polls = await self.cog.config.guild_from_id(guild_id).polls()
                 if poll_id not in polls:
                     await interaction.response.send_message(
                         "This poll is no longer active!",
@@ -211,7 +212,7 @@ class EventPollView(discord.ui.View):
                 # Open combined modal for Events
                 modal = CombinedSimpleEventsModal(
                     cog=self.cog,
-                    guild_id=self.guild_id,
+                    guild_id=guild_id,
                     poll_id=poll_id,
                     user_id=interaction.user.id,
                     user_selections=user_selections,
@@ -234,9 +235,10 @@ class EventPollView(discord.ui.View):
         try:
             # Get poll_id from the message
             poll_id = str(interaction.message.id)
+            guild_id = interaction.guild.id
 
             # Get poll data
-            polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+            polls = await self.cog.config.guild_from_id(guild_id).polls()
             if poll_id not in polls:
                 await interaction.response.send_message(
                     "This poll is no longer active!",
@@ -271,9 +273,10 @@ class EventPollView(discord.ui.View):
             try:
                 # Get poll_id from the message (for persistent views)
                 poll_id = str(interaction.message.id)
+                guild_id = interaction.guild.id
 
                 # Get user's current selections
-                polls = await self.cog.config.guild_from_id(self.guild_id).polls()
+                polls = await self.cog.config.guild_from_id(guild_id).polls()
                 if poll_id not in polls:
                     await interaction.response.send_message(
                         "This poll is no longer active!",
@@ -294,7 +297,7 @@ class EventPollView(discord.ui.View):
                 if event_name == "Breaking Army":
                     modal = BreakingArmyVoteModal(
                         cog=self.cog,
-                        guild_id=self.guild_id,
+                        guild_id=guild_id,
                         poll_id=poll_id,
                         user_id=interaction.user.id,
                         event_name=event_name,
@@ -307,7 +310,7 @@ class EventPollView(discord.ui.View):
                 elif event_name == "Showdown":
                     modal = ShowdownVoteModal(
                         cog=self.cog,
-                        guild_id=self.guild_id,
+                        guild_id=guild_id,
                         poll_id=poll_id,
                         user_id=interaction.user.id,
                         event_name=event_name,
@@ -320,7 +323,7 @@ class EventPollView(discord.ui.View):
                 elif event_name == "Sword Trial":
                     modal = SwordTrialVoteModal(
                         cog=self.cog,
-                        guild_id=self.guild_id,
+                        guild_id=guild_id,
                         poll_id=poll_id,
                         user_id=interaction.user.id,
                         user_selections=user_selections,
@@ -332,7 +335,7 @@ class EventPollView(discord.ui.View):
                     # Fallback (General)
                     modal = CombinedSimpleEventsModal(
                         cog=self.cog,
-                        guild_id=self.guild_id,
+                        guild_id=guild_id,
                         poll_id=poll_id,
                         user_id=interaction.user.id,
                         user_selections=user_selections,
@@ -1642,5 +1645,6 @@ class CalendarTimezoneView(discord.ui.View):
 
     async def _show_timezone_modal(self, interaction: discord.Interaction):
         """Show the timezone input modal"""
-        modal = TimezoneModal(self.cog, self.guild_id, self.poll_id, is_weekly=self.is_weekly)
+        guild_id = interaction.guild.id
+        modal = TimezoneModal(self.cog, guild_id, self.poll_id, is_weekly=self.is_weekly)
         await interaction.response.send_modal(modal)
