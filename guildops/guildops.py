@@ -82,7 +82,7 @@ class GuildOps(commands.Cog):
                     ws = await self.bot.loop.run_in_executor(None, lambda: sh.worksheets()[-1])
                     await self._do_custom_sort(ws)
                     await self.config.guild_from_id(guild_id).last_auto_sort.set(now)
-                    log.info(f"GuildOps: Auto-sorted sheet for guild {guild.name} ({guild_id})")
+                    # log.info(f"GuildOps: Auto-sorted sheet for guild {guild.name} ({guild_id})")
                 except Exception as e:
                     log.error(f"GuildOps: Error in auto-sort for guild {guild_id}: {e}")
 

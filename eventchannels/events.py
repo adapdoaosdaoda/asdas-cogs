@@ -145,62 +145,62 @@ class EventsMixin:
                     # No active task or no channels - need to clean up
                     should_cleanup = True
 
-            # Clean up if needed
-            if should_cleanup:
-                log.info(f"Cleaning up channels for event {event_id} (active_task={has_active_task}, channels_exist={text_channel or voice_channels_exist})")
+                # Clean up if needed
+                if should_cleanup:
+                    log.info(f"Cleaning up channels for event {event_id} (active_task={has_active_task}, channels_exist={text_channel or voice_channels_exist})")
 
-                # Handle text channel - archive if it has user messages
-                if text_channel:
-                    has_user_messages = await self._has_user_messages(text_channel)
+                    # Handle text channel - archive if it has user messages
+                    if text_channel:
+                        has_user_messages = await self._has_user_messages(text_channel)
 
-                    if has_user_messages:
-                        # Try to get event name from stored data or use a placeholder
-                        # Since we don't have the full event object, extract from role name if possible
-                        event_name = f"event-{event_id}"
+                        if has_user_messages:
+                            # Try to get event name from stored data or use a placeholder
+                            # Since we don't have the full event object, extract from role name if possible
+                            event_name = f"event-{event_id}"
 
-                        # Archive the channel (pass the role even though it was deleted)
-                        archived = await self._archive_text_channel(guild, text_channel, role, event_name, event_id)
-                        if archived:
-                            log.info(f"Archived text channel for event {event_id} after role deletion")
+                            # Archive the channel (pass the role even though it was deleted)
+                            archived = await self._archive_text_channel(guild, text_channel, role, event_name, event_id)
+                            if archived:
+                                log.info(f"Archived text channel for event {event_id} after role deletion")
+                            else:
+                                # If archiving failed, delete the channel
+                                try:
+                                    await text_channel.delete(reason=f"Event role '{role.name}' was deleted (archive failed)")
+                                except (discord.NotFound, discord.Forbidden) as e:
+                                    log.warning(f"Could not delete channel {text_channel_id}: {e}")
                         else:
-                            # If archiving failed, delete the channel
+                            # No user messages, delete the channel
                             try:
-                                await text_channel.delete(reason=f"Event role '{role.name}' was deleted (archive failed)")
+                                await text_channel.delete(reason=f"Event role '{role.name}' was deleted")
+                                log.info(f"Deleted channel {text_channel.name} - associated role was deleted")
                             except (discord.NotFound, discord.Forbidden) as e:
                                 log.warning(f"Could not delete channel {text_channel_id}: {e}")
-                    else:
-                        # No user messages, delete the channel
-                        try:
-                            await text_channel.delete(reason=f"Event role '{role.name}' was deleted")
-                            log.info(f"Deleted channel {text_channel.name} - associated role was deleted")
-                        except (discord.NotFound, discord.Forbidden) as e:
-                            log.warning(f"Could not delete channel {text_channel_id}: {e}")
 
-                # Delete all voice channels
-                for vc_id in voice_channel_ids:
-                    voice_channel = guild.get_channel(vc_id)
-                    if voice_channel:
-                        try:
-                            await voice_channel.delete(reason=f"Event role '{role.name}' was deleted")
-                            log.info(f"Deleted voice channel {voice_channel.name} - associated role was deleted")
-                        except (discord.NotFound, discord.Forbidden) as e:
-                            log.warning(f"Could not delete channel {vc_id}: {e}")
+                    # Delete all voice channels
+                    for vc_id in voice_channel_ids:
+                        voice_channel = guild.get_channel(vc_id)
+                        if voice_channel:
+                            try:
+                                await voice_channel.delete(reason=f"Event role '{role.name}' was deleted")
+                                log.info(f"Deleted voice channel {voice_channel.name} - associated role was deleted")
+                            except (discord.NotFound, discord.Forbidden) as e:
+                                log.warning(f"Could not delete channel {vc_id}: {e}")
 
-                # Cancel any active task and retry tasks for this event
-                self._cancel_event_tasks(int(event_id))
+                    # Cancel any active task and retry tasks for this event
+                    self._cancel_event_tasks(int(event_id))
 
-                # Mark for removal from config
-                stored.pop(event_id, None)
+                    # Mark for removal from config
+                    stored.pop(event_id, None)
 
-                # Remove from thread_event_links
-                if data.get("forum_thread"):
-                    thread_links = await self.config.guild(guild).thread_event_links()
-                    thread_links.pop(str(data["forum_thread"]), None)
-                    await self.config.guild(guild).thread_event_links.set(thread_links)
-                    log.info(f"Removed thread link for event {event_id} (role deleted)")
+                    # Remove from thread_event_links
+                    if data.get("forum_thread"):
+                        thread_links = await self.config.guild(guild).thread_event_links()
+                        thread_links.pop(str(data["forum_thread"]), None)
+                        await self.config.guild(guild).thread_event_links.set(thread_links)
+                        log.info(f"Removed thread link for event {event_id} (role deleted)")
 
-                # Clean up deletion extensions tracking
-                deletion_extensions = await self.config.guild(guild).deletion_extensions()
+                    # Clean up deletion extensions tracking
+                    deletion_extensions = await self.config.guild(guild).deletion_extensions()
                 if event_id in deletion_extensions:
                     deletion_extensions.pop(event_id, None)
                     await self.config.guild(guild).deletion_extensions.set(deletion_extensions)
