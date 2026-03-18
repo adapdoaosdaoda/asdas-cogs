@@ -359,15 +359,15 @@ class EventPolling(commands.Cog):
 
     @tasks.loop(hours=1)
     async def weekly_results_update(self):
-        """Update weekly results embeds every Monday at 10 AM server time (UTC+1)"""
+        """Update weekly results embeds every Sunday at 10 PM server time (UTC+1)"""
         try:
             # Get current datetime in server timezone (UTC+1 / Europe/Berlin)
             from datetime import timezone
             server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
 
-            # Check if it's Monday (0 = Monday) and between 10:00-10:59 AM
-            if now.weekday() != 0 or now.hour != 10:
+            # Check if it's Sunday (6 = Sunday) and between 22:00-22:59 PM
+            if now.weekday() != 6 or now.hour != 22:
                 return
 
             last_run = await self.config.last_weekly_results_update()
@@ -400,15 +400,15 @@ class EventPolling(commands.Cog):
 
     @tasks.loop(hours=1)
     async def weekly_calendar_update(self):
-        """Update weekly calendar embeds every Monday at 10 AM server time (UTC+1)"""
+        """Update weekly calendar embeds every Sunday at 10 PM server time (UTC+1)"""
         try:
             # Get current datetime in server timezone (UTC+1 / Europe/Berlin)
             from datetime import timezone
             server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
 
-            # Check if it's Monday (0 = Monday) and between 10:00-10:59 AM
-            if now.weekday() != 0 or now.hour != 10:
+            # Check if it's Sunday (6 = Sunday) and between 22:00-22:59 PM
+            if now.weekday() != 6 or now.hour != 22:
                 return
 
             last_run = await self.config.last_weekly_calendar_update()
@@ -1815,7 +1815,7 @@ class EventPolling(commands.Cog):
 
     @eventpoll.command(name="weeklycalendar")
     async def post_weekly_calendar(self, ctx: commands.Context, message_id: str):
-        """Post a weekly calendar view for a poll (updates only on Monday at 10 AM)
+        """Post a weekly calendar view for a poll (updates only on Sunday at 10 PM)
 
         Example: [p]eventpoll weeklycalendar 123456789
         Or: [p]eventpoll weeklycalendar https://discord.com/channels/guild/channel/message
@@ -1857,7 +1857,7 @@ class EventPolling(commands.Cog):
 
     @eventpoll.command(name="postresults")
     async def post_results(self, ctx: commands.Context, message_id: str):
-        """Post an auto-updating results embed for a poll (updates every Monday at 10 AM)
+        """Post an auto-updating results embed for a poll (updates every Sunday at 10 PM)
 
         Example: [p]eventpoll postresults 123456789
         Or: [p]eventpoll postresults https://discord.com/channels/guild/channel/message
@@ -2020,7 +2020,7 @@ class EventPolling(commands.Cog):
         """Manually update the weekly calendar snapshot with current poll results
 
         This updates the cached winning times used by weekly calendars. Use this if
-        the automatic Monday 10 AM update didn't trigger or you want to update it manually.
+        the automatic Sunday 10 PM update didn't trigger or you want to update it manually.
 
         Example: [p]eventpoll updateweeklysnapshot 123456789
         Or: [p]eventpoll updateweeklysnapshot https://discord.com/channels/guild/channel/message
@@ -2742,7 +2742,7 @@ class EventPolling(commands.Cog):
         return embed, calendar_file, view
 
     async def _create_weekly_calendar_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> Tuple[discord.Embed, discord.File, discord.ui.View, Dict]:
-        """Create a weekly calendar embed with image and poll link (updates only on Monday 10AM)
+        """Create a weekly calendar embed with image and poll link (updates only on Sunday 10 PM)
 
         Returns:
             Tuple of (embed, file, view, winning_times) where file is the calendar image,
@@ -2788,7 +2788,7 @@ class EventPolling(commands.Cog):
         embed.set_image(url="attachment://calendar.png")
 
         # Add footer
-        embed.set_footer(text="times are adjusted every week based on Monday's results")
+        embed.set_footer(text="times are adjusted every week based on Sunday's results")
 
         # Create view with timezone button (is_weekly=True) and link button
         poll_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
@@ -2907,7 +2907,7 @@ class EventPolling(commands.Cog):
                 value="Be the first to vote!",
                 inline=False
             )
-            embed.set_footer(text="Updated every Monday at 10 AM server time")
+            embed.set_footer(text="Updated every Sunday at 10 PM server time")
             return embed
 
         # Calculate winning times using weighted point system
@@ -2961,7 +2961,7 @@ class EventPolling(commands.Cog):
 
         # Add timestamp and voter count
         last_updated = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-        embed.set_footer(text=f"Total voters: {len(selections)} | Last updated: {last_updated} | Updates every Monday at 10 AM")
+        embed.set_footer(text=f"Total voters: {len(selections)} | Last updated: {last_updated} | Updates every Sunday at 10 PM")
 
         return embed
 

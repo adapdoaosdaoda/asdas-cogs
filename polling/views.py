@@ -1507,7 +1507,7 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         selections = poll_data.get("selections", {})
 
         if self.is_weekly:
-            # Use cached winning_times snapshot from Monday 10 AM
+            # Use cached winning_times snapshot from Sunday 10 PM
             winning_times = poll_data.get("weekly_snapshot_winning_times", {})
             if not winning_times:
                 # Fallback to live data if no snapshot exists yet
