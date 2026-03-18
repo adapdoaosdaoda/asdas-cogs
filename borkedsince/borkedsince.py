@@ -203,8 +203,20 @@ class BorkedSince(commands.Cog):
 
         try:
             # Update the application description (shows as "About Me" in bot profile)
-            await self.bot.application.edit(description=full_bio)
-            return True, None
+            if self.bot.application and hasattr(self.bot.application, "edit"):
+                await self.bot.application.edit(description=full_bio)
+                return True, None
+            else:
+                app_info = await self.bot.application_info()
+                if hasattr(app_info, "edit"):
+                    await app_info.edit(description=full_bio)
+                    return True, None
+                else:
+                    print("BorkedSince: Application object does not support .edit() in this discord.py version.")
+                    return False, "Updating bio is not supported on this Redbot version."
+        except AttributeError as e:
+            print(f"BorkedSince: AttributeError updating bio: {e}")
+            return False, "Bot application does not support editing in this version."
         except discord.HTTPException as e:
             if e.status == 429:  # Rate limited
                 print("BorkedSince: Rate limited on bio update")

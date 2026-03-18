@@ -52,6 +52,11 @@ class PersonalBork(commands.Cog):
         if self.bot.owner_ids:
             owner_id = list(self.bot.owner_ids)[0]
             target_user = self.bot.get_user(owner_id)
+            if not target_user:
+                try:
+                    target_user = await self.bot.fetch_user(owner_id)
+                except discord.NotFound:
+                    pass
         
         if not target_user:
             target_user = ctx.author
