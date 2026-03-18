@@ -178,7 +178,7 @@ class PersonalBork(commands.Cog):
 
             await user_config.last_borked.set(previous_state["last_borked"])
             await user_config.total_borks.set(previous_state["total_borks"])
-            await user_config.previous_state.set(None)
+            await user_config.previous_state.set({})
             async with user_config.bork_history() as history:
                 if history: history.pop()
 
