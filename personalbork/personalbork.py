@@ -23,7 +23,7 @@ class PersonalBork(commands.Cog):
             "bork_history": [],
             "longest_streak": 0,
             "total_borks": 0,
-            "previous_state": None,
+            "previous_state": {},
         }
 
         self.config.register_user(**default_user)
