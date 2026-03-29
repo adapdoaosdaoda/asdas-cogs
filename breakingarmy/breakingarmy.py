@@ -7,7 +7,7 @@ import logging
 import pytz
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Dict, Union, Any
+from typing import Optional, List, Dict, Union, Any, Tuple
 
 # Import modalpatch components
 try:
