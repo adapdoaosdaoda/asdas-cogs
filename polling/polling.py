@@ -597,22 +597,23 @@ class EventPolling(commands.Cog):
                             
                         # Parse time
                         try:
-                        h, m = map(int, win_time_str.split(":"))
+                            h, m = map(int, win_time_str.split(":"))
 
-                        # Determine actual day/time of event
-                        # Times 00:00 - 02:59 are considered part of the "night" of the previous day
-                        # We use 03:00 as the cutoff to match EventPolling's next-day threshold
-                        is_next_day = h < 3 
+                            # Determine actual day/time of event
+                            # Times 00:00 - 02:59 are considered part of the "night" of the previous day
+                            # We use 03:00 as the cutoff to match EventPolling's next-day threshold
+                            is_next_day = h < 3 
 
-                        should_fire = False
+                            should_fire = False
 
-                        if is_next_day:
-                            # For post-midnight events, "Monday 01:00" means Monday night (Tuesday morning).
-                            # So if today is Tuesday and h:m is 01:00, we check if win_day was Monday.
-                            check_day = prev_day_name
-                        else:
-                            # Same day event (03:00 - 23:59)
-                            check_day = day_name
+                            if is_next_day:
+                                # For post-midnight events, "Monday 01:00" means Monday night (Tuesday morning).
+                                # So if today is Tuesday and h:m is 01:00, we check if win_day was Monday.
+                                check_day = prev_day_name
+                            else:
+                                # Same day event (03:00 - 23:59)
+                                check_day = day_name
+
                             # Validate against winning day
                             if event_info["type"] == "daily":
                                 if now.hour == h and now.minute == m:
@@ -627,8 +628,10 @@ class EventPolling(commands.Cog):
                             else:
                                 if win_day == check_day and now.hour == h and now.minute == m:
                                     should_fire = True
-                                    
-                            if should_fire:
+                        except (ValueError, AttributeError):
+                            continue
+
+                        if should_fire:
                                 # Unique key for this notification instance: event_name + slot + date
                                 notif_key = f"{event_name}_{slot_idx}"
                                 last_sent = sent_notifs.get(notif_key)
