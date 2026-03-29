@@ -74,6 +74,10 @@ class BreakingArmy(commands.Cog):
     def cog_unload(self):
         self.schedule_checker.cancel()
 
+    @schedule_checker.before_loop
+    async def before_schedule_checker(self):
+        await self.bot.wait_until_red_ready()
+
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         """Remove votes when a user leaves the server"""
@@ -127,17 +131,48 @@ class BreakingArmy(commands.Cog):
         return tally
 
     async def _update_poll_embed(self, guild: discord.Guild):
+        """Update the active poll embed if one exists."""
         poll = await self.config.guild(guild).active_poll()
-        if not poll["message_id"]: return
+        if not poll.get("message_id"):
+            log.debug(f"No active poll message tracked for guild {guild.id}")
+            return
+
+        channel_id = poll["channel_id"]
+        message_id = poll["message_id"]
+
         try:
-            channel = guild.get_channel(poll["channel_id"])
-            if not channel: return
-            msg = await channel.fetch_message(poll["message_id"])
+            channel = guild.get_channel(channel_id) or self.bot.get_channel(channel_id)
+            if not channel:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except discord.NotFound:
+                    log.warning(f"Poll channel {channel_id} not found in guild {guild.id}. Clearing tracked poll.")
+                    async with self.config.guild(guild).active_poll() as p:
+                        p["message_id"] = None
+                        p["channel_id"] = None
+                    return
+                except discord.Forbidden:
+                    log.error(f"Permission denied fetching poll channel {channel_id} in guild {guild.id}")
+                    return
+
+            try:
+                msg = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                log.warning(f"Poll message {message_id} not found in channel {channel_id}. Clearing tracked poll.")
+                async with self.config.guild(guild).active_poll() as p:
+                    p["message_id"] = None
+                    p["channel_id"] = None
+                return
+            except discord.Forbidden:
+                log.error(f"Permission denied fetching poll message {message_id} in channel {channel_id}")
+                return
+
             embed = await self._generate_poll_embed(guild)
             view = BossPollView(self)
             await msg.edit(embed=embed, view=view)
+            log.debug(f"Successfully updated poll embed for guild {guild.id}")
         except Exception as e:
-            log.error(f"Error updating poll embed: {e}")
+            log.error(f"Unexpected error updating poll embed for guild {guild.id}: {e}", exc_info=True)
 
     async def _generate_poll_embed(self, guild: discord.Guild) -> discord.Embed:
         poll_data = await self.config.guild(guild).active_poll()
@@ -183,13 +218,41 @@ class BreakingArmy(commands.Cog):
         return embed
 
     async def _refresh_live_season_view(self, guild: discord.Guild):
+        """Update the persistent live season status message if one exists."""
         season = await self.config.guild(guild).season_data()
         live = season.get("live_season_message", {})
-        if not live.get("message_id"): return
+        if not live.get("message_id"):
+            log.debug(f"No live season message tracked for guild {guild.id}")
+            return
+
+        channel_id = live["channel_id"]
+        message_id = live["message_id"]
+
         try:
-            channel = guild.get_channel(live["channel_id"])
-            if not channel: return
-            msg = await channel.fetch_message(live["message_id"])
+            channel = guild.get_channel(channel_id) or self.bot.get_channel(channel_id)
+            if not channel:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except discord.NotFound:
+                    log.warning(f"Live season channel {channel_id} not found in guild {guild.id}. Clearing tracked message.")
+                    async with self.config.guild(guild).season_data() as s:
+                        s["live_season_message"] = {}
+                    return
+                except discord.Forbidden:
+                    log.error(f"Permission denied fetching live season channel {channel_id} in guild {guild.id}")
+                    return
+
+            try:
+                msg = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                log.warning(f"Live season message {message_id} not found in channel {channel_id}. Clearing tracked message.")
+                async with self.config.guild(guild).season_data() as s:
+                    s["live_season_message"] = {}
+                return
+            except discord.Forbidden:
+                log.error(f"Permission denied fetching live season message {message_id} in channel {channel_id}")
+                return
+
             embeds = await self._generate_season_status_embeds(guild)
             
             poll_data = await self.config.guild(guild).active_poll()
@@ -199,7 +262,9 @@ class BreakingArmy(commands.Cog):
                 view = SeasonLiveView(url)
                 
             await msg.edit(embeds=embeds, view=view)
-        except: pass
+            log.debug(f"Successfully refreshed live season view for guild {guild.id}")
+        except Exception as e:
+            log.error(f"Unexpected error refreshing live season view for guild {guild.id}: {e}", exc_info=True)
 
     async def _generate_season_status_embeds(self, guild: discord.Guild) -> List[discord.Embed]:
         season = await self.config.guild(guild).season_data()
@@ -266,8 +331,9 @@ class BreakingArmy(commands.Cog):
                 day_name = now.strftime("%A")
                 time_str = now.strftime("%H:%M")
                 
-                # Night logic: Times 00:00 - 16:59 are considered part of the "night" of the previous day
-                is_next_day = now.hour < 17
+                # Night logic: Times 00:00 - 02:59 are considered part of the "night" of the previous day
+                # We use 03:00 as the cutoff to match EventPolling's next-day threshold
+                is_next_day = now.hour < 3
                 prev_day_name = (now - timedelta(days=1)).strftime("%A")
 
                 # 1. Auto-Death (2 hours)
@@ -330,7 +396,9 @@ class BreakingArmy(commands.Cog):
                     win_time = slot[0][1]
                     h = int(win_time.split(":")[0])
                     
-                    slot_is_next_day = h < 17
+                    # Stored win_time is UTC+1. In Summer (CEST), 17:00 Local is stored as 16:00 UTC+1.
+                    # We only treat 00:00-02:59 as the next calendar day's night.
+                    slot_is_next_day = h < 3
                     if slot_is_next_day:
                         if win_day == prev_day_name and time_str == win_time:
                             trigger = True; break
@@ -572,11 +640,34 @@ class BreakingArmy(commands.Cog):
     async def ba_refresh(self, ctx: commands.Context):
         """Force update all active embeds (Poll and Season Live View)."""
         if not await self.is_ba_admin(ctx.author):
-            return await ctx.send("Permission denied.")
+            return await ctx.send("❌ **Permission Denied.**")
 
-        await self._update_poll_embed(ctx.guild)
-        await self._refresh_live_season_view(ctx.guild)
-        await ctx.send("✅ **Refreshed:** Active embeds have been updated.")
+        poll_updated = False
+        live_updated = False
+
+        # 1. Update Poll Embed
+        poll = await self.config.guild(ctx.guild).active_poll()
+        if poll.get("message_id"):
+            try:
+                await self._update_poll_embed(ctx.guild)
+                poll_updated = True
+            except:
+                pass
+
+        # 2. Update Live Season View
+        season = await self.config.guild(ctx.guild).season_data()
+        if season.get("live_season_message", {}).get("message_id"):
+            try:
+                await self._refresh_live_season_view(ctx.guild)
+                live_updated = True
+            except:
+                pass
+
+        status_msg = "✅ **Refresh Results:**\n"
+        status_msg += f"- Poll Embed: {'Updated' if poll_updated else 'Not found/failed'}\n"
+        status_msg += f"- Live Season View: {'Updated' if live_updated else 'Not found/failed'}"
+        
+        await ctx.send(status_msg)
 
     @ba.command(name="clearall")
     async def ba_clear_all(self, ctx: commands.Context):
