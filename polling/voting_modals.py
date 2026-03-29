@@ -492,6 +492,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
 
         # Get event info
         event_info = events[event_name]
+        timezone_display = cog.timezone_display
 
         # Generate time options
         start_hour, end_hour = event_info["time_range"]
@@ -682,6 +683,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
 
         # Get event info
         event_info = events[event_name]
+        timezone_display = cog.timezone_display
 
         # Generate time options
         start_hour, end_hour = event_info["time_range"]
@@ -867,6 +869,8 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
         self.user_id = user_id
         self.user_selections = user_selections
         self.events = events
+
+        timezone_display = cog.timezone_display
 
         # Dynamically resolve Label class to handle load order issues
         Label_cls = Label or getattr(discord.ui, "Label", None)

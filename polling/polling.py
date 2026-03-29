@@ -597,21 +597,22 @@ class EventPolling(commands.Cog):
                             
                         # Parse time
                         try:
-                            h, m = map(int, win_time_str.split(":"))
-                            
-                            # Determine actual day/time of event
-                            is_next_day = h < 17 # Times 00:00 - 16:59 are considered part of the "night" of the previous day
-                            
-                            should_fire = False
-                            
-                            if is_next_day:
-                                # For post-midnight events, "Monday 01:00" means Monday night (Tuesday morning).
-                                # So if today is Tuesday and h:m is 01:00, we check if win_day was Monday.
-                                check_day = prev_day_name
-                            else:
-                                # Same day event (17:00 - 23:59)
-                                check_day = day_name
+                        h, m = map(int, win_time_str.split(":"))
 
+                        # Determine actual day/time of event
+                        # Times 00:00 - 02:59 are considered part of the "night" of the previous day
+                        # We use 03:00 as the cutoff to match EventPolling's next-day threshold
+                        is_next_day = h < 3 
+
+                        should_fire = False
+
+                        if is_next_day:
+                            # For post-midnight events, "Monday 01:00" means Monday night (Tuesday morning).
+                            # So if today is Tuesday and h:m is 01:00, we check if win_day was Monday.
+                            check_day = prev_day_name
+                        else:
+                            # Same day event (03:00 - 23:59)
+                            check_day = day_name
                             # Validate against winning day
                             if event_info["type"] == "daily":
                                 if now.hour == h and now.minute == m:
@@ -3563,12 +3564,12 @@ class EventPolling(commands.Cog):
 
     def _create_calendar_table(self, winning_times: Dict) -> str:
         """Create a visual Unicode calendar table showing the weekly schedule"""
-        # Build a data structure: {time: {day: [(priority, emoji)]}}
+        # Build a data structure: {server_time: {day: [(priority, emoji)]}}
         schedule = {}
         times = self.generate_time_options(17, 26, 30)
 
-        for time_slot in times:
-            schedule[time_slot] = {day: [] for day in self.days_of_week}
+        for label, value in times:
+            schedule[value] = {day: [] for day in self.days_of_week}
 
         # Populate schedule with winning events (with priority)
         for event_name, event_info in self.events.items():
@@ -3580,6 +3581,7 @@ class EventPolling(commands.Cog):
                 winners, votes = slot_winners
 
                 for winner_day, winner_time in winners:
+                    if winner_time not in schedule: continue
                     if event_info["type"] == "daily":
                         # Daily events appear on all days
                         for day in self.days_of_week:
@@ -3616,16 +3618,16 @@ class EventPolling(commands.Cog):
             end_time = datetime.strptime(blocked_end, "%H:%M")
 
             # Add Guild Wars emoji to all time slots in the blocked range
-            for time_slot in times:
+            for label, value in times:
                 # Handle 24:00 special case (treat as 00:00 next day)
-                if time_slot == "24:00":
+                if value == "24:00":
                     slot_time = datetime.strptime("00:00", "%H:%M")
                 else:
-                    slot_time = datetime.strptime(time_slot, "%H:%M")
+                    slot_time = datetime.strptime(value, "%H:%M")
 
                 # Check if this time slot is within the blocked range (inclusive start, exclusive end)
                 if start_time <= slot_time < end_time:
-                    schedule[time_slot][blocked_day].append((0, self.guild_wars_emoji))
+                    schedule[value][blocked_day].append((0, self.guild_wars_emoji))
 
         # Build the table using code block for monospace formatting
         lines = []
@@ -3639,9 +3641,9 @@ class EventPolling(commands.Cog):
         lines.append("─" * len(header))
 
         # Data rows - show all time slots
-        for time_slot in times:
-            row_data = schedule[time_slot]
-            row = f"{time_slot} │"
+        for label, value in times:
+            row_data = schedule[value]
+            row = f"{label} │"
             for day in self.days_of_week:
                 events = row_data[day]
                 if events:
@@ -3685,8 +3687,9 @@ class EventPolling(commands.Cog):
 
         winning_times = {}
 
-        # Generate all possible times
-        all_times = self.generate_time_options(17, 26, 30)
+        # Generate all possible times (Server Time / UTC+1 values)
+        all_times_tuples = self.generate_time_options(17, 26, 30)
+        all_times = [t[1] for t in all_times_tuples]
 
         for event_name, event_info in self.events.items():
             num_slots = event_info.get("slots", 1)
