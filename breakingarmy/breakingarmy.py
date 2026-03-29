@@ -74,10 +74,6 @@ class BreakingArmy(commands.Cog):
     def cog_unload(self):
         self.schedule_checker.cancel()
 
-    @schedule_checker.before_loop
-    async def before_schedule_checker(self):
-        await self.bot.wait_until_red_ready()
-
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         """Remove votes when a user leaves the server"""
@@ -415,6 +411,10 @@ class BreakingArmy(commands.Cog):
                         trigger_day = prev_day_name if slot_is_next_day else day_name
                         await self._auto_start_run(guild, day_name=trigger_day)
         except Exception as e: log.error(f"Checker error: {e}")
+
+    @schedule_checker.before_loop
+    async def before_schedule_checker(self):
+        await self.bot.wait_until_red_ready()
 
     async def _setup_new_season_logic(self, guild: discord.Guild) -> Optional[discord.Embed]:
         poll_data = await self.config.guild(guild).active_poll()
