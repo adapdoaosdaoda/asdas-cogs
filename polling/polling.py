@@ -48,7 +48,8 @@ class EventPolling(commands.Cog):
             website_export_path=None,
             export_guild_id=None,
             last_weekly_results_update=None,
-            last_weekly_calendar_update=None
+            last_weekly_calendar_update=None,
+            is_dst=False  # Track current DST status for Europe/Berlin
         )
 
         # Event definitions (ordered: Party, Guild War, Hero's Realm, Sword Trial, Breaking Army, Showdown)
@@ -206,6 +207,7 @@ class EventPolling(commands.Cog):
         self.weekly_calendar_update.start()
         self.event_notification_task.start()
         self.website_export_task.start()
+        self.dst_check_task.start()
 
     async def initialize(self):
         """Wait for bot to be ready and restore persistent views"""
@@ -258,6 +260,7 @@ class EventPolling(commands.Cog):
         self.weekly_calendar_update.cancel()
         self.event_notification_task.cancel()
         self.website_export_task.cancel()
+        self.dst_check_task.cancel()
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
@@ -675,7 +678,92 @@ class EventPolling(commands.Cog):
     async def before_event_notification_task(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=30)
+    async def dst_check_task(self):
+        """Periodically check if Europe/Berlin DST state has changed"""
+        try:
+            # Check current DST status of Europe/Berlin
+            berlin_tz = pytz.timezone('Europe/Berlin')
+            now_berlin = datetime.now(berlin_tz)
+            is_currently_dst = bool(now_berlin.dst())
+
+            # Get last known DST status
+            last_dst_status = await self.config.is_dst()
+
+            if is_currently_dst != last_dst_status:
+                log.info(f"DST Change Detected (Europe/Berlin): {last_dst_status} -> {is_currently_dst}")
+                # Transition detected! Adjust all existing votes
+                await self._handle_dst_transition(to_dst=is_currently_dst)
+                # Update status in config
+                await self.config.is_dst.set(is_currently_dst)
+        except Exception as e:
+            log.error(f"Error in dst_check_task: {e}", exc_info=True)
+
+    @dst_check_task.before_loop
+    async def before_dst_check_task(self):
+        await self.bot.wait_until_red_ready()
+
+    async def _handle_dst_transition(self, to_dst: bool):
+        """
+        Adjust all existing votes in all guilds due to DST change.
+        
+        When transitioning to DST (UTC+1 -> UTC+2):
+        - A vote that was "21:00" UTC+1 was 21:00 Local (Berlin).
+        - After shift, "21:00" UTC+1 is 22:00 Local.
+        - To keep it 21:00 Local, we must change it to "20:00" UTC+1 in the DB.
+        - So: to_dst=True -> subtract 1 hour.
+        - to_dst=False -> add 1 hour.
+        """
+        hour_delta = -1 if to_dst else 1
+        log.info(f"Adjusting all votes by {hour_delta} hour(s) due to DST transition.")
+
+        all_guilds_data = await self.config.all_guilds()
+        for guild_id_str, guild_data in all_guilds_data.items():
+            guild_id = int(guild_id_str)
+            polls = guild_data.get("polls", {})
+            if not polls:
+                continue
+
+            async with self.config.guild_from_id(guild_id).polls() as guild_polls:
+                for poll_id, poll_data in guild_polls.items():
+                    selections = poll_data.get("selections", {})
+                    if not selections:
+                        continue
+
+                    for user_id_str, user_selections in selections.items():
+                        for event_name, event_data in user_selections.items():
+                            # Adjust time in selections
+                            if isinstance(event_data, list):
+                                # Multi-slot event
+                                for slot in event_data:
+                                    if slot and "time" in slot:
+                                        slot["time"] = self._adjust_time_string(slot["time"], hour_delta)
+                            elif isinstance(event_data, dict):
+                                # Single-slot event
+                                if "time" in event_data:
+                                    event_data["time"] = self._adjust_time_string(event_data["time"], hour_delta)
+
+                    # Also adjust the weekly snapshot if it exists
+                    if "weekly_snapshot_winning_times" in poll_data:
+                        # weekly_snapshot_winning_times: {event_name: {slot_index: (winner_key, points, all_entries)}}
+                        # winner_key: (day, time)
+                        snapshot = poll_data["weekly_snapshot_winning_times"]
+                        for event_name, slots in snapshot.items():
+                            for slot_idx, slot_val in slots.items():
+                                if slot_val and len(slot_val) > 0:
+                                    winner_key = list(slot_val[0])
+                                    winner_key[1] = self._adjust_time_string(winner_key[1], hour_delta)
+                                    slot_val[0] = tuple(winner_key)
+
+    def _adjust_time_string(self, time_str: str, hour_delta: int) -> str:
+        """Adjust a HH:MM time string by a number of hours, wrapping around 24h"""
+        try:
+            h, m = map(int, time_str.split(':'))
+            h = (h + hour_delta) % 24
+            return f"{h:02d}:{m:02d}"
+        except:
+            return time_str
+
     async def website_export_task(self):
         """Periodically export schedule to JSON for website"""
         try:
@@ -4146,19 +4234,30 @@ class EventPolling(commands.Cog):
         Returns:
             List of time strings in HH:MM format (handles times past midnight as 00:00, 00:30, etc.)
         """
+        # Adjust hours for DST if needed to keep the display window consistent in Berlin time
+        # When DST is active (UTC+2), the 17:00-02:00 Berlin window is 16:00-01:00 UTC+1 (Server)
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        is_dst = bool(datetime.now(berlin_tz).dst())
+        
+        effective_start = start_hour - 1 if is_dst else start_hour
+        effective_end = end_hour - 1 if is_dst else end_hour
+        
         times = []
         
         # Handle float start_hour (e.g., 20.5 for 20:30)
-        current_hour = int(start_hour)
-        current_minute = int((start_hour - current_hour) * 60)
+        current_hour = int(effective_start)
+        current_minute = int((effective_start - current_hour) * 60)
 
-        while current_hour < end_hour or (current_hour == end_hour and current_minute == 0):
+        while current_hour < effective_end or (current_hour == effective_end and current_minute == 0):
             # Convert hours >= 24 to next-day format (24 -> 00, 25 -> 01, etc.)
             display_hour = current_hour if current_hour < 24 else current_hour - 24
+            # Handle negative hours from DST adjustment (rare but possible if start_hour is small)
+            if display_hour < 0:
+                display_hour += 24
             time_str = f"{display_hour:02d}:{current_minute:02d}"
 
             # If we've reached the end hour exactly, stop unless it's the very first entry
-            if current_hour == end_hour and current_minute > 0:
+            if current_hour == effective_end and current_minute > 0:
                 break
             
             # If duration is specified, check if event would complete before end_hour
@@ -4171,7 +4270,7 @@ class EventPolling(commands.Cog):
                     end_hour_calc += 1
 
                 # Only include time if event ends at or before end_hour
-                if end_hour_calc < end_hour or (end_hour_calc == end_hour and end_minute == 0):
+                if end_hour_calc < effective_end or (end_hour_calc == effective_end and end_minute == 0):
                     # Check if this time is blocked for the specific event
                     if event_name and not self._is_time_blocked_for_event(time_str, duration, event_name):
                         times.append(time_str)
