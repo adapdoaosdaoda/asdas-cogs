@@ -1616,6 +1616,10 @@ class TradeCommission(commands.Cog):
         **Examples:**
         - `[p]tc info` - Show config with truncated messages
         - `[p]tc info true` - Show config with full messages
+        
+        **Note:** For a cleaner view of just Sunday or Wednesday settings, use:
+        - `[p]tc sunday info`
+        - `[p]tc wednesday info`
         """
         guild_config = await self.config.guild(ctx.guild).all()
         global_config = await self.config.all()
@@ -1917,6 +1921,30 @@ class TradeCommission(commands.Cog):
         )
         await ctx.send(f"✅ Test Sunday notification sent to {channel.mention}")
 
+    @tc_sunday.command(name="info")
+    async def sunday_info(self, ctx: commands.Context):
+        """Show full Sunday notification configuration."""
+        guild_config = await self.config.guild(ctx.guild).all()
+        
+        sunday_role = ctx.guild.get_role(guild_config["sunday_ping_role_id"]) if guild_config["sunday_ping_role_id"] else None
+        sunday_role_text = sunday_role.mention if sunday_role else "None"
+
+        embed = discord.Embed(
+            title="📅 Sunday Pre-Shop Restock Configuration",
+            color=discord.Color.blue(),
+        )
+        
+        sunday_text = (
+            f"**Enabled:** {'✅ Yes' if guild_config['sunday_enabled'] else '❌ No'}\n"
+            f"**Notification Time:** {guild_config['sunday_hour']:02d}:{guild_config['sunday_minute']:02d}\n"
+            f"**Event Time:** {guild_config['sunday_event_hour']:02d}:00 {guild_config['timezone']}\n"
+            f"**Ping Role:** {sunday_role_text}"
+        )
+        embed.add_field(name="Settings", value=sunday_text, inline=False)
+        embed.add_field(name="Full Message", value=guild_config['sunday_message'], inline=False)
+        
+        await ctx.send(embed=embed)
+
     @tradecommission.group(name="wednesday")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
@@ -2052,6 +2080,30 @@ class TradeCommission(commands.Cog):
             event_timestamp
         )
         await ctx.send(f"✅ Test Wednesday notification sent to {channel.mention}")
+
+    @tc_wednesday.command(name="info")
+    async def wednesday_info(self, ctx: commands.Context):
+        """Show full Wednesday notification configuration."""
+        guild_config = await self.config.guild(ctx.guild).all()
+
+        wednesday_role = ctx.guild.get_role(guild_config["wednesday_ping_role_id"]) if guild_config["wednesday_ping_role_id"] else None
+        wednesday_role_text = wednesday_role.mention if wednesday_role else "None"
+
+        embed = discord.Embed(
+            title="📅 Wednesday Sell Recommendation Configuration",
+            color=discord.Color.blue(),
+        )
+
+        wednesday_text = (
+            f"**Enabled:** {'✅ Yes' if guild_config['wednesday_enabled'] else '❌ No'}\n"
+            f"**Notification Time:** {guild_config['wednesday_hour']:02d}:{guild_config['wednesday_minute']:02d}\n"
+            f"**Event Time:** {guild_config['wednesday_event_hour']:02d}:00 {guild_config['timezone']}\n"
+            f"**Ping Role:** {wednesday_role_text}"
+        )
+        embed.add_field(name="Settings", value=wednesday_text, inline=False)
+        embed.add_field(name="Full Message", value=guild_config['wednesday_message'], inline=False)
+
+        await ctx.send(embed=embed)
 
     async def update_commission_message(self, guild: discord.Guild):
         """Update the current Trade Commission message with active options."""
