@@ -293,7 +293,7 @@ class TradeCommission(commands.Cog):
             "schedule_day": 0,  # 0 = Monday, 6 = Sunday
             "schedule_hour": 9,  # Hour in 24h format
             "schedule_minute": 0,
-            "timezone": "UTC",
+            "timezone": "UTC+1",
             "enabled": False,
             "current_message_id": None,
             "current_channel_id": None,
@@ -791,7 +791,7 @@ class TradeCommission(commands.Cog):
         day: str,
         hour: int,
         minute: int = 0,
-        timezone: str = "UTC"
+        timezone: str = "UTC+1"
     ):
         """
         Schedule weekly Trade Commission messages.
@@ -801,10 +801,10 @@ class TradeCommission(commands.Cog):
         - `day`: Day of week (Monday, Tuesday, etc.)
         - `hour`: Hour in 24h format (0-23)
         - `minute`: Minute (0-59), default 0
-        - `timezone`: Timezone (e.g., UTC, America/New_York), default UTC
+        - `timezone`: Timezone (e.g., UTC+1, America/New_York), default UTC+1
 
         **Example:**
-        - `[p]tc schedule #trade-info Monday 9 0 America/New_York`
+        - `[p]tc schedule #trade-info Monday 9 0 Europe/Berlin`
         """
         # Validate day
         days = {
@@ -828,7 +828,7 @@ class TradeCommission(commands.Cog):
         try:
             tz = pytz.timezone(timezone)
         except pytz.exceptions.UnknownTimeZoneError:
-            await ctx.send(f"Invalid timezone! Use a valid timezone like UTC or America/New_York.")
+            await ctx.send(f"Invalid timezone! Use a valid timezone like UTC+1 or Europe/Berlin.")
             return
 
         # Save config
@@ -1674,7 +1674,7 @@ class TradeCommission(commands.Cog):
         sunday_text = (
             f"**Enabled:** {'✅ Yes' if guild_config['sunday_enabled'] else '❌ No'}\n"
             f"**Notification Time:** {guild_config['sunday_hour']:02d}:{guild_config['sunday_minute']:02d}\n"
-            f"**Event Time:** {guild_config['sunday_event_hour']:02d}:00 UTC\n"
+            f"**Event Time:** {guild_config['sunday_event_hour']:02d}:00 {guild_config['timezone']}\n"
             f"**Ping Role:** {sunday_role_text}\n"
             f"**Message:** {sunday_message_display}"
         )
@@ -1694,7 +1694,7 @@ class TradeCommission(commands.Cog):
         wednesday_text = (
             f"**Enabled:** {'✅ Yes' if guild_config['wednesday_enabled'] else '❌ No'}\n"
             f"**Notification Time:** {guild_config['wednesday_hour']:02d}:{guild_config['wednesday_minute']:02d}\n"
-            f"**Event Time:** {guild_config['wednesday_event_hour']:02d}:00 UTC\n"
+            f"**Event Time:** {guild_config['wednesday_event_hour']:02d}:00 {guild_config['timezone']}\n"
             f"**Ping Role:** {wednesday_role_text}\n"
             f"**Message:** {wednesday_message_display}"
         )
