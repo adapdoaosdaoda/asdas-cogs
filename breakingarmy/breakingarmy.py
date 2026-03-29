@@ -5,6 +5,7 @@ from discord.ext import tasks
 import asyncio
 import logging
 import pytz
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Union, Any
 
@@ -818,6 +819,57 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(ctx.guild).season_data() as s:
             s["live_season_message"] = {"message_id": msg.id, "channel_id": msg.channel.id}
 
+    @ba_season.command(name="overwrite")
+    async def season_overwrite(self, ctx: commands.Context, message_id: str):
+        """Overwrite an existing bot message with the Season Live View.
+        
+        This allows you to turn any existing bot message into the persistent season tracker.
+        
+        Example: [p]ba season overwrite 123456789
+        Or: [p]ba season overwrite https://discord.com/channels/...
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            return await ctx.send("❌ **Error:** Invalid message ID or link.")
+
+        # Try to find the message
+        target_message = None
+        # First try current channel
+        try:
+            target_message = await ctx.channel.fetch_message(parsed_id)
+        except:
+            # If not in current channel, try the tracked channel if it exists
+            season_data = await self.config.guild(ctx.guild).season_data()
+            live = season_data.get("live_season_message", {})
+            if live.get("channel_id"):
+                try:
+                    channel = ctx.guild.get_channel(live["channel_id"]) or await self.bot.fetch_channel(live["channel_id"])
+                    target_message = await channel.fetch_message(parsed_id)
+                except:
+                    pass
+
+        if not target_message:
+            return await ctx.send("❌ **Error:** Could not find the specified message. Make sure it's in this channel or a previously tracked channel.")
+
+        if target_message.author.id != self.bot.user.id:
+            return await ctx.send("❌ **Error:** I can only overwrite messages sent by me.")
+
+        # Generate content
+        embeds = await self._generate_season_status_embeds(ctx.guild)
+        poll_data = await self.config.guild(ctx.guild).active_poll()
+        view = None
+        if poll_data.get("message_id"):
+            url = f"https://discord.com/channels/{ctx.guild.id}/{poll_data['channel_id']}/{poll_data['message_id']}"
+            view = SeasonLiveView(url)
+
+        try:
+            await target_message.edit(embeds=embeds, view=view)
+            async with self.config.guild(ctx.guild).season_data() as s:
+                s["live_season_message"] = {"message_id": target_message.id, "channel_id": target_message.channel.id}
+            await ctx.send(f"✅ **Success:** Message {target_message.id} is now tracking the season.")
+        except Exception as e:
+            await ctx.send(f"❌ **Error:** Failed to edit message: {e}")
+
     @ba.group(name="run")
     async def ba_run(self, ctx: commands.Context):
         if not await self.is_ba_admin(ctx.author): raise commands.CheckFailure()
@@ -977,6 +1029,20 @@ class BreakingArmy(commands.Cog):
                 desc += f"{day_code}⏳ {e} {b}{suffix}\n"
         
         return discord.Embed(description=desc, color=discord.Color.green())
+
+    def _parse_message_id(self, message_input: Union[str, int]) -> Optional[int]:
+        """Parse message ID from either an integer or a Discord message link"""
+        if isinstance(message_input, int):
+            return message_input
+        if isinstance(message_input, str):
+            try:
+                return int(message_input)
+            except ValueError:
+                pass
+            match = re.search(r'discord\.com/channels/\d+/\d+/(\d+)', message_input)
+            if match:
+                return int(match.group(1))
+        return None
 
 class SeasonLiveView(discord.ui.View):
     def __init__(self, url: str):
