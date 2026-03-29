@@ -183,7 +183,7 @@ class EventPolling(commands.Cog):
 
         # Timezone display - customize this to match your server's timezone
         # Examples: "UTC", "UTC+1", "UTC-5", "EST", "PST", "Server Time"
-        self.timezone_display = "Server Time (UTC+1)"
+        self._update_timezone_display()
 
         # Initialize calendar renderer
         self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
@@ -194,6 +194,7 @@ class EventPolling(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded"""
+        self._update_timezone_display()
         # Reload the calendar_renderer module to ensure we have the latest code
         importlib.reload(calendar_renderer)
         # Reinitialize the calendar renderer with the reloaded class
@@ -678,6 +679,19 @@ class EventPolling(commands.Cog):
     async def before_event_notification_task(self):
         await self.bot.wait_until_ready()
 
+    def _update_timezone_display(self):
+        """Update self.timezone_display based on current Europe/Berlin DST status"""
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        is_dst = bool(datetime.now(berlin_tz).dst())
+        if is_dst:
+            self.timezone_display = "Europe/Berlin (DST)"
+        else:
+            self.timezone_display = "Europe/Berlin"
+        
+        # Update calendar renderer if it exists
+        if hasattr(self, 'calendar_renderer'):
+            self.calendar_renderer.timezone = self.timezone_display
+
     @tasks.loop(minutes=30)
     async def dst_check_task(self):
         """Periodically check if Europe/Berlin DST state has changed"""
@@ -689,6 +703,9 @@ class EventPolling(commands.Cog):
 
             # Get last known DST status
             last_dst_status = await self.config.is_dst()
+
+            # Always update timezone display string to ensure it's correct
+            self._update_timezone_display()
 
             if is_currently_dst != last_dst_status:
                 log.info(f"DST Change Detected (Europe/Berlin): {last_dst_status} -> {is_currently_dst}")
