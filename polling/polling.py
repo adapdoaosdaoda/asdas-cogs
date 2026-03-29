@@ -182,7 +182,7 @@ class EventPolling(commands.Cog):
 
         # Timezone display - customize this to match your server's timezone
         # Examples: "UTC", "UTC+1", "UTC-5", "EST", "PST", "Server Time"
-        self.timezone_display = "Europe/Berlin"
+        self.timezone_display = "Server Time (UTC+1)"
 
         # Initialize calendar renderer
         self.calendar_renderer = calendar_renderer.CalendarRenderer(timezone=self.timezone_display)
@@ -362,8 +362,9 @@ class EventPolling(commands.Cog):
     async def weekly_results_update(self):
         """Update weekly results embeds every Sunday at 10 PM server time (UTC+1)"""
         try:
-            # Get current datetime in server timezone (Europe/Berlin)
-            server_tz = pytz.timezone('Europe/Berlin')
+            # Get current datetime in server timezone (UTC+1)
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
 
             # Check if it's Sunday (6 = Sunday) and between 22:00-22:59 PM
@@ -402,8 +403,9 @@ class EventPolling(commands.Cog):
     async def weekly_calendar_update(self):
         """Update weekly calendar embeds every Sunday at 10 PM server time (UTC+1)"""
         try:
-            # Get current datetime in server timezone (Europe/Berlin)
-            server_tz = pytz.timezone('Europe/Berlin')
+            # Get current datetime in server timezone (UTC+1)
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
 
             # Check if it's Sunday (6 = Sunday) and between 22:00-22:59 PM
@@ -509,8 +511,9 @@ class EventPolling(commands.Cog):
     async def event_notification_task(self):
         """Check for upcoming events and send notifications"""
         try:
-            # Use Europe/Berlin as server time, consistent with other tasks
-            server_tz = pytz.timezone('Europe/Berlin')
+            # Use UTC+1 (CET) as server time, consistent with other tasks
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
             today_str = now.strftime("%Y-%m-%d")
             day_name = now.strftime("%A")
@@ -2276,7 +2279,8 @@ class EventPolling(commands.Cog):
 
         # 3. Variable Replacement
         # Timestamp (Current Time)
-        server_tz = pytz.timezone('Europe/Berlin')
+        from datetime import timezone
+        server_tz = timezone(timedelta(hours=1))
         now = datetime.now(server_tz)
         ts = int(now.timestamp())
         discord_ts = f"<t:{ts}:R>"
@@ -2706,7 +2710,7 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Live Calendar",
-            description="This calendar shows times in **Europe/Berlin** timezone.",
+            description="This calendar shows times in **Server Time (UTC+1)** timezone.",
             color=self._get_calendar_color(guild)
         )
 
@@ -2757,7 +2761,7 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Event Calendar",
-            description="This calendar shows times in **Europe/Berlin** timezone.",
+            description="This calendar shows times in **Server Time (UTC+1)** timezone.",
             color=self._get_calendar_color(guild)
         )
 

@@ -260,7 +260,8 @@ class BreakingArmy(commands.Cog):
                 guild = self.bot.get_guild(guild_id)
                 if not guild: continue
                 
-                server_tz = pytz.timezone('Europe/Berlin')
+                from datetime import timezone
+                server_tz = timezone(timedelta(hours=1))
                 now = datetime.now(server_tz)
                 day_name = now.strftime("%A")
                 time_str = now.strftime("%H:%M")

@@ -1526,9 +1526,13 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         # Create calendar renderer with user's timezone
         user_tz_renderer = CalendarRenderer(timezone=timezone_str)
 
-        # Convert calendar data from server timezone to user timezone
-        server_tz = pytz.timezone('Europe/Berlin')  # Server Time (UTC+1)
+        # Convert calendar data from server timezone (Fixed UTC+1) to user timezone
+        server_tz = pytz.FixedOffset(60)  # UTC+1
         user_tz = pytz.timezone(timezone_str)
+        
+        # Use current date to account for DST
+        # Note: server_tz is fixed UTC+1, but we still use current_date from user_tz or UTC to be safe
+        current_date = datetime.now(pytz.UTC).date()
 
         converted_calendar_data = {}
         for event_name, day_times in calendar_data.items():
@@ -1536,8 +1540,8 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
             for day, time_str in day_times.items():
                 # Parse time in server timezone
                 hour, minute = map(int, time_str.split(':'))
-                # Create a datetime object (use arbitrary date)
-                dt_server = server_tz.localize(datetime(2024, 1, 1, hour, minute))
+                # Create a datetime object for the current day
+                dt_server = server_tz.localize(datetime(current_date.year, current_date.month, current_date.day, hour, minute))
                 # Convert to user timezone
                 dt_user = dt_server.astimezone(user_tz)
                 # Format back to HH:MM
@@ -1559,11 +1563,11 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
             end_hour, end_minute = map(int, blocked['end'].split(':'))
 
             # Convert start time
-            dt_start_server = server_tz.localize(datetime(2024, 1, 1, start_hour, start_minute))
+            dt_start_server = server_tz.localize(datetime(current_date.year, current_date.month, current_date.day, start_hour, start_minute))
             dt_start_user = dt_start_server.astimezone(user_tz)
 
             # Convert end time
-            dt_end_server = server_tz.localize(datetime(2024, 1, 1, end_hour, end_minute))
+            dt_end_server = server_tz.localize(datetime(current_date.year, current_date.month, current_date.day, end_hour, end_minute))
             dt_end_user = dt_end_server.astimezone(user_tz)
 
             # Handle day changes
