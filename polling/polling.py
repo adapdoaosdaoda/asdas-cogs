@@ -2853,7 +2853,7 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Live Calendar",
-            description="This calendar shows times in **Server Time (UTC+1)** timezone.",
+            description=f"This calendar shows times in **{self.timezone_display}** timezone.",
             color=self._get_calendar_color(guild)
         )
 
@@ -2904,7 +2904,7 @@ class EventPolling(commands.Cog):
         # Create embed
         embed = discord.Embed(
             title="📅 Event Calendar",
-            description="This calendar shows times in **Server Time (UTC+1)** timezone.",
+            description=f"This calendar shows times in **{self.timezone_display}** timezone.",
             color=self._get_calendar_color(guild)
         )
 
