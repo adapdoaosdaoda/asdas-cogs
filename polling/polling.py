@@ -628,10 +628,8 @@ class EventPolling(commands.Cog):
                             else:
                                 if win_day == check_day and now.hour == h and now.minute == m:
                                     should_fire = True
-                        except (ValueError, AttributeError):
-                            continue
-
-                        if should_fire:
+                                    
+                            if should_fire:
                                 # Unique key for this notification instance: event_name + slot + date
                                 notif_key = f"{event_name}_{slot_idx}"
                                 last_sent = sent_notifs.get(notif_key)
@@ -656,14 +654,6 @@ class EventPolling(commands.Cog):
                                         event_display_name = f"<@&{role_id}>"
                                     else:
                                         event_display_name = f"**{event_name}**"
-
-                                    if "Slot" in event_name or (event_info["slots"] > 1 and "Slot" not in event_name):
-                                        # Simple cleanup if needed, but event_name usually includes Slot info if managed that way, 
-                                        # actually polling.py keys are "Breaking Army", not "Breaking Army Slot 1".
-                                        # Slots are indices.
-                                        if event_info["slots"] > 1:
-                                            # Add slot info if relevant
-                                            pass
 
                                     message = msg_tmpl.replace("{event}", event_display_name)\
                                                       .replace("{timestamp}", discord_ts)\
@@ -696,13 +686,14 @@ class EventPolling(commands.Cog):
                                         async with self.config.guild(guild).sent_notifications() as s:
                                             s[notif_key] = today_str
                                     except Exception as e:
-                                        print(f"Failed to send notification: {e}")
+                                        log.error(f"Failed to send notification: {e}")
 
-                        except ValueError:
+                        except Exception as e:
+                            log.debug(f"Error processing notification for {event_name}: {e}")
                             continue
 
         except Exception as e:
-            print(f"Error in event notification task: {e}")
+            log.error(f"Error in event notification task: {e}")
 
     @event_notification_task.before_loop
     async def before_event_notification_task(self):
