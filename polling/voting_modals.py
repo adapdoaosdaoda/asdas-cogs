@@ -79,12 +79,12 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up"):
 
             time_options = [
                 discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
+                    label=label,
+                    value=value,
                     emoji="🕐",
-                    default=(current_party_time == time_str if current_party_time else False)
+                    default=(current_party_time == value if current_party_time else False)
                 )
-                for time_str in times[:25]
+                for label, value in times[:25]
             ]
 
             party_select = StringSelect(min_values=0, 
@@ -98,7 +98,7 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up"):
                 self.add_item(Label_cls(
                     "🎉 Party",
                     party_select,
-                    description="times in server time (UTC+1)"
+                    description=f"times in {timezone_display}"
                 ))
             else:
                 self.add_item(party_select)
@@ -153,12 +153,12 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up"):
             # Time select
             time_options = [
                 discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
+                    label=label,
+                    value=value,
                     emoji="🕐",
-                    default=(time_str == current_time)
+                    default=(value == current_time)
                 )
-                for time_str in times[:25]
+                for label, value in times[:25]
             ]
 
             hero_time_select = StringSelect(min_values=0, 
@@ -172,7 +172,7 @@ class CombinedSimpleEventsModal(Modal, title="Party / Catch-Up"):
                 self.add_item(Label_cls(
                     "🛡️ Hero's Realm (Catch-up) Time",
                     hero_time_select,
-                    description="times in server time (UTC+1)"
+                    description=f"times in {timezone_display}"
                 ))
             else:
                 self.add_item(hero_time_select)
@@ -272,12 +272,12 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
             time_options = [
                 discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
+                    label=label,
+                    value=value,
                     emoji="🕐",
-                    default=(current_selections == time_str if current_selections else False)
+                    default=(current_selections == value if current_selections else False)
                 )
-                for time_str in times[:25]  # Discord limit of 25 options
+                for label, value in times[:25]  # Discord limit of 25 options
             ]
 
             self.time_select = StringSelect(min_values=0, 
@@ -289,7 +289,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 self.add_item(Label_cls(
                     f"🎉 {event_name}",
                     self.time_select,
-                    description=f"times in server time (UTC+1)"
+                    description=f"times in {timezone_display}"
                 ))
             else:
                 self.add_item(self.time_select)
@@ -340,12 +340,12 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
             # Time selection
             time_options = [
                 discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
+                    label=label,
+                    value=value,
                     emoji="🕐",
-                    default=(time_str == current_time)
+                    default=(value == current_time)
                 )
-                for time_str in times[:25]
+                for label, value in times[:25]
             ]
 
             self.time_select = StringSelect(min_values=0, 
@@ -357,7 +357,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                 self.add_item(Label_cls(
                     f"🛡️ {event_name} Time",
                     self.time_select,
-                    description="times in server time (UTC+1)"
+                    description=f"times in {timezone_display}"
                 ))
             else:
                 self.add_item(self.time_select)
@@ -382,12 +382,12 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
 
                 time_options = [
                     discord.SelectOption(
-                        label=time_str,
-                        value=time_str,
+                        label=label,
+                        value=value,
                         emoji="🕐",
-                        default=(time_str == current_time)
+                        default=(value == current_time)
                     )
-                    for time_str in times[:25]
+                    for label, value in times[:25]
                 ]
 
                 day_select = StringSelect(min_values=0, 
@@ -400,7 +400,7 @@ class SimpleEventVoteModal(Modal, title="Vote for Event Times"):
                     self.add_item(Label_cls(
                         f"⚔️ {event_name} {day} Time",
                         day_select,
-                        description="description: times in server time (UTC+1)"
+                        description=f"times in {timezone_display}"
                     ))
                 else:
                     self.add_item(day_select)
@@ -535,12 +535,12 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         # Slot 1 - Time
         time_options_1 = [
             discord.SelectOption(
-                label=format_time_range(time_str, duration),
-                value=time_str,
+                label=format_time_range(label, duration),
+                value=value,
                 emoji="🕐",
-                default=(current_slot1 and current_slot1.get("time") == time_str)
+                default=(current_slot1 and current_slot1.get("time") == value)
             )
-            for time_str in times[:25]
+            for label, value in times[:25]
         ]
 
         self.slot1_time_select = StringSelect(min_values=0, 
@@ -552,7 +552,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             self.add_item(Label_cls(
                 "⚡ Breaking Army Slot 1 Time",
                 self.slot1_time_select,
-                description="Times in Server Time (UTC+1)"
+                description=f"Times in {timezone_display}"
             ))
         else:
             self.add_item(self.slot1_time_select)
@@ -585,12 +585,12 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
         # Slot 2 - Time
         time_options_2 = [
             discord.SelectOption(
-                label=format_time_range(time_str, duration),
-                value=time_str,
+                label=format_time_range(label, duration),
+                value=value,
                 emoji="🕐",
-                default=(current_slot2 and current_slot2.get("time") == time_str)
+                default=(current_slot2 and current_slot2.get("time") == value)
             )
-            for time_str in times[:25]
+            for label, value in times[:25]
         ]
 
         self.slot2_time_select = StringSelect(min_values=0, 
@@ -602,7 +602,7 @@ class BreakingArmyVoteModal(Modal, title="Vote: Breaking Army"):
             self.add_item(Label_cls(
                 "⚡ Breaking Army Slot 2 Time",
                 self.slot2_time_select,
-                description="Times in Server Time (UTC+1)"
+                description=f"Times in {timezone_display}"
             ))
         else:
             self.add_item(self.slot2_time_select)
@@ -725,12 +725,12 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         # Slot 1 - Time
         time_options_1 = [
             discord.SelectOption(
-                label=format_time_range(time_str, duration),
-                value=time_str,
+                label=format_time_range(label, duration),
+                value=value,
                 emoji="🕐",
-                default=(current_slot1 and current_slot1.get("time") == time_str)
+                default=(current_slot1 and current_slot1.get("time") == value)
             )
-            for time_str in times[:25]
+            for label, value in times[:25]
         ]
 
         self.slot1_time_select = StringSelect(min_values=0, 
@@ -742,7 +742,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             self.add_item(Label_cls(
                 "🏆 Showdown Slot 1 Time",
                 self.slot1_time_select,
-                description="Times in Server Time (UTC+1)"
+                description=f"Times in {timezone_display}"
             ))
         else:
             self.add_item(self.slot1_time_select)
@@ -775,12 +775,12 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
         # Slot 2 - Time
         time_options_2 = [
             discord.SelectOption(
-                label=format_time_range(time_str, duration),
-                value=time_str,
+                label=format_time_range(label, duration),
+                value=value,
                 emoji="🕐",
-                default=(current_slot2 and current_slot2.get("time") == time_str)
+                default=(current_slot2 and current_slot2.get("time") == value)
             )
-            for time_str in times[:25]
+            for label, value in times[:25]
         ]
 
         self.slot2_time_select = StringSelect(min_values=0, 
@@ -792,7 +792,7 @@ class ShowdownVoteModal(Modal, title="Vote: Showdown"):
             self.add_item(Label_cls(
                 "🏆 Showdown Slot 2 Time",
                 self.slot2_time_select,
-                description="Times in Server Time (UTC+1)"
+                description=f"Times in {timezone_display}"
             ))
         else:
             self.add_item(self.slot2_time_select)
@@ -892,12 +892,12 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
 
             mon_options = [
                 discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
+                    label=label,
+                    value=value,
                     emoji="🕐",
-                    default=(time_str == current_mon)
+                    default=(value == current_mon)
                 )
-                for time_str in times[:25]
+                for label, value in times[:25]
             ]
 
             self.mon_select = StringSelect(min_values=0, 
@@ -910,7 +910,7 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 self.add_item(Label_cls(
                     "⚔️ Sword Trial Monday (Echo)",
                     self.mon_select,
-                    description="Times in Server Time (UTC+1)"
+                    description=f"Times in {timezone_display}"
                 ))
             else:
                 self.add_item(self.mon_select)
@@ -938,12 +938,12 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
             # Wednesday time
             wed_options = [
                 discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
+                    label=label,
+                    value=value,
                     emoji="🕐",
-                    default=(time_str == current_wed)
+                    default=(value == current_wed)
                 )
-                for time_str in times[:25]
+                for label, value in times[:25]
             ]
 
             self.wed_select = StringSelect(min_values=0, 
@@ -956,7 +956,7 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 self.add_item(Label_cls(
                     "⚔️ Sword Trial Wednesday",
                     self.wed_select,
-                    description="Times in Server Time (UTC+1)"
+                    description=f"Times in {timezone_display}"
                 ))
             else:
                 self.add_item(self.wed_select)
@@ -964,12 +964,12 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
             # Friday time
             fri_options = [
                 discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
+                    label=label,
+                    value=value,
                     emoji="🕐",
-                    default=(time_str == current_fri)
+                    default=(value == current_fri)
                 )
-                for time_str in times[:25]
+                for label, value in times[:25]
             ]
 
             self.fri_select = StringSelect(min_values=0, 
@@ -982,7 +982,7 @@ class SwordTrialVoteModal(Modal, title="Vote: Sword Trial"):
                 self.add_item(Label_cls(
                     "⚔️ Sword Trial Friday",
                     self.fri_select,
-                    description="Times in Server Time (UTC+1)"
+                    description=f"Times in {timezone_display}"
                 ))
             else:
                 self.add_item(self.fri_select)

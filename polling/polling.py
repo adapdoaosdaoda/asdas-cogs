@@ -4239,70 +4239,73 @@ class EventPolling(commands.Cog):
         # Two ranges overlap if: start1 < end2 AND start2 < end1
         return event_start_mins < blocked_end_mins and blocked_start_mins < event_end_mins
 
-    def generate_time_options(self, start_hour: int = 17, end_hour: int = 26, interval: int = 30, duration: int = 0, event_name: Optional[str] = None) -> List[str]:
-        """Generate time options in HH:MM format
+    def generate_time_options(self, start_hour: int = 17, end_hour: int = 26, interval: int = 30, duration: int = 0, event_name: Optional[str] = None) -> List[Tuple[str, str]]:
+        """Generate time options as (label, value) tuples in HH:MM format
+        
+        Labels are in local Berlin time (always start_hour to end_hour).
+        Values are in fixed UTC+1 server time (adjusted for DST).
 
         Args:
             start_hour: Starting hour (default 17)
             end_hour: Ending hour (default 26, which represents 02:00 next day)
             interval: Interval in minutes (default 30)
-            duration: Event duration in minutes (default 0). If > 0, filters out times that would extend past end_hour.
-            event_name: Event name (optional). If specified, filters out times blocked for this event.
+            duration: Event duration in minutes (default 0).
+            event_name: Event name (optional).
 
         Returns:
-            List of time strings in HH:MM format (handles times past midnight as 00:00, 00:30, etc.)
+            List of (label, value) tuples in HH:MM format.
         """
-        # Adjust hours for DST if needed to keep the display window consistent in Berlin time
-        # When DST is active (UTC+2), the 17:00-02:00 Berlin window is 16:00-01:00 UTC+1 (Server)
         berlin_tz = pytz.timezone('Europe/Berlin')
         is_dst = bool(datetime.now(berlin_tz).dst())
         
-        effective_start = start_hour - 1 if is_dst else start_hour
-        effective_end = end_hour - 1 if is_dst else end_hour
+        options = []
         
-        times = []
-        
-        # Handle float start_hour (e.g., 20.5 for 20:30)
-        current_hour = int(effective_start)
-        current_minute = int((effective_start - current_hour) * 60)
+        # We loop through the LOCAL hours the user expects to see
+        current_hour = int(start_hour)
+        current_minute = int((start_hour - current_hour) * 60)
 
-        while current_hour < effective_end or (current_hour == effective_end and current_minute == 0):
-            # Convert hours >= 24 to next-day format (24 -> 00, 25 -> 01, etc.)
+        while current_hour < end_hour or (current_hour == end_hour and current_minute == 0):
+            # 1. Generate the LOCAL label (always 17:00, 17:30, etc.)
             display_hour = current_hour if current_hour < 24 else current_hour - 24
-            # Handle negative hours from DST adjustment (rare but possible if start_hour is small)
-            if display_hour < 0:
-                display_hour += 24
-            time_str = f"{display_hour:02d}:{current_minute:02d}"
+            local_time_str = f"{display_hour:02d}:{current_minute:02d}"
+
+            # 2. Generate the SERVER value (UTC+1)
+            # If DST is active (UTC+2), server time is Local - 1 hour.
+            server_hour = current_hour - 1 if is_dst else current_hour
+            server_display_hour = server_hour if server_hour < 24 else server_hour - 24
+            if server_display_hour < 0:
+                server_display_hour += 24
+            server_time_str = f"{server_display_hour:02d}:{current_minute:02d}"
 
             # If we've reached the end hour exactly, stop unless it's the very first entry
-            if current_hour == effective_end and current_minute > 0:
+            if current_hour == end_hour and current_minute > 0:
                 break
             
-            # If duration is specified, check if event would complete before end_hour
+            # If duration is specified, check if event would complete before end_hour (locally)
             if duration > 0:
-                # Calculate end time
+                # Calculate end time locally
                 end_minute = current_minute + duration
                 end_hour_calc = current_hour
                 while end_minute >= 60:
                     end_minute -= 60
                     end_hour_calc += 1
 
-                # Only include time if event ends at or before end_hour
-                if end_hour_calc < effective_end or (end_hour_calc == effective_end and end_minute == 0):
-                    # Check if this time is blocked for the specific event
-                    if event_name and not self._is_time_blocked_for_event(time_str, duration, event_name):
-                        times.append(time_str)
+                # Only include time if event ends at or before end_hour locally
+                if end_hour_calc < end_hour or (end_hour_calc == end_hour and end_minute == 0):
+                    # Check if this time is blocked for the specific event (using server time for check)
+                    if event_name and not self._is_time_blocked_for_event(server_time_str, duration, event_name):
+                        options.append((local_time_str, server_time_str))
                     elif not event_name:
-                        times.append(time_str)
+                        options.append((local_time_str, server_time_str))
             else:
-                times.append(time_str)
+                options.append((local_time_str, server_time_str))
 
             current_minute += interval
             if current_minute >= 60:
                 current_minute = 0
                 current_hour += 1
 
-        return times
+        return options
 
     def _time_ranges_overlap(self, start1: dt_time, end1: dt_time, start2: dt_time, end2: dt_time) -> bool:
         """Check if two time ranges overlap"""
