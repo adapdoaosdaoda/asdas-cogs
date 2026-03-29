@@ -71,7 +71,7 @@ class EventPolling(commands.Cog):
             "Guild War": {
                 "type": "locked",
                 "days": ["Saturday", "Sunday"],
-                "fixed_time": "20:30",
+                "fixed_time": "20:30",  # UTC 19:30
                 "duration": 90,  # 1.5 hours (20:30-22:00)
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🏰",
@@ -95,7 +95,7 @@ class EventPolling(commands.Cog):
             "Hero's Realm (Reset)": {
                 "type": "locked",
                 "days": ["Sunday"],
-                "fixed_time": "22:00",
+                "fixed_time": "22:00",  # UTC 21:00
                 "duration": 30,  # 30 minutes
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🛡️",
