@@ -764,6 +764,7 @@ class EventPolling(commands.Cog):
         except:
             return time_str
 
+    @tasks.loop(minutes=5)
     async def website_export_task(self):
         """Periodically export schedule to JSON for website"""
         try:
@@ -773,7 +774,7 @@ class EventPolling(commands.Cog):
 
     @website_export_task.before_loop
     async def before_website_export_task(self):
-        await self.bot.wait_until_ready()
+        await self.bot.wait_until_red_ready()
 
     async def _export_to_json(self):
         """Export polling data and Discord events to a JSON file for the website"""
