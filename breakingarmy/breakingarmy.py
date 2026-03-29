@@ -4,6 +4,7 @@ from redbot.core.bot import Red
 from discord.ext import tasks
 import asyncio
 import logging
+import pytz
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Union, Any
 
@@ -259,7 +260,7 @@ class BreakingArmy(commands.Cog):
                 guild = self.bot.get_guild(guild_id)
                 if not guild: continue
                 
-                server_tz = timezone(timedelta(hours=1))
+                server_tz = pytz.timezone('Europe/Berlin')
                 now = datetime.now(server_tz)
                 day_name = now.strftime("%A")
                 time_str = now.strftime("%H:%M")
