@@ -521,6 +521,7 @@ class EventPolling(commands.Cog):
             now = datetime.now(server_tz)
             today_str = now.strftime("%Y-%m-%d")
             day_name = now.strftime("%A")
+            prev_day_name = (now - timedelta(days=1)).strftime("%A")
 
             all_guilds = await self.config.all_guilds()
 
@@ -556,15 +557,24 @@ class EventPolling(commands.Cog):
                 sent_notifs = guild_data.get("sent_notifications", {})
                 event_roles = guild_data.get("event_roles", {})
                 
+                # Merge voted winning times with locked events for notification checking
+                all_checks = winning_times.copy()
+                for event_name, event_info in self.events.items():
+                    if event_info.get("type") == "locked" and event_name not in all_checks:
+                        fixed_time = event_info.get("fixed_time")
+                        if fixed_time:
+                            # Mock the winner format for locked events: {slot_idx: ((day/Fixed, time), points, entries)}
+                            all_checks[event_name] = {0: (("Fixed", fixed_time), 0, [])}
+
                 # Events to check
-                target_events = ["Party", "Showdown", "Breaking Army"]
+                target_events = ["Party", "Showdown", "Breaking Army", "Sword Trial", "Hero's Realm", "Guild War"]
                 
-                for event_name in winning_times:
+                for event_name in all_checks:
                     # Check if this is a target event
                     if not any(event_name.startswith(t) for t in target_events):
                         continue
                         
-                    event_slots = winning_times[event_name]
+                    event_slots = all_checks[event_name]
                     event_info = self.events.get(event_name)
                     if not event_info:
                         continue
@@ -575,6 +585,9 @@ class EventPolling(commands.Cog):
                         # Determine winning day/time
                         if event_info["type"] == "daily":
                             win_day = day_name 
+                            win_time_str = winner_key[1]
+                        elif event_info["type"] == "locked":
+                            win_day = "Fixed" # Handled below
                             win_time_str = winner_key[1]
                         elif event_info["type"] in ["fixed_days", "once", "weekly"]:
                              win_day = winner_key[0]
@@ -592,14 +605,26 @@ class EventPolling(commands.Cog):
                             should_fire = False
                             
                             if is_next_day:
-                                # For post-midnight events, they are voted as occurring on the calendar day they start.
-                                # Example: Monday 01:00 is voted as "Monday", time "01:00".
-                                # This code runs at 01:00 on Monday. day_name is "Monday".
-                                if win_day == day_name and now.hour == h and now.minute == m:
-                                    should_fire = True
+                                # For post-midnight events, "Monday 01:00" means Monday night (Tuesday morning).
+                                # So if today is Tuesday and h:m is 01:00, we check if win_day was Monday.
+                                check_day = prev_day_name
                             else:
                                 # Same day event (17:00 - 23:59)
-                                if win_day == day_name and now.hour == h and now.minute == m:
+                                check_day = day_name
+
+                            # Validate against winning day
+                            if event_info["type"] == "daily":
+                                if now.hour == h and now.minute == m:
+                                    should_fire = True
+                            elif event_info["type"] == "locked":
+                                if check_day in event_info.get("days", []) and now.hour == h and now.minute == m:
+                                    should_fire = True
+                            elif event_info["type"] == "fixed_days" and win_day == "Fixed":
+                                # Fixed days with single slot (legacy or fixed_time)
+                                if check_day in event_info.get("days", []) and now.hour == h and now.minute == m:
+                                    should_fire = True
+                            else:
+                                if win_day == check_day and now.hour == h and now.minute == m:
                                     should_fire = True
                                     
                             if should_fire:
