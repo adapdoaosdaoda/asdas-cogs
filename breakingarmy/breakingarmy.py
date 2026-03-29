@@ -560,6 +560,14 @@ class BreakingArmy(commands.Cog):
         """Breaking Army Management"""
         pass
 
+    @ba.error
+    async def ba_error_handler(self, ctx, error):
+        if isinstance(error, commands.CheckFailure):
+            await ctx.send("❌ **Permission Denied:** You must be a server admin or have a designated BA Admin role to use this command.")
+        else:
+            # Re-raise other errors to be handled by the bot's global error handler
+            raise error
+
     @ba.command(name="refresh")
     async def ba_refresh(self, ctx: commands.Context):
         """Force update all active embeds (Poll and Season Live View)."""
@@ -659,16 +667,33 @@ class BreakingArmy(commands.Cog):
 
     @ba_season.command(name="setup")
     async def season_setup(self, ctx: commands.Context):
-        embed = await self._setup_new_season_logic(ctx.guild)
-        if embed: 
-            await ctx.send(embed=embed)
-            season = await self.config.guild(ctx.guild).season_data()
-            bosses = self._get_bosses_for_week(season, season["current_week"])
-            await self.config.guild(ctx.guild).active_run.set({
-                "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
-            })
-            await self._refresh_live_season_view(ctx.guild)
-        else: await ctx.send("Failed setup. Need 8 unique bosses with votes.")
+        """Initialize a new 6-week season based on current poll votes.
+        
+        Requires at least 8 unique bosses to have received votes in the current poll.
+        """
+        async with ctx.typing():
+            poll_data = await self.config.guild(ctx.guild).active_poll()
+            votes = poll_data.get("votes", {})
+            
+            if not votes:
+                return await ctx.send("❌ **Setup Failed:** No votes found in the current poll. Use `[p]ba poll start` and have members vote first.")
+            
+            tally = self._calculate_weighted_tally(votes)
+            if len(tally) < 8:
+                return await ctx.send(f"❌ **Setup Failed:** Only **{len(tally)}** unique bosses have votes. Need at least **8** to generate a 6-week season.")
+
+            embed = await self._setup_new_season_logic(ctx.guild)
+            if embed: 
+                await ctx.send(embed=embed)
+                season = await self.config.guild(ctx.guild).season_data()
+                bosses = self._get_bosses_for_week(season, season["current_week"])
+                await self.config.guild(ctx.guild).active_run.set({
+                    "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
+                })
+                await self._refresh_live_season_view(ctx.guild)
+                await ctx.send("✅ **Success:** Season 1 initialized and Week 1 schedule set.")
+            else: 
+                await ctx.send("❌ **Setup Failed:** An internal error occurred while generating the season matrix.")
 
     @ba_season.command(name="setweek")
     async def season_set_week(self, ctx: commands.Context, week: int):
