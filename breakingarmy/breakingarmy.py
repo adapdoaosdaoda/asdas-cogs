@@ -828,28 +828,58 @@ class BreakingArmy(commands.Cog):
         Example: [p]ba season overwrite 123456789
         Or: [p]ba season overwrite https://discord.com/channels/...
         """
-        parsed_id = self._parse_message_id(message_id)
-        if parsed_id is None:
+        parsed = self._parse_message_id(message_id)
+        if parsed is None:
             return await ctx.send("❌ **Error:** Invalid message ID or link.")
 
-        # Try to find the message
         target_message = None
-        # First try current channel
-        try:
-            target_message = await ctx.channel.fetch_message(parsed_id)
-        except:
-            # If not in current channel, try the tracked channel if it exists
+        channel_id = None
+        msg_id = None
+
+        if isinstance(parsed, tuple):
+            channel_id, msg_id = parsed
+        else:
+            msg_id = parsed
+
+        # Strategy 1: Use channel ID from link if available
+        if channel_id:
+            try:
+                channel = ctx.guild.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                target_message = await channel.fetch_message(msg_id)
+            except:
+                pass
+
+        # Strategy 2: Check current channel
+        if not target_message:
+            try:
+                target_message = await ctx.channel.fetch_message(msg_id)
+            except:
+                pass
+
+        # Strategy 3: Check tracked channel
+        if not target_message:
             season_data = await self.config.guild(ctx.guild).season_data()
             live = season_data.get("live_season_message", {})
             if live.get("channel_id"):
                 try:
                     channel = ctx.guild.get_channel(live["channel_id"]) or await self.bot.fetch_channel(live["channel_id"])
-                    target_message = await channel.fetch_message(parsed_id)
+                    target_message = await channel.fetch_message(msg_id)
                 except:
                     pass
 
+        # Strategy 4: Search all text channels (last resort)
         if not target_message:
-            return await ctx.send("❌ **Error:** Could not find the specified message. Make sure it's in this channel or a previously tracked channel.")
+            await ctx.send("🔍 Searching for message in other channels...")
+            for channel in ctx.guild.text_channels:
+                if channel.id == ctx.channel.id: continue # Already checked
+                try:
+                    target_message = await channel.fetch_message(msg_id)
+                    if target_message: break
+                except:
+                    continue
+
+        if not target_message:
+            return await ctx.send("❌ **Error:** Could not find the specified message. If using an ID, please run the command in the same channel as the message, or use a full Message Link.")
 
         if target_message.author.id != self.bot.user.id:
             return await ctx.send("❌ **Error:** I can only overwrite messages sent by me.")
@@ -866,7 +896,7 @@ class BreakingArmy(commands.Cog):
             await target_message.edit(embeds=embeds, view=view)
             async with self.config.guild(ctx.guild).season_data() as s:
                 s["live_season_message"] = {"message_id": target_message.id, "channel_id": target_message.channel.id}
-            await ctx.send(f"✅ **Success:** Message {target_message.id} is now tracking the season.")
+            await ctx.send(f"✅ **Success:** Message {target_message.id} in {target_message.channel.mention} is now tracking the season.")
         except Exception as e:
             await ctx.send(f"❌ **Error:** Failed to edit message: {e}")
 
@@ -1030,18 +1060,27 @@ class BreakingArmy(commands.Cog):
         
         return discord.Embed(description=desc, color=discord.Color.green())
 
-    def _parse_message_id(self, message_input: Union[str, int]) -> Optional[int]:
-        """Parse message ID from either an integer or a Discord message link"""
+    def _parse_message_id(self, message_input: Union[str, int]) -> Union[int, Tuple[int, int], None]:
+        """Parse message ID from either an integer or a Discord message link.
+        
+        Returns:
+            - int: Just the message ID if a raw integer was provided
+            - Tuple[int, int]: (channel_id, message_id) if a link was provided
+            - None: if parsing failed
+        """
         if isinstance(message_input, int):
             return message_input
         if isinstance(message_input, str):
+            # Try direct integer
             try:
                 return int(message_input)
             except ValueError:
                 pass
-            match = re.search(r'discord\.com/channels/\d+/\d+/(\d+)', message_input)
+            
+            # Try Discord link format: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}
+            match = re.search(r'discord\.com/channels/\d+/(\d+)/(\d+)', message_input)
             if match:
-                return int(match.group(1))
+                return int(match.group(1)), int(match.group(2))
         return None
 
 class SeasonLiveView(discord.ui.View):
