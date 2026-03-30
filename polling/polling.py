@@ -1479,13 +1479,9 @@ class EventPolling(commands.Cog):
                         calendar_data[event_name] = {}
                     calendar_data[event_name][winner_day] = display_time
 
-        # Include locked events (e.g., Hero's Realm Reset) so they are converted in timezone views
+        # Include locked events (e.g., Hero's Realm Reset, Guild War) so they are converted in timezone views
         for event_name, event_info in self.events.items():
             if event_info.get("type") == "locked":
-                # Guild War is handled separately via blocked_times in timezone views
-                if event_name == "Guild War":
-                    continue
-                
                 if event_name not in calendar_data:
                     calendar_data[event_name] = {}
                 

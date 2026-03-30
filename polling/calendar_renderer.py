@@ -969,7 +969,7 @@ class CalendarRenderer:
                     if event_name == "Guild War" and start_time == time_str:
                         num_slots = max(1, duration // 30)
                         overlay_height = num_slots * self.CELL_HEIGHT
-                        overlay_text = "2 Games / Locked" if priority == 0 else "2 Games"
+                        overlay_text = "2 Games / Locked"
                         # Use x, y from loop (cell origin)
                         overlays.append((x, y, overlay_height, overlay_text))
 

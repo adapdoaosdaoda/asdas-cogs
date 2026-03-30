@@ -1556,9 +1556,17 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
 
                 converted_calendar_data[event_name][new_day] = converted_time
 
-        # Also convert blocked times (Guild War) to user timezone
+        # Also convert blocked times to user timezone
+        # NOTE: Guild War is now handled via converted_calendar_data, so we only convert other blocked times here if any
         converted_blocked_times = []
         for blocked in self.cog.blocked_times:
+            # If the blocked entry is Guild War, skip it (already handled)
+            # Guild War doesn't have a name in the dict, but we know it's the 🏰 event
+            # Actually, current blocked_times are just for Sunday 20:30-22:00
+            # To be safe, we check if it matches the Sunday fixed time
+            if blocked['day'] == "Sunday" and blocked['start'] == "20:30":
+                continue
+
             # Parse start and end times
             start_hour, start_minute = map(int, blocked['start'].split(':'))
             end_hour, end_minute = map(int, blocked['end'].split(':'))
