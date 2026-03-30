@@ -555,14 +555,40 @@ class EventPolling(commands.Cog):
                 sent_notifs = guild_data.get("sent_notifications", {})
                 event_roles = guild_data.get("event_roles", {})
                 
-                # Merge voted winning times with locked events for notification checking
+                # Merge voted winning times with locked events and defaults for notification checking
                 all_checks = winning_times.copy()
                 for event_name, event_info in self.events.items():
-                    if event_info.get("type") == "locked" and event_name not in all_checks:
-                        fixed_time = event_info.get("fixed_time")
-                        if fixed_time:
-                            # Mock the winner format for locked events: {slot_idx: ((day/Fixed, time), points, entries)}
-                            all_checks[event_name] = {0: (("Fixed", fixed_time), 0, [])}
+                    # If event is missing or has no slots, try to populate from defaults/fixed
+                    if event_name not in all_checks or not all_checks[event_name]:
+                        all_checks[event_name] = {}
+                        
+                        # Handle locked events (fixed time)
+                        if event_info.get("type") == "locked":
+                            fixed_time = event_info.get("fixed_time")
+                            days = event_info.get("days", [])
+                            if fixed_time and days:
+                                all_checks[event_name][0] = (("Fixed", fixed_time), 0, [])
+                            continue
+                            
+                        # Handle other events with defaults
+                        defaults = event_info.get("default_times", {})
+                        if defaults:
+                            if event_info["type"] == "daily":
+                                if "default" in defaults:
+                                    all_checks[event_name][0] = (("Daily", defaults["default"]), 0, [])
+                            elif event_info["type"] == "fixed_days":
+                                for i, day in enumerate(event_info.get("days", [])):
+                                    if day in defaults:
+                                        all_checks[event_name][i] = ((day, defaults[day]), 0, [])
+                            else:
+                                # once/weekly/once
+                                sorted_defaults = sorted(
+                                    [(k, v) for k, v in defaults.items() if k != "default"],
+                                    key=lambda x: self.days_of_week.index(x[0]) if x[0] in self.days_of_week else 999
+                                )
+                                for i, (day, time) in enumerate(sorted_defaults):
+                                    if i < event_info.get("slots", 1):
+                                        all_checks[event_name][i] = ((day, time), 0, [])
 
                 # Events to check
                 target_events = ["Party", "Showdown", "Breaking Army", "Sword Trial", "Hero's Realm", "Guild War"]
@@ -674,6 +700,10 @@ class EventPolling(commands.Cog):
                                         delete_duration = 90 * 60 # 90 minutes
 
                                     try:
+                                        log.info(f"Sending reminder for {event_name} to channel {channel.id} in guild {guild.id}")
+                                        if delete_duration:
+                                            log.info(f"Reminder for {event_name} will be deleted in {delete_duration // 60} minutes")
+                                            
                                         await channel.send(
                                             message,
                                             delete_after=delete_duration,
@@ -3862,6 +3892,27 @@ class EventPolling(commands.Cog):
                             winner_key, winner_points = sorted_entries[slot_index]
                             winning_times[event_name][slot_index] = (winner_key, winner_points, sorted_entries[:3])
                             log.info(f"  Slot {slot_index}: {winner_key[0]} at {winner_key[1]} with {winner_points} points")
+                else:
+                    # No votes - use default times if available for multi-slot events
+                    defaults = event_info.get("default_times", {})
+                    if defaults:
+                        # Sort defaults by day of week
+                        def get_day_index(d):
+                            try:
+                                return self.days_of_week.index(d)
+                            except ValueError:
+                                return 999
+                        
+                        sorted_defaults = sorted(
+                            [(k, v) for k, v in defaults.items() if k != "default"],
+                            key=lambda x: get_day_index(x[0])
+                        )
+                        
+                        for slot_index in range(num_slots):
+                            if slot_index < len(sorted_defaults):
+                                day, time = sorted_defaults[slot_index]
+                                winning_times[event_name][slot_index] = ((day, time), 0, [])
+                                log.info(f"  Slot {slot_index}: Auto-populated default {day} at {time}")
 
             else:
                 # Original slot-by-slot logic for other event types
