@@ -1,5 +1,7 @@
 import asyncio
+from datetime import datetime
 import logging
+from zoneinfo import ZoneInfo
 
 import discord
 
@@ -646,7 +648,6 @@ class UtilsMixin:
         
         This allows matching roles using 24h, 12h (padded), and 12h (short) formats.
         """
-        from datetime import datetime
         event_local_time = event_start_time.astimezone(tz)
         
         # Standard components
@@ -732,7 +733,7 @@ class UtilsMixin:
         Returns:
             The role if found, otherwise None
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta, timezone
 
         def find_role():
             for name in expected_role_names:
