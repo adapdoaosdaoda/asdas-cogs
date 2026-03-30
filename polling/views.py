@@ -1521,7 +1521,8 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         from .calendar_renderer import CalendarRenderer
 
         # Convert winning times to calendar data format
-        calendar_data = self.cog._prepare_calendar_data(winning_times)
+        # IMPORTANT: Set convert_to_local=False because we manually convert to user_tz below
+        calendar_data = self.cog._prepare_calendar_data(winning_times, convert_to_local=False)
 
         # Create calendar renderer with user's timezone
         user_tz_renderer = CalendarRenderer(timezone=timezone_str)

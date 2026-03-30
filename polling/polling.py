@@ -1398,12 +1398,29 @@ class EventPolling(commands.Cog):
 
         return None
 
-    def _prepare_calendar_data(self, winning_times: Dict) -> Dict[str, Dict[str, str]]:
+    def _convert_to_local_time(self, server_time_str: str) -> str:
+        """Convert a server time (UTC+1) string to local Berlin time (CET/CEST)"""
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        is_dst = bool(datetime.now(berlin_tz).dst())
+        
+        if not is_dst:
+            return server_time_str
+            
+        try:
+            h, m = map(int, server_time_str.split(':'))
+            # Shift forward by 1 hour for DST
+            h = (h + 1) % 24
+            return f"{h:02d}:{m:02d}"
+        except:
+            return server_time_str
+
+    def _prepare_calendar_data(self, winning_times: Dict, convert_to_local: bool = True) -> Dict[str, Dict[str, str]]:
         """Convert winning_times format to calendar renderer format
 
         Args:
             winning_times: {event_name: {slot_index: (winner_key, points, all_entries)}}
                 where winner_key is (day, time) or ("Daily", time) or ("Fixed", time)
+            convert_to_local: Whether to convert server times (UTC+1) to local Berlin time (CET/CEST)
 
         Returns:
             {event_name: {day: time}} or {event_name_slot: {day: time}} for multi-slot weekly events
@@ -1424,6 +1441,9 @@ class EventPolling(commands.Cog):
 
                 winner_key, points, all_entries = slot_data
                 winner_day, winner_time = winner_key
+                
+                # Apply local conversion if requested
+                display_time = self._convert_to_local_time(winner_time) if convert_to_local else winner_time
 
                 # For multi-slot weekly events, create separate entries
                 if (event_info["type"] == "weekly" or event_info["type"] == "once") and event_info["slots"] > 1:
@@ -1432,13 +1452,13 @@ class EventPolling(commands.Cog):
                         calendar_data[event_name] = {}
                     
                     # Store winning day/time without slot suffixes
-                    calendar_data[event_name][winner_day] = winner_time
+                    calendar_data[event_name][winner_day] = display_time
                 elif event_info["type"] == "daily":
                     # Daily events appear on all days
                     if event_name not in calendar_data:
                         calendar_data[event_name] = {}
                     for day in self.days_of_week:
-                        calendar_data[event_name][day] = winner_time
+                        calendar_data[event_name][day] = display_time
                 elif event_info["type"] == "fixed_days":
                     # Fixed-day events
                     if event_name not in calendar_data:
@@ -1448,16 +1468,16 @@ class EventPolling(commands.Cog):
                         # slot_index corresponds to position in event_info["days"]
                         if slot_index < len(event_info["days"]):
                             actual_day = event_info["days"][slot_index]
-                            calendar_data[event_name][actual_day] = winner_time
+                            calendar_data[event_name][actual_day] = display_time
                     else:
                         # Single slot: appears on all configured days
                         for day in event_info["days"]:
-                            calendar_data[event_name][day] = winner_time
+                            calendar_data[event_name][day] = display_time
                 else:
                     # Single-slot weekly events
                     if event_name not in calendar_data:
                         calendar_data[event_name] = {}
-                    calendar_data[event_name][winner_day] = winner_time
+                    calendar_data[event_name][winner_day] = display_time
 
         # Include locked events (e.g., Hero's Realm Reset) so they are converted in timezone views
         for event_name, event_info in self.events.items():
@@ -1473,8 +1493,10 @@ class EventPolling(commands.Cog):
                 event_days = event_info.get("days", [])
                 
                 if fixed_time and event_days:
+                    # Apply local conversion if requested
+                    display_fixed_time = self._convert_to_local_time(fixed_time) if convert_to_local else fixed_time
                     for day in event_days:
-                        calendar_data[event_name][day] = fixed_time
+                        calendar_data[event_name][day] = display_fixed_time
 
         return calendar_data
 
@@ -3135,6 +3157,9 @@ class EventPolling(commands.Cog):
 
                     winner_key, winner_points, all_entries = event_slots[slot_index]
                     day, time = winner_key
+                    
+                    # Convert to local for display
+                    local_time = self._convert_to_local_time(time)
 
                     # Format header based on event type
                     if event_info["slots"] > 1:
@@ -3146,16 +3171,17 @@ class EventPolling(commands.Cog):
 
                     # Show winning time
                     if event_info["type"] == "daily":
-                        field_value += f"{time} ({winner_points} pts)\n"
+                        field_value += f"{local_time} ({winner_points} pts)\n"
                     elif event_info["type"] == "fixed_days":
                         if event_info["slots"] > 1:
-                            field_value += f"{day[:3]} {time} ({winner_points} pts)\n"
+                            field_value += f"{day[:3]} {local_time} ({winner_points} pts)\n"
                         else:
                             days_str = "/".join([d[:3] for d in event_info["days"]])
-                            field_value += f"{time} ({days_str}) ({winner_points} pts)\n"
+                            field_value += f"{local_time} ({days_str}) ({winner_points} pts)\n"
+                    elif event_info["type"] == "locked":
+                        field_value += f"{day[:3]} {local_time} (Fixed)\n"
                     else:
-                        field_value += f"{day[:3]} {time} ({winner_points} pts)\n"
-
+                        field_value += f"{day[:3]} {local_time} ({winner_points} pts)\n"
                 embed.add_field(
                     name=f"{emoji} {event_name}",
                     value=field_value.strip() or "No votes",
