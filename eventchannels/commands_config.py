@@ -83,12 +83,17 @@ class CommandsConfigMixin:
         - {day_abbrev} - Day abbreviation (Mon, Tue, etc.)
         - {day} - Day number (1-31)
         - {month_abbrev} - Month abbreviation (Jan, Feb, etc.)
-        - {time} - Time in HH:MM format
+        - {time} - Time in HH:MM format (default: 24h)
+        - {time_12} - Time in 12h format with leading zero (e.g., 07:00 PM)
+        - {time_12_short} - Time in 12h format without leading zero (e.g., 7:00 PM)
+        - {ampm} - AM/PM indicator
 
         Example: `{name} {day_abbrev} {day}. {month_abbrev} {time}`
+        
+        Note: The bot automatically tries multiple 12-hour variations if {time} is used.
         """
         # Validate the format string has valid placeholders
-        valid_placeholders = {'{name}', '{day_abbrev}', '{day}', '{month_abbrev}', '{time}'}
+        valid_placeholders = {'{name}', '{day_abbrev}', '{day}', '{month_abbrev}', '{time}', '{time_12}', '{time_12_short}', '{ampm}'}
 
         # Check if format contains at least one valid placeholder
         has_valid = any(placeholder in format_string for placeholder in valid_placeholders)

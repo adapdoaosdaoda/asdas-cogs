@@ -151,32 +151,24 @@ class CommandsTestMixin:
         role_format = await self.config.guild(guild).role_format()
         server_tz = ZoneInfo(tz_name)
 
-        # Build mapping of event -> expected role name -> actual role
+        # Build mapping of event -> expected role names -> actual role
         event_role_map = {}
         for event in scheduled_events:
-            event_local_time = event.start_time.astimezone(server_tz)
+            expected_role_names = self.get_expected_role_names(event.name, event.start_time, role_format, server_tz)
 
-            day_abbrev = event_local_time.strftime("%a")
-            day = event_local_time.strftime("%d").lstrip("0")
-            month_abbrev = event_local_time.strftime("%b")
-            time_str = event_local_time.strftime("%H:%M")
-
-            expected_role_name = role_format.format(
-                name=event.name,
-                day_abbrev=day_abbrev,
-                day=day,
-                month_abbrev=month_abbrev,
-                time=time_str
-            )
-
-            # Find the role with this name
-            event_role = discord.utils.get(guild.roles, name=expected_role_name)
-            event_role_map[event] = (expected_role_name, event_role)
+            # Find the role with any of these names
+            event_role = None
+            for name in expected_role_names:
+                event_role = discord.utils.get(guild.roles, name=name)
+                if event_role:
+                    break
+            
+            event_role_map[event] = (expected_role_names, event_role)
 
         if role:
             # Find which event(s) this role belongs to
             matching_events = []
-            for event, (expected_name, event_role) in event_role_map.items():
+            for event, (expected_names, event_role) in event_role_map.items():
                 if event_role and event_role.id == role.id:
                     matching_events.append(event)
 
@@ -225,11 +217,13 @@ class CommandsTestMixin:
             total_events = 0
             unreliable_counts = 0
 
-            for event, (expected_name, event_role) in event_role_map.items():
+            for event, (expected_names, event_role) in event_role_map.items():
                 if not event_role:
+                    # Show all names we tried to match
+                    names_tried = "\n".join(f"`{n}`" for n in expected_names)
                     embed.add_field(
                         name=f"⚠️ {event.name}",
-                        value=f"Expected role `{expected_name}` not found",
+                        value=f"Expected one of these roles, but none found:\n{names_tried}",
                         inline=False
                     )
                     total_events += 1
@@ -237,8 +231,12 @@ class CommandsTestMixin:
 
                 member_count, is_reliable = await self._get_role_member_count(guild, event_role, event.name)
 
-                status_emoji = "⚠️" if not is_reliable else "✅"
-                reliability_note = " (may be incomplete)" if not is_reliable else ""
+                status_emoji = "✅"
+                reliability_note = ""
+                
+                if not is_reliable:
+                    status_emoji = "⚠️"
+                    reliability_note = " (may be incomplete)"
 
                 embed.add_field(
                     name=f"{status_emoji} {event.name}",

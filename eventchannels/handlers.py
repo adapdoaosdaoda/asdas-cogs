@@ -56,66 +56,18 @@ class HandlersMixin:
             server_tz = ZoneInfo(tz_name)
             event_local_time = event.start_time.astimezone(server_tz)
 
-            # Build the expected role name using the configured format
+            # Build the expected role names using the configured format
             role_format = await self.config.guild(guild).role_format()
-
-            day_abbrev = event_local_time.strftime("%a")  # Sun, Mon, etc.
-            day = event_local_time.strftime("%d").lstrip("0")  # 28 (no leading zero)
-            month_abbrev = event_local_time.strftime("%b")  # Dec, Jan, etc.
-            time_str = event_local_time.strftime("%H:%M")  # 21:00
-
-            expected_role_name = role_format.format(
-                name=event.name,
-                day_abbrev=day_abbrev,
-                day=day,
-                month_abbrev=month_abbrev,
-                time=time_str
-            )
+            expected_role_names = self.get_expected_role_names(event.name, event.start_time, role_format, server_tz)
 
             # Check for role with exponential backoff
-            role = discord.utils.get(guild.roles, name=expected_role_name)
+            role = await self.wait_for_role(guild, expected_role_names, start_time)
+
             if not role:
-                # Try with exponential backoff: 5s, 10s, 20s, 40s... up to 60s total
-                delay = 5
-                total_waited = 0
-                while not role and total_waited < 60:
-                    await asyncio.sleep(delay)
-                    total_waited += delay
-                    role = discord.utils.get(guild.roles, name=expected_role_name)
-                    if not role:
-                        delay *= 2  # Double the delay each time
+                log.warning(f"No matching role found for event '{event.name}'. Expected names: {expected_role_names}")
+                return  # Still no matching role → no channels created
 
-                # If still no role and event is starting soon/now, wait up to 1 minute after start time
-                if not role:
-                    now = datetime.now(timezone.utc)
-                    time_until_start = (start_time - now).total_seconds()
-
-                    # If event starts within 15 seconds or already started (up to 1 min ago)
-                    if -60 <= time_until_start <= 15:
-                        log.info(f"Event '{event.name}' is starting imminently. Waiting up to 1 minute after start for role...")
-
-                        # Wait until 1 minute after event start using exponential backoff
-                        one_min_after_start = start_time + timedelta(minutes=1)
-                        deadline = one_min_after_start.timestamp()
-
-                        delay = 5
-                        total_waited = 0
-                        while not role and datetime.now(timezone.utc).timestamp() < deadline:
-                            remaining_time = deadline - datetime.now(timezone.utc).timestamp()
-                            sleep_time = min(delay, remaining_time)
-
-                            if sleep_time > 0:
-                                await asyncio.sleep(sleep_time)
-                                total_waited += sleep_time
-                                role = discord.utils.get(guild.roles, name=expected_role_name)
-                                if not role:
-                                    delay *= 2  # Double the delay each time
-
-                if not role:
-                    log.warning(f"No matching role found for event '{event.name}'. Expected role: '{expected_role_name}'")
-                    return  # Still no matching role → no channels created
-
-            log.info(f"Found matching role '{expected_role_name}' for event '{event.name}'")
+            log.info(f"Found matching role '{role.name}' for event '{event.name}'")
 
             # Check bot permissions
             bot_perms = guild.me.guild_permissions
@@ -540,29 +492,22 @@ class HandlersMixin:
             server_tz = ZoneInfo(tz_name)
             event_local_time = event.start_time.astimezone(server_tz)
 
-            # Build the expected role name using the configured format
+            # Build the expected role names using the configured format
             role_format = await self.config.guild(guild).role_format()
-
-            day_abbrev = event_local_time.strftime("%a")  # Sun, Mon, etc.
-            day = event_local_time.strftime("%d").lstrip("0")  # 28 (no leading zero)
-            month_abbrev = event_local_time.strftime("%b")  # Dec, Jan, etc.
-            time_str = event_local_time.strftime("%H:%M")  # 21:00
-
-            expected_role_name = role_format.format(
-                name=event.name,
-                day_abbrev=day_abbrev,
-                day=day,
-                month_abbrev=month_abbrev,
-                time=time_str
-            )
+            expected_role_names = self.get_expected_role_names(event.name, event.start_time, role_format, server_tz)
 
             # Check for role
-            role = discord.utils.get(guild.roles, name=expected_role_name)
+            role = None
+            for name in expected_role_names:
+                role = discord.utils.get(guild.roles, name=name)
+                if role:
+                    break
+
             if not role:
-                log.warning(f"Force create: No matching role found for event '{event.name}'. Expected role: '{expected_role_name}'")
+                log.warning(f"Force create: No matching role found for event '{event.name}'. Expected names: {expected_role_names}")
                 return
 
-            log.info(f"Force create: Found matching role '{expected_role_name}' for event '{event.name}' (requested by {requested_by})")
+            log.info(f"Force create: Found matching role '{role.name}' for event '{event.name}' (requested by {requested_by})")
 
             # Get channel format and prepare channel names
             channel_format = await self.config.guild(guild).channel_format()

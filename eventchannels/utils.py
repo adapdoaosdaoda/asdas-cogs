@@ -641,18 +641,91 @@ class UtilsMixin:
 
         return channel_name
 
+    def get_expected_role_names(self, event_name: str, event_start_time: datetime, role_format: str, tz: ZoneInfo) -> list[str]:
+        """Generate a list of possible expected role names based on various time formats.
+        
+        This allows matching roles using 24h, 12h (padded), and 12h (short) formats.
+        """
+        from datetime import datetime
+        event_local_time = event_start_time.astimezone(tz)
+        
+        # Standard components
+        day_abbrev = event_local_time.strftime("%a")
+        day = event_local_time.strftime("%d").lstrip("0")
+        month_abbrev = event_local_time.strftime("%b")
+        
+        # Time variations
+        time_24 = event_local_time.strftime("%H:%M")
+        time_12 = event_local_time.strftime("%I:%M %p")
+        time_12_short = event_local_time.strftime("%I:%M %p").lstrip("0")
+        time_12_no_min = event_local_time.strftime("%I %p")
+        time_12_no_min_short = event_local_time.strftime("%I %p").lstrip("0")
+        ampm = event_local_time.strftime("%p")
+        
+        # Base data for formatting
+        base_data = {
+            "name": event_name,
+            "day_abbrev": day_abbrev,
+            "day": day,
+            "month_abbrev": month_abbrev,
+            "time": time_24,  # Default {time} is 24h
+            "time_24": time_24,
+            "time_12": time_12,
+            "time_12_short": time_12_short,
+            "ampm": ampm,
+        }
+        
+        names = []
+        
+        # 1. Try with the primary format (uses whatever is in the config)
+        try:
+            names.append(role_format.format(**base_data))
+        except KeyError:
+            pass
+            
+        # 2. If the user is using {time} but it didn't match, 
+        # try replacing {time} with 12h variations automatically
+        if "{time}" in role_format:
+            # Try 12h padded (07:00 PM)
+            try:
+                names.append(role_format.replace("{time}", "{time_12}").format(**base_data))
+            except KeyError:
+                pass
+            
+            # Try 12h short (7:00 PM)
+            try:
+                names.append(role_format.replace("{time}", "{time_12_short}").format(**base_data))
+            except KeyError:
+                pass
+
+            # Try 12h no minutes (07 PM) if minutes are 0
+            if event_local_time.minute == 0:
+                try:
+                    names.append(role_format.replace("{time}", time_12_no_min).format(**base_data))
+                except (KeyError, ValueError):
+                    pass
+                
+                # Try 12h no minutes short (7 PM)
+                try:
+                    names.append(role_format.replace("{time}", time_12_no_min_short).format(**base_data))
+                except (KeyError, ValueError):
+                    pass
+        
+        # Deduplicate while preserving order
+        return list(dict.fromkeys(names))
+
     async def wait_for_role(
         self,
         guild: discord.Guild,
-        expected_role_name: str,
-        event_start_time,
+        expected_role_names: list[str],
+        event_start_time: datetime,
         timeout: int = 60
     ) -> discord.Role | None:
-        """Wait for role to appear with exponential backoff.
+        """Wait for any of the expected roles to appear with exponential backoff.
 
         Args:
             guild: The Discord guild
-            expected_role_name: Name of the role to wait for
+            expected_role_names: List of possible names for the role
             event_start_time: Event start time (for extended waiting if event is imminent)
             timeout: Initial timeout in seconds (default 60)
 
@@ -661,7 +734,14 @@ class UtilsMixin:
         """
         from datetime import datetime, timedelta, timezone
 
-        role = discord.utils.get(guild.roles, name=expected_role_name)
+        def find_role():
+            for name in expected_role_names:
+                role = discord.utils.get(guild.roles, name=name)
+                if role:
+                    return role
+            return None
+
+        role = find_role()
         if role:
             return role
 
@@ -671,7 +751,7 @@ class UtilsMixin:
         while not role and total_waited < timeout:
             await asyncio.sleep(delay)
             total_waited += delay
-            role = discord.utils.get(guild.roles, name=expected_role_name)
+            role = find_role()
             if not role:
                 delay *= 2  # Double the delay each time
 
@@ -682,7 +762,7 @@ class UtilsMixin:
 
             # If event starts within 15 seconds or already started (up to 1 min ago)
             if -60 <= time_until_start <= 15:
-                log.info(f"Event starting imminently. Waiting up to 1 minute after start for role '{expected_role_name}'...")
+                log.info(f"Event starting imminently. Waiting up to 1 minute after start for roles: {expected_role_names}...")
 
                 # Wait until 1 minute after event start using exponential backoff
                 one_min_after_start = event_start_time + timedelta(minutes=1)
@@ -697,7 +777,7 @@ class UtilsMixin:
                     if sleep_time > 0:
                         await asyncio.sleep(sleep_time)
                         total_waited += sleep_time
-                        role = discord.utils.get(guild.roles, name=expected_role_name)
+                        role = find_role()
                         if not role:
                             delay *= 2  # Double the delay each time
 
