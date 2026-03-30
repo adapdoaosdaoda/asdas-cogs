@@ -442,34 +442,7 @@ class CalendarRenderer:
                     if d not in schedule[time_str]:
                         schedule[time_str][d] = []
 
-        # Add Guild War events from blocked times
-        if blocked_times:
-            from datetime import datetime, timedelta
-            for blocked in blocked_times:
-                day_full = blocked["day"]
-                short_day = day_map.get(day_full, day_full[:3])
-                start_time_str = blocked["start"]
-                end_time_str = blocked["end"]
-
-                # Parse times
-                start_dt = datetime.strptime(start_time_str, "%H:%M")
-                end_dt = datetime.strptime(end_time_str, "%H:%M")
-
-                # Calculate duration in minutes
-                duration = int((end_dt - start_dt).total_seconds() / 60)
-
-                # Generate all 30-min slots for Guild War
-                current_dt = start_dt
-                while current_dt < end_dt:
-                    slot_time_str = current_dt.strftime("%H:%M")
-                    # Create time slot if it doesn't exist (ensures Guild War shows even with no votes)
-                    if slot_time_str not in schedule:
-                        schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                    # Add Guild War event (priority 0, will be handled specially)
-                    schedule[slot_time_str][short_day].append((0, "Guild War", 0, start_time_str, duration))
-                    current_dt += timedelta(minutes=30)
-
-        # Add locked events (Hero's Realm Reset, Sword Trial Echo) - these always show
+        # Add locked events (Hero's Realm Reset, Sword Trial Echo, Guild War) - these always show
         from datetime import datetime, timedelta
         for event_name, event_info in events.items():
             if event_info.get("type") == "locked":

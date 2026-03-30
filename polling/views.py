@@ -1556,54 +1556,11 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
 
                 converted_calendar_data[event_name][new_day] = converted_time
 
-        # Also convert blocked times to user timezone
-        # NOTE: Guild War is now handled via converted_calendar_data, so we only convert other blocked times here if any
-        converted_blocked_times = []
-        for blocked in self.cog.blocked_times:
-            # If the blocked entry is Guild War, skip it (already handled)
-            # Guild War doesn't have a name in the dict, but we know it's the 🏰 event
-            # Actually, current blocked_times are just for Sunday 20:30-22:00
-            # To be safe, we check if it matches the Sunday fixed time
-            if blocked['day'] == "Sunday" and blocked['start'] == "20:30":
-                continue
-
-            # Parse start and end times
-            start_hour, start_minute = map(int, blocked['start'].split(':'))
-            end_hour, end_minute = map(int, blocked['end'].split(':'))
-
-            # Convert start time
-            dt_start_server = server_tz.localize(datetime(current_date.year, current_date.month, current_date.day, start_hour, start_minute))
-            dt_start_user = dt_start_server.astimezone(user_tz)
-
-            # Convert end time
-            dt_end_server = server_tz.localize(datetime(current_date.year, current_date.month, current_date.day, end_hour, end_minute))
-            dt_end_user = dt_end_server.astimezone(user_tz)
-
-            # Handle day changes
-            day_offset_start = (dt_start_user.day - dt_start_server.day) % 7
-            day_offset_end = (dt_end_user.day - dt_end_server.day) % 7
-            days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
-            # Convert start day
-            orig_day = blocked['day']
-            if orig_day in days_list:
-                day_idx = days_list.index(orig_day)
-                new_day_idx = (day_idx + day_offset_start) % 7
-                new_day = days_list[new_day_idx]
-            else:
-                new_day = orig_day
-
-            converted_blocked_times.append({
-                'day': new_day,
-                'start': dt_start_user.strftime("%H:%M"),
-                'end': dt_end_user.strftime("%H:%M")
-            })
-
         # Generate calendar image with the user's timezone
         image_buffer = user_tz_renderer.render_calendar(
             converted_calendar_data,
             self.cog.events,
-            converted_blocked_times,
+            [], # No blocked times anymore
             len(selections)
         )
         

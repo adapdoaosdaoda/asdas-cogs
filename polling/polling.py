@@ -168,10 +168,8 @@ class EventPolling(commands.Cog):
             "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         ]
 
-        # Blocked time slots: Sunday 20:30 - 22:00 (Saturday handled as event)
-        self.blocked_times = [
-            {"day": "Sunday", "start": "20:30", "end": "22:00"}
-        ]
+        # Blocked time slots: (Legacy, Guild War is now handled via events list)
+        self.blocked_times = []
 
         # Event-specific blocked time periods (applies to all days for these events)
         # Events cannot be scheduled if they would overlap with these time periods
