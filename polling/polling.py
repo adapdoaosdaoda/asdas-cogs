@@ -2159,6 +2159,63 @@ class EventPolling(commands.Cog):
 
         await ctx.send(f"✅ Successfully overwrote message with weekly calendar: {message.jump_url}")
 
+    @eventpoll.command(name="refresh")
+    async def refresh_poll(self, ctx: commands.Context, message_id: str):
+        """Manually update all related messages for a specific poll.
+        
+        This will refresh:
+        1. The main Live Poll message (buttons)
+        2. All Live Calendar messages (images)
+        3. All Weekly Calendar messages (images - also updates snapshot)
+        4. All Results messages
+        
+        Example: [p]eventpoll refresh 123456789
+        """
+        parsed_id = self._parse_message_id(message_id)
+        if parsed_id is None:
+            return await ctx.send("❌ Invalid message ID or link!")
+
+        poll_id = str(parsed_id)
+        polls = await self.config.guild(ctx.guild).polls()
+
+        if poll_id not in polls:
+            return await ctx.send("❌ Poll not found!")
+
+        async with ctx.typing():
+            poll_data = polls[poll_id]
+            
+            # 1. Update Snapshot (for weekly calendars)
+            selections = poll_data.get("selections", {})
+            winning_times = self._calculate_winning_times_weighted(selections)
+            async with self.config.guild(ctx.guild).polls() as p:
+                p[poll_id]["weekly_snapshot_winning_times"] = winning_times
+            
+            # 2. Update Main Poll Message
+            try:
+                await self._update_poll_message(ctx.guild.id, poll_id, poll_data)
+            except Exception as e:
+                log.error(f"Refresh: Failed to update main poll {poll_id}: {e}")
+
+            # 3. Update Live Calendars
+            try:
+                await self._update_calendar_messages(ctx.guild, poll_data, poll_id)
+            except Exception as e:
+                log.error(f"Refresh: Failed to update live calendars for {poll_id}: {e}")
+
+            # 4. Update Weekly Calendars
+            try:
+                await self._update_weekly_calendar_messages(ctx.guild, poll_data, poll_id)
+            except Exception as e:
+                log.error(f"Refresh: Failed to update weekly calendars for {poll_id}: {e}")
+
+            # 5. Update Results Messages
+            try:
+                await self._update_results_messages(ctx.guild, poll_data, poll_id)
+            except Exception as e:
+                log.error(f"Refresh: Failed to update results messages for {poll_id}: {e}")
+
+        await ctx.send(f"✅ **Refresh Complete:** All tracked messages for poll `{poll_id}` have been updated.")
+
     @eventpoll.command(name="updateweeklysnapshot")
     async def update_weekly_snapshot(self, ctx: commands.Context, message_id: str):
         """Manually update the weekly calendar snapshot with current poll results
@@ -2198,12 +2255,20 @@ class EventPolling(commands.Cog):
             if poll_id in polls:
                 polls[poll_id]["weekly_snapshot_winning_times"] = winning_times
 
-        # Update all weekly calendar message images
+        # Update all related messages
         try:
+            # 1. Update Weekly Calendars
             await self._update_weekly_calendar_messages(ctx.guild, poll_data, poll_id)
-            await ctx.send(f"✅ Successfully updated weekly calendar snapshot with current poll results! All weekly calendar images have been refreshed.")
+            
+            # 2. Update Results Messages
+            await self._update_results_messages(ctx.guild, poll_data, poll_id)
+            
+            # 3. Update Live Calendars (so they match the new winning logic if it changed)
+            await self._update_calendar_messages(ctx.guild, poll_data, poll_id)
+            
+            await ctx.send(f"✅ Successfully updated weekly snapshot and refreshed all related calendar/results messages.")
         except Exception as e:
-            await ctx.send(f"✅ Snapshot updated, but failed to update some calendar images: {e}")
+            await ctx.send(f"✅ Snapshot updated, but failed to update some messages: {e}")
 
     @eventpoll.command(name="overwriteresults")
     async def overwrite_results(self, ctx: commands.Context, message_id_to_overwrite: str, poll_message_id: str):
