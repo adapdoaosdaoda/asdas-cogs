@@ -27,6 +27,7 @@ class GuildOps(commands.Cog):
 
         default_guild = {
             "sheet_id": None,
+            "worksheet_name": None,
             "forms_channel": None,
             "ocr_channel": None,
             "member_role": None,
@@ -54,6 +55,17 @@ class GuildOps(commands.Cog):
     def cog_unload(self):
         self.auto_sort_loop.cancel()
 
+    async def _get_worksheet(self, guild: discord.Guild, sh: gspread.Spreadsheet):
+        """Helper to get the configured worksheet or the last one."""
+        ws_name = await self.config.guild(guild).worksheet_name()
+        if ws_name:
+            try:
+                return await self.bot.loop.run_in_executor(None, lambda: sh.worksheet(ws_name))
+            except gspread.WorksheetNotFound:
+                log.warning(f"GuildOps: Configured worksheet '{ws_name}' not found in {sh.title}. Falling back to last sheet.")
+        
+        return await self.bot.loop.run_in_executor(None, lambda: sh.worksheets()[-1])
+
     @tasks.loop(minutes=1)
     async def auto_sort_loop(self):
         """Background loop to periodically sort configured sheets."""
@@ -79,7 +91,7 @@ class GuildOps(commands.Cog):
                 
                 try:
                     sh = await self.bot.loop.run_in_executor(None, lambda: gc.open_by_key(sheet_id))
-                    ws = await self.bot.loop.run_in_executor(None, lambda: sh.worksheets()[-1])
+                    ws = await self._get_worksheet(guild, sh)
                     await self._do_custom_sort(ws)
                     await self.config.guild_from_id(guild_id).last_auto_sort.set(now)
                     # log.info(f"GuildOps: Auto-sorted sheet for guild {guild.name} ({guild_id})")
@@ -172,7 +184,7 @@ class GuildOps(commands.Cog):
         
         return await self.bot.loop.run_in_executor(None, _connect)
 
-    async def _sync_data_to_sheet(self, sheet_id: str, new_data: List[Dict[str, str]]):
+    async def _sync_data_to_sheet(self, guild: discord.Guild, sheet_id: str, new_data: List[Dict[str, str]]):
         """
         Syncs a list of user data to the sheet.
         new_data: List of dicts with keys 'discord_id', 'ign', 'date_accepted'
@@ -181,20 +193,20 @@ class GuildOps(commands.Cog):
         if not gc:
             return False, "Service account file not found."
 
-        def _do_work():
+        async def _do_work():
             try:
-                sh = gc.open_by_key(sheet_id)
-                ws = sh.worksheets()[-1]
+                sh = await self.bot.loop.run_in_executor(None, lambda: gc.open_by_key(sheet_id))
+                ws = await self._get_worksheet(guild, sh)
                 
                 # ensure headers
-                headers = ws.row_values(1)
+                headers = await self.bot.loop.run_in_executor(None, lambda: ws.row_values(1))
                 required_headers = ["Discord ID", "IGN", "Date Added", "Status", "Import"]
                 
                 # Check if headers are empty or effectively empty (e.g. ["", "", ""])
                 is_empty = not headers or not any(h.strip() for h in headers)
                 
                 if is_empty:
-                    ws.update('A1:E1', [required_headers])
+                    await self.bot.loop.run_in_executor(None, lambda: ws.update('A1:E1', [required_headers]))
                     headers = required_headers
                 
                 # Map headers to indices (Case Insensitive)
@@ -210,7 +222,7 @@ class GuildOps(commands.Cog):
                     if req_key not in header_map:
                         return False, f"Missing column: {display_name} (Found: {headers})"
 
-                all_values = ws.get_all_values()
+                all_values = await self.bot.loop.run_in_executor(None, lambda: ws.get_all_values())
                 if len(all_values) > 1:
                     data_rows = all_values[1:]
                 else:
@@ -222,8 +234,6 @@ class GuildOps(commands.Cog):
                 date_col_idx = header_map["date added"]
                 status_col_idx = header_map.get("status")
                 import_col_idx = header_map.get("import")
-                uid_man_col_idx = header_map.get("uid (manual)")
-                roles_man_col_idx = header_map.get("roles (manual)")
                 
                 existing_map = {} # Discord ID -> Row Index
                 ign_map = {}      # IGN -> Row Index
@@ -293,17 +303,17 @@ class GuildOps(commands.Cog):
                         appends.append(new_row)
                 
                 if appends:
-                    ws.append_rows(appends, value_input_option='USER_ENTERED')
+                    await self.bot.loop.run_in_executor(None, lambda: ws.append_rows(appends, value_input_option='USER_ENTERED'))
                 
                 if updates:
-                    ws.batch_update(updates, value_input_option='USER_ENTERED')
+                    await self.bot.loop.run_in_executor(None, lambda: ws.batch_update(updates, value_input_option='USER_ENTERED'))
 
                 # Sort by Status (Active > Left), Role (Custom), then IGN (A-Z)
                 return True, ws
             except Exception as e:
                 return False, str(e)
 
-        success, result = await self.bot.loop.run_in_executor(None, _do_work)
+        success, result = await _do_work()
         if success:
             await self._do_custom_sort(result)
             # Find how many updates/appends happened for the message (bit hard to reconstruct here perfectly)
@@ -321,12 +331,12 @@ class GuildOps(commands.Cog):
         if not gc:
             return False, "Service account file not found."
 
-        def _sheet_work():
+        async def _do_sheet_work():
             try:
-                sh = gc.open_by_key(sheet_id)
-                ws = sh.worksheets()[-1]
+                sh = await self.bot.loop.run_in_executor(None, lambda: gc.open_by_key(sheet_id))
+                ws = await self._get_worksheet(guild, sh)
                 
-                headers = ws.row_values(1)
+                headers = await self.bot.loop.run_in_executor(None, lambda: ws.row_values(1))
                 header_map = {h.lower().strip(): i for i, h in enumerate(headers)}
                 
                 if "ign" not in header_map or "status" not in header_map:
@@ -341,22 +351,22 @@ class GuildOps(commands.Cog):
                 roles_man_col = header_map.get("roles (manual)", -1) + 1
                 
                 # Find the cell with the IGN
-                cell = ws.find(ign, in_column=ign_col, case_sensitive=False)
+                cell = await self.bot.loop.run_in_executor(None, lambda: ws.find(ign, in_column=ign_col, case_sensitive=False))
                 
                 discord_id = None
                 
                 if cell:
                     # Update existing
-                    ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, status_col)}", [[status]], value_input_option='USER_ENTERED')
+                    await self.bot.loop.run_in_executor(None, lambda: ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, status_col)}", [[status]], value_input_option='USER_ENTERED'))
                     
                     # If status changed to 'Left', clear manual roles
                     if status.capitalize() == "Left":
                         if roles_man_col > 0:
-                            ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, roles_man_col)}", [[""]], value_input_option='USER_ENTERED')
+                            await self.bot.loop.run_in_executor(None, lambda: ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, roles_man_col)}", [[""]], value_input_option='USER_ENTERED'))
 
                     # Fetch Discord ID if available
                     if discord_id_col > 0:
-                        row_vals = ws.row_values(cell.row)
+                        row_vals = await self.bot.loop.run_in_executor(None, lambda: ws.row_values(cell.row))
                         if len(row_vals) >= discord_id_col:
                             val = row_vals[discord_id_col - 1]
                             if val:
@@ -373,7 +383,7 @@ class GuildOps(commands.Cog):
                     if import_col > 0:
                         new_row[import_col - 1] = "OCR"
                     
-                    ws.append_row(new_row, value_input_option='USER_ENTERED')
+                    await self.bot.loop.run_in_executor(None, lambda: ws.append_row(new_row, value_input_option='USER_ENTERED'))
                         
                     return True, None, ws
                 
@@ -381,7 +391,7 @@ class GuildOps(commands.Cog):
                 return False, None, str(e)
 
         # Run sheet update
-        success, discord_id, result = await self.bot.loop.run_in_executor(None, _sheet_work)
+        success, discord_id, result = await _do_sheet_work()
         
         if not success:
             return False, result
@@ -577,7 +587,7 @@ class GuildOps(commands.Cog):
             if not sheet_id:
                 return
 
-            success, msg = await self._sync_data_to_sheet(sheet_id, [data])
+            success, msg = await self._sync_data_to_sheet(message.guild, sheet_id, [data])
             if success:
                 await message.add_reaction("✅")
                 try:
@@ -774,6 +784,12 @@ class GuildOps(commands.Cog):
         await ctx.send(f"Sheet ID set to `{sheet_id}`.")
 
     @opset.command()
+    async def worksheet(self, ctx, *, name: str):
+        """Set the name of the worksheet to use (e.g. 'Sheet1'). If not set, uses the last one."""
+        await self.config.guild(ctx.guild).worksheet_name.set(name)
+        await ctx.send(f"Worksheet name set to `{name}`.")
+
+    @opset.command()
     async def forms(self, ctx, channel: discord.TextChannel):
         """Set the channel to scan for application forms."""
         await self.config.guild(ctx.guild).forms_channel.set(channel.id)
@@ -850,6 +866,7 @@ class GuildOps(commands.Cog):
         """Internal helper for status display."""
         conf = await self.config.guild(ctx.guild).all()
         sheet = conf['sheet_id'] or "Not Set"
+        worksheet = conf['worksheet_name'] or "Last Sheet (Default)"
         forms = f"<#{conf['forms_channel']}>" if conf['forms_channel'] else "Not Set"
         ocr = f"<#{conf['ocr_channel']}>" if conf['ocr_channel'] else "Not Set"
         m_role = f"<@&{conf['member_role']}>" if conf['member_role'] else "Not Set"
@@ -859,9 +876,10 @@ class GuildOps(commands.Cog):
         
         embed = discord.Embed(title="GuildOps Settings", color=discord.Color.blue())
         embed.add_field(name="Sheet ID", value=f"`{sheet}`", inline=False)
-        embed.add_field(name="Channels", value=f"Forms: {forms}\nOCR: {ocr}", inline=True)
-        embed.add_field(name="Roles", value=f"Member: {m_role}\nLeft: {l_role}", inline=True)
+        embed.add_field(name="Worksheet", value=f"`{worksheet}`", inline=True)
         embed.add_field(name="Auto-Sort", value=interval_str, inline=True)
+        embed.add_field(name="Channels", value=f"Forms: {forms}\nOCR: {ocr}", inline=False)
+        embed.add_field(name="Roles", value=f"Member: {m_role}\nLeft: {l_role}", inline=True)
         
         if self.creds_file.exists():
             embed.set_footer(text="✅ Service Account File Found")
@@ -1045,7 +1063,7 @@ class GuildOps(commands.Cog):
                          await ctx.send("❌ Sheet ID not configured.")
                          return
                          
-                    success, msg = await self._sync_data_to_sheet(sheet_id, valid_data)
+                    success, msg = await self._sync_data_to_sheet(guild, sheet_id, valid_data)
                     if success:
                         await ctx.send(f"✅ Batch Sync Complete: Found {count} forms. Result: {msg}")
                     else:
@@ -1094,11 +1112,11 @@ class GuildOps(commands.Cog):
             return
 
         async with ctx.typing():
-            def _do_sort():
+            async def _do_sort():
                 try:
-                    sh = gc.open_by_key(sheet_id)
-                    ws = sh.worksheets()[-1]
-                    all_values = ws.get_all_values()
+                    sh = await self.bot.loop.run_in_executor(None, lambda: gc.open_by_key(sheet_id))
+                    ws = await self._get_worksheet(ctx.guild, sh)
+                    all_values = await self.bot.loop.run_in_executor(None, lambda: ws.get_all_values())
                     if not all_values:
                         return False, "Sheet is empty."
                         
@@ -1128,18 +1146,19 @@ class GuildOps(commands.Cog):
                                         continue
                         
                         if date_updates:
-                            ws.batch_update(date_updates, value_input_option='USER_ENTERED')
+                            await self.bot.loop.run_in_executor(None, lambda: ws.batch_update(date_updates, value_input_option='USER_ENTERED'))
 
                     return True, ws
                 except Exception as e:
                     return False, str(e)
 
-            success, result = await self.bot.loop.run_in_executor(None, _do_sort)
+            success, result = await _do_sort()
             if success:
                 await self._do_custom_sort(result)
                 await ctx.send("✅ Sheet sorted and formatted (Active first, then by custom Role priority, then by IGN).")
             else:
                 await ctx.send(f"❌ Sort failed: {result}")
+
     @guildops.command(name="setleft")
     async def guildops_set_left(self, ctx, *, ign: str):
         """Manually set a member's status to 'Left' by IGN."""
@@ -1183,11 +1202,11 @@ class GuildOps(commands.Cog):
 
         async with ctx.typing():
             # 1. Get Discord IDs from Sheet
-            def _get_sheet_ids():
+            async def _get_sheet_ids():
                 try:
-                    sh = gc.open_by_key(sheet_id)
-                    ws = sh.worksheets()[-1]
-                    all_values = ws.get_all_values()
+                    sh = await self.bot.loop.run_in_executor(None, lambda: gc.open_by_key(sheet_id))
+                    ws = await self._get_worksheet(ctx.guild, sh)
+                    all_values = await self.bot.loop.run_in_executor(None, lambda: ws.get_all_values())
                     if not all_values: return set()
                     
                     headers = [h.lower().strip() for h in all_values[0]]
@@ -1204,7 +1223,7 @@ class GuildOps(commands.Cog):
                 except:
                     return None
 
-            sheet_ids = await self.bot.loop.run_in_executor(None, _get_sheet_ids)
+            sheet_ids = await _get_sheet_ids()
             if sheet_ids is None:
                 await ctx.send("❌ Failed to read Discord IDs from the sheet.")
                 return
@@ -1263,4 +1282,3 @@ class SyncView(discord.ui.View):
         button.disabled = True
         await interaction.edit_original_response(view=self)
         await interaction.followup.send(f"✅ Processed {len(self.members)} members.\n- Moved: {success_count}\n- Failed: {fail_count} (Check permissions)")
-# Force update
