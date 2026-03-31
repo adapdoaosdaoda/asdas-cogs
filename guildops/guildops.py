@@ -168,7 +168,7 @@ class GuildOps(commands.Cog):
             num_cols = len(headers)
             if num_rows > 0:
                 range_end = gspread.utils.rowcol_to_a1(num_rows + 1, num_cols)
-                ws.update(f"A2:{range_end}", data, value_input_option='USER_ENTERED')
+                ws.update(range_name=f"A2:{range_end}", values=data, value_input_option='USER_ENTERED')
 
         await self.bot.loop.run_in_executor(None, _work)
 
@@ -206,7 +206,7 @@ class GuildOps(commands.Cog):
                 is_empty = not headers or not any(h.strip() for h in headers)
                 
                 if is_empty:
-                    await self.bot.loop.run_in_executor(None, lambda: ws.update('A1:E1', [required_headers]))
+                    await self.bot.loop.run_in_executor(None, lambda: ws.update(range_name='A1:E1', values=[required_headers]))
                     headers = required_headers
                 
                 # Map headers to indices (Case Insensitive)
@@ -357,12 +357,12 @@ class GuildOps(commands.Cog):
                 
                 if cell:
                     # Update existing
-                    await self.bot.loop.run_in_executor(None, lambda: ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, status_col)}", [[status]], value_input_option='USER_ENTERED'))
+                    await self.bot.loop.run_in_executor(None, lambda: ws.update(range_name=f"{gspread.utils.rowcol_to_a1(cell.row, status_col)}", values=[[status]], value_input_option='USER_ENTERED'))
                     
                     # If status changed to 'Left', clear manual roles
                     if status.capitalize() == "Left":
                         if roles_man_col > 0:
-                            await self.bot.loop.run_in_executor(None, lambda: ws.update(f"{gspread.utils.rowcol_to_a1(cell.row, roles_man_col)}", [[""]], value_input_option='USER_ENTERED'))
+                            await self.bot.loop.run_in_executor(None, lambda: ws.update(range_name=f"{gspread.utils.rowcol_to_a1(cell.row, roles_man_col)}", values=[[""]], value_input_option='USER_ENTERED'))
 
                     # Fetch Discord ID if available
                     if discord_id_col > 0:
