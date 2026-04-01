@@ -293,7 +293,7 @@ class TradeCommission(commands.Cog):
             "schedule_day": 0,  # 0 = Monday, 6 = Sunday
             "schedule_hour": 9,  # Hour in 24h format
             "schedule_minute": 0,
-            "timezone": "UTC+1",
+            "timezone": "UTC",
             "enabled": False,
             "current_message_id": None,
             "current_channel_id": None,
@@ -308,6 +308,9 @@ class TradeCommission(commands.Cog):
             "previous_message_id": None,  # Previous week's message to delete
             "notification_message": "📢 All 3 trade commission options have been selected! Check them out above!",  # Message sent when 3 options selected
             "notification_message_id": None,  # ID of notification message to delete after 3 hours
+            "last_sent": None,
+            "last_sunday_notification": None,
+            "last_wednesday_notification": None,
 
             # Sunday pre-shop restock notification
             "sunday_enabled": False,
@@ -567,7 +570,14 @@ class TradeCommission(commands.Cog):
             return
 
         # Get timezone
-        tz = pytz.timezone(config["timezone"])
+        try:
+            tz = pytz.timezone(config["timezone"])
+        except pytz.UnknownTimeZoneError:
+            # If invalid timezone, fallback to UTC but log it
+            tz = pytz.UTC
+            # We don't have a logger here but we can print or just ignore
+            # print(f"Invalid timezone {config['timezone']} for guild {guild.id}")
+
         now = datetime.now(tz)
 
         # Check weekly message (only if enabled)
@@ -606,7 +616,11 @@ class TradeCommission(commands.Cog):
                     pass  # Already sent today
                 else:
                     # Calculate event timestamp in configured timezone
-                    event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
+                    event_time = tz.localize(datetime(now.year, now.month, now.day, config["sunday_event_hour"], 0, 0))
+                    # If event time has passed (e.g. notification after midnight for next day event)
+                    if event_time < now:
+                        event_time += timedelta(days=1)
+                        event_time = tz.normalize(event_time)
                     event_timestamp = int(event_time.timestamp())
 
                     await self._send_scheduled_notification(
@@ -619,7 +633,10 @@ class TradeCommission(commands.Cog):
                     await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
             else:
                 # Calculate event timestamp in configured timezone
-                event_time = now.replace(hour=config["sunday_event_hour"], minute=0, second=0, microsecond=0)
+                event_time = tz.localize(datetime(now.year, now.month, now.day, config["sunday_event_hour"], 0, 0))
+                if event_time < now:
+                    event_time += timedelta(days=1)
+                    event_time = tz.normalize(event_time)
                 event_timestamp = int(event_time.timestamp())
 
                 await self._send_scheduled_notification(
@@ -644,8 +661,11 @@ class TradeCommission(commands.Cog):
                 if (now - last_wednesday_dt).days < 1:
                     pass  # Already sent today
                 else:
-                    # Calculate event timestamp in configured timezone
-                    event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
+                    # Calculate event timestamp (hard set to 22:00 UTC as requested)
+                    event_time = pytz.UTC.localize(datetime(now.year, now.month, now.day, 22, 0, 0))
+                    if event_time < now:
+                        event_time += timedelta(days=1)
+                        event_time = pytz.UTC.normalize(event_time)
                     event_timestamp = int(event_time.timestamp())
 
                     await self._send_scheduled_notification(
@@ -657,8 +677,11 @@ class TradeCommission(commands.Cog):
                     )
                     await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
             else:
-                # Calculate event timestamp in configured timezone
-                event_time = now.replace(hour=config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
+                # Calculate event timestamp (hard set to 22:00 UTC as requested)
+                event_time = pytz.UTC.localize(datetime(now.year, now.month, now.day, 22, 0, 0))
+                if event_time < now:
+                    event_time += timedelta(days=1)
+                    event_time = pytz.UTC.normalize(event_time)
                 event_timestamp = int(event_time.timestamp())
 
                 await self._send_scheduled_notification(
@@ -1906,10 +1929,12 @@ class TradeCommission(commands.Cog):
         # Calculate event timestamp for testing (in configured timezone)
         tz = pytz.timezone(guild_config["timezone"])
         now = datetime.now(tz)
-        event_time = now.replace(hour=guild_config["sunday_event_hour"], minute=0, second=0, microsecond=0)
+        event_time = tz.localize(datetime(now.year, now.month, now.day, guild_config["sunday_event_hour"], 0, 0))
         # If event time has passed, use tomorrow
         if event_time < now:
             event_time += timedelta(days=1)
+            # Re-localize in case tomorrow has different DST offset
+            event_time = tz.normalize(event_time)
         event_timestamp = int(event_time.timestamp())
 
         await self._send_scheduled_notification(
@@ -2063,13 +2088,13 @@ class TradeCommission(commands.Cog):
         else:
             channel = ctx.channel
 
-        # Calculate event timestamp for testing (in configured timezone)
-        tz = pytz.timezone(guild_config["timezone"])
-        now = datetime.now(tz)
-        event_time = now.replace(hour=guild_config["wednesday_event_hour"], minute=0, second=0, microsecond=0)
+        # Calculate event timestamp for testing (hard set to 22:00 UTC as requested)
+        now = datetime.now(pytz.UTC)
+        event_time = pytz.UTC.localize(datetime(now.year, now.month, now.day, 22, 0, 0))
         # If event time has passed, use tomorrow
         if event_time < now:
             event_time += timedelta(days=1)
+            event_time = pytz.UTC.normalize(event_time)
         event_timestamp = int(event_time.timestamp())
 
         await self._send_scheduled_notification(

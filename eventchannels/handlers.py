@@ -1097,12 +1097,50 @@ class HandlersMixin:
         if isinstance(voice_channel_ids, int):
             voice_channel_ids = [voice_channel_ids]
 
+        # Get valid voice channel objects
+        voice_channels = []
         for vc_id in voice_channel_ids:
-            voice_channel = guild.get_channel(vc_id)
-            if voice_channel:
+            vc = guild.get_channel(vc_id)
+            if isinstance(vc, discord.VoiceChannel):
+                voice_channels.append(vc)
+
+        if voice_channels:
+            # Target lobby channels
+            VOICE1_ID = 1439739818723643457
+            VOICE2_ID = 1439739818723643458
+            voice1 = guild.get_channel(VOICE1_ID)
+            voice2 = guild.get_channel(VOICE2_ID)
+
+            if len(voice_channels) == 2:
+                # Move first to voice 1
+                if isinstance(voice1, discord.VoiceChannel):
+                    for member in voice_channels[0].members:
+                        try:
+                            await member.move_to(voice1, reason="Event ended, moving to lobby")
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
+                # Move second to voice 2
+                if isinstance(voice2, discord.VoiceChannel):
+                    for member in voice_channels[1].members:
+                        try:
+                            await member.move_to(voice2, reason="Event ended, moving to lobby")
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
+            else:
+                # If 1, 3 or more channels, move everyone to voice 1
+                if isinstance(voice1, discord.VoiceChannel):
+                    for vc in voice_channels:
+                        for member in vc.members:
+                            try:
+                                await member.move_to(voice1, reason="Event ended, moving to lobby")
+                            except (discord.Forbidden, discord.HTTPException):
+                                pass
+
+            # Finally delete the event voice channels
+            for vc in voice_channels:
                 try:
-                    await voice_channel.delete(reason=reason)
-                except discord.NotFound:
+                    await vc.delete(reason=reason)
+                except (discord.NotFound, discord.Forbidden):
                     pass
 
         return text_channel_archived
