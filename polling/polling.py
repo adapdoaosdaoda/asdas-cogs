@@ -591,7 +591,7 @@ class EventPolling(commands.Cog):
                                         all_checks[event_name][i] = ((day, time), 0, [])
 
                 # Events to check
-                target_events = ["Party", "Showdown", "Breaking Army", "Sword Trial", "Hero's Realm", "Guild War"]
+                target_events = ["Party", "Showdown", "Breaking Army", "Guild War"]
                 
                 for event_name in all_checks:
                     # Check if this is a target event
