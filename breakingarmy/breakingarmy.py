@@ -740,11 +740,21 @@ class BreakingArmy(commands.Cog):
 
     @ba_config.command(name="removeboss")
     async def config_remove_boss(self, ctx: commands.Context, *, name: str):
-        """Remove a boss from the pool."""
+        """Remove a boss from the pool.
+        
+        This also clears the boss from the 'seen' history, so re-adding it 
+        will make it appear as a 'New' boss again.
+        """
         async with self.config.guild(ctx.guild).boss_pool() as p:
             if name in p:
                 del p[name]
-                await ctx.send(f"✅ Removed **{name}** from the boss pool.")
+                
+                # Also remove from seen_bosses history to allow "resetting" a boss
+                async with self.config.guild(ctx.guild).seen_bosses() as seen:
+                    if name in seen:
+                        seen.remove(name)
+                        
+                await ctx.send(f"✅ Removed **{name}** from the boss pool and cleared its 'seen' history.")
             else:
                 await ctx.send(f"❌ Boss **{name}** not found.")
 
