@@ -291,17 +291,29 @@ class BreakingArmy(commands.Cog):
         sched = ""
         matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
         for i, (b1, b2) in enumerate(matrix):
-            w = i+1; enc = " (Encore)" if w == 4 else ""
-            n1 = get_fmt_name(b1); n2 = get_fmt_name(b2)
+            w = i+1
+            enc1 = ""
+            enc2 = ""
+            if w == 4:
+                # User requested to remove (Encore) from Week 4
+                pass
+            elif w == 5 and g[3] == g[1]:
+                enc2 = " (Encore)"
+            elif w == 6 and g[4] == g[2]:
+                enc2 = " (Encore)"
+                
+            n1 = get_fmt_name(b1) + enc1
+            n2 = get_fmt_name(b2) + enc2
+            
             if w < season["current_week"]:
-                sched += f"💀 ~~**Week {w}**: {n1} & {n2}{enc}~~\n"
+                sched += f"💀 ~~**Week {w}**: {n1} & {n2}~~\n"
             elif w == season["current_week"] and season["is_active"]:
                 if run["is_running"]:
-                    sched += f"⚔️ **__Week {w}__: {n1} & {n2}{enc}** (Active)\n"
+                    sched += f"⚔️ **Week {w}**: {n1} & {n2} (Active)\n"
                 else:
-                    sched += f"⏳ **Week {w}__: {n1} & {n2}{enc}** (Waiting)\n"
+                    sched += f"⏳ **Week {w}**: {n1} & {n2} (Waiting)\n"
             else:
-                sched += f"⏳ **Week {w}**: {n1} & {n2}{enc}\n"
+                sched += f"⏳ **Week {w}**: {n1} & {n2}\n"
         sched_embed.description = sched
         
         embeds = [sched_embed]
@@ -433,30 +445,52 @@ class BreakingArmy(commands.Cog):
         # Split pool into new and old groups
         new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
         old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
-        
-        # Priority Ranking: All new bosses first, then old bosses
         ranked = new_p + old_p
         
         if len(ranked) < 8: return None
         
-        new_b = [b for b in ranked if b not in seen_bosses]
         a = [None]*3; g = [None]*5; used = []
         
-        # Priority distribution for new bosses
-        if len(new_b) >= 1: a[0] = new_b[0]; used.append(new_b[0])
-        if len(new_b) >= 2: g[0] = new_b[1]; used.append(new_b[1])
-        if len(new_b) >= 3: a[2] = new_b[2]; used.append(new_b[2])
+        # 1. Fill pairs for W1, W2, W3 based on unlock order (N1&N2, N3&N4, N5&N6)
+        # Week 1: A1 & G1
+        if new_p: b = new_p.pop(0); a[0] = b; used.append(b)
+        if new_p: b = new_p.pop(0); g[0] = b; used.append(b)
         
-        # Fill remaining slots with priority ranked list
+        # Week 2: A2 & G2
+        if new_p: b = new_p.pop(0); a[1] = b; used.append(b)
+        if new_p: b = new_p.pop(0); g[1] = b; used.append(b)
+        
+        # Week 3: A3 & G3
+        if new_p: b = new_p.pop(0); a[2] = b; used.append(b)
+        if new_p: b = new_p.pop(0); g[2] = b; used.append(b)
+        
+        # 2. Handle repeats for W5/W6
+        # If G2 was a new boss, make it repeat in G4 (W5)
+        if len(used) >= 4 and used[3] in boss_pool and used[3] not in seen_bosses:
+            g[3] = used[3]
+        # If G3 was a new boss, make it repeat in G5 (W6)
+        if len(used) >= 6 and used[5] in boss_pool and used[5] not in seen_bosses:
+            g[4] = used[5]
+
+        # 3. Fill remaining empty slots from the ranked list
         rem = [b for b in ranked if b not in used]
+        
+        # Fill Anchors
         for i in range(3):
-            if a[i] is None: a[i] = rem.pop(0); used.append(a[i])
+            if a[i] is None:
+                boss = rem.pop(0)
+                a[i] = boss
+                used.append(boss)
+        
+        # Fill Guests
         for i in range(5):
-            if g[i] is None: g[i] = rem.pop(0); used.append(g[i])
+            if g[i] is None:
+                boss = rem.pop(0)
+                g[i] = boss
+                used.append(boss)
             
         async with self.config.guild(guild).season_data() as s:
             s["anchors"] = a; s["guests"] = g; s["current_week"] = 1; s["is_active"] = True
-            # All new bosses that made the cut get the priority emote
             s["priority_bosses"] = [b for b in used if b not in seen_bosses]
             
         async with self.config.guild(guild).seen_bosses() as seen:
@@ -464,7 +498,7 @@ class BreakingArmy(commands.Cog):
                 if b not in seen: seen.append(b)
         
         embed = discord.Embed(title="🚀 New Season Initialized", color=discord.Color.green())
-        def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (f" {new_emote}" if name in new_b else "")
+        def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (f" {new_emote}" if name in [b for b in used if b not in seen_bosses] else "")
         embed.add_field(name="Anchors", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(a)]), inline=True)
         embed.add_field(name="Guests", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(g)]), inline=True)
         return embed
