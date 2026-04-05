@@ -292,18 +292,8 @@ class BreakingArmy(commands.Cog):
         matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
         for i, (b1, b2) in enumerate(matrix):
             w = i+1
-            enc1 = ""
-            enc2 = ""
-            if w == 4:
-                # User requested to remove (Encore) from Week 4
-                pass
-            elif w == 5 and g[3] == g[1]:
-                enc2 = " (Encore)"
-            elif w == 6 and g[4] == g[2]:
-                enc2 = " (Encore)"
-                
-            n1 = get_fmt_name(b1) + enc1
-            n2 = get_fmt_name(b2) + enc2
+            n1 = get_fmt_name(b1)
+            n2 = get_fmt_name(b2)
             
             if w < season["current_week"]:
                 sched += f"💀 ~~**Week {w}**: {n1} & {n2}~~\n"
@@ -311,7 +301,7 @@ class BreakingArmy(commands.Cog):
                 if run["is_running"]:
                     sched += f"⚔️ **Week {w}**: {n1} & {n2} (Active)\n"
                 else:
-                    sched += f"⏳ **Week {w}**: {n1} & {n2} (Waiting)\n"
+                    sched += f"⏳ **Week {w}**: {n1} & {n2}\n"
             else:
                 sched += f"⏳ **Week {w}**: {n1} & {n2}\n"
         sched_embed.description = sched
