@@ -591,7 +591,7 @@ class EventPolling(commands.Cog):
                                         all_checks[event_name][i] = ((day, time), 0, [])
 
                 # Events to check
-                target_events = ["Party", "Showdown", "Breaking Army", "Guild War"]
+                target_events = ["Party", "Showdown", "Breaking Army"]
                 
                 for event_name in all_checks:
                     # Check if this is a target event
@@ -1004,19 +1004,6 @@ class EventPolling(commands.Cog):
                             "color": self._get_hex_color(base_name),
                             "type": "polling"
                         })
-
-                # Force add a manual Guild War event for every Sunday at 20:30
-                # Check if it already exists to avoid duplicates
-                has_sun_gw = any(e["name"] == "Guild War" and e["day"] == "Sunday" and e["time"] == "20:30" for e in polling_events)
-                if not has_sun_gw:
-                    polling_events.append({
-                        "name": "Guild War",
-                        "day": "Sunday",
-                        "time": "20:30",
-                        "emoji": await get_emoji_url("🏰"),
-                        "color": self._get_hex_color("Guild War"),
-                        "type": "polling"
-                    })
 
             # Get Discord scheduled events
             discord_events = []
