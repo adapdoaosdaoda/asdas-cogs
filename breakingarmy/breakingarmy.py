@@ -179,6 +179,12 @@ class BreakingArmy(commands.Cog):
         
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
         sorted_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
+        
+        # Ensure all bosses in the pool are included in the preview
+        for boss_name in boss_pool:
+            if boss_name not in sorted_names:
+                sorted_names.append(boss_name)
+                
         embed = discord.Embed(title="⚔️ Breaking Army: Boss Poll", color=discord.Color.gold())
         embed.description = "Vote for your favorite bosses to determine the next 6-week season roster!"
         sample = (
@@ -425,6 +431,13 @@ class BreakingArmy(commands.Cog):
         
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
         ranked = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
+        
+        # Ensure all bosses in the pool are included in the ranked list, 
+        # even if they have 0 votes (appended at the end)
+        for boss_name in boss_pool:
+            if boss_name not in ranked:
+                ranked.append(boss_name)
+        
         if len(ranked) < 8: return None
         
         new_b = [b for b in ranked if b not in seen_bosses]
@@ -704,9 +717,33 @@ class BreakingArmy(commands.Cog):
             await ctx.send("✅ Notifications disabled.")
 
     @ba_config.command(name="addboss")
-    async def config_add_boss(self, ctx: commands.Context, name: str, emote: str = "⚔️"):
-        async with self.config.guild(ctx.guild).boss_pool() as p: p[name] = emote
+    async def config_add_boss(self, ctx: commands.Context, emoji: Optional[str] = "⚔️", *, name: str):
+        """Add a boss to the pool.
+        
+        Usage: [p]ba config addboss [emoji] <name>
+        If emoji is omitted, ⚔️ is used.
+        """
+        # Simple emoji validation
+        test_emoji = emoji
+        if test_emoji and not (test_emoji.startswith("<") and test_emoji.endswith(">")):
+            # If it's not a custom emoji, check if it's likely a single unicode character/sequence
+            # If it's longer than 10 chars and doesn't look like custom, it's probably a name word
+            if len(test_emoji) > 10:
+                return await ctx.send(f"❌ **Error:** '{test_emoji}' doesn't look like a valid emoji. Did you forget to put the emoji FIRST?\nUsage: `[p]ba config addboss ⚔️ Grand Protector of Anxi`")
+
+        async with self.config.guild(ctx.guild).boss_pool() as p: 
+            p[name] = emoji
         await ctx.tick()
+
+    @ba_config.command(name="removeboss")
+    async def config_remove_boss(self, ctx: commands.Context, *, name: str):
+        """Remove a boss from the pool."""
+        async with self.config.guild(ctx.guild).boss_pool() as p:
+            if name in p:
+                del p[name]
+                await ctx.send(f"✅ Removed **{name}** from the boss pool.")
+            else:
+                await ctx.send(f"❌ Boss **{name}** not found.")
 
     @ba_config.command(name="newemote")
     async def config_new_emote(self, ctx: commands.Context, emote: str):
@@ -1089,18 +1126,29 @@ class SeasonLiveView(discord.ui.View):
         self.add_item(discord.ui.Button(label="Go to Poll", style=discord.ButtonStyle.link, url=url))
 
 class BossVoteModal(Modal, title="Hybrid Boss Ballot"):
-    def __init__(self, cog, guild, user_id, pool, current_votes):
+    def __init__(self, cog, guild, user_id, pool, current_votes, seen_bosses):
         super().__init__()
         self.cog = cog; self.guild = guild; self.user_id = user_id
         Label_cls = Label or getattr(discord.ui, "Label", None)
         cur_anchors = current_votes[0] if current_votes and isinstance(current_votes[0], list) else []
         cur_encore = current_votes[1] if current_votes and len(current_votes) > 1 else None
         cur_guests = current_votes[2] if current_votes and len(current_votes) > 2 and isinstance(current_votes[2], list) else []
-        anchor_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_anchors)) for n, e in list(pool.items())[:25]]
+        
+        # Sort pool items: unseen bosses first, then alphabetically
+        sorted_pool = sorted(pool.items(), key=lambda x: (x[0] in seen_bosses, x[0]))
+        
+        def safe_emoji(e):
+            if not e: return None
+            # Check if unicode or custom emoji format
+            if len(e) <= 8 or (e.startswith("<") and e.endswith(">")):
+                return e
+            return "⚔️" # Fallback for corrupted/invalid emojis
+
+        anchor_opts = [discord.SelectOption(label=n[:100], value=n[:100], emoji=safe_emoji(e), default=(n in cur_anchors)) for n, e in sorted_pool[:25]]
         self.anchor = StringSelect(placeholder="Select up to 3 Anchors...", min_values=0, max_values=3, options=anchor_opts, custom_id="anchor")
-        encore_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n == cur_encore)) for n, e in list(pool.items())[:25]]
+        encore_opts = [discord.SelectOption(label=n[:100], value=n[:100], emoji=safe_emoji(e), default=(n == cur_encore)) for n, e in sorted_pool[:25]]
         self.encore = StringSelect(placeholder="Select Encore Preference...", min_values=0, options=encore_opts, custom_id="encore")
-        guest_opts = [discord.SelectOption(label=n, value=n, emoji=e, default=(n in cur_guests)) for n, e in list(pool.items())[:25]]
+        guest_opts = [discord.SelectOption(label=n[:100], value=n[:100], emoji=safe_emoji(e), default=(n in cur_guests)) for n, e in sorted_pool[:25]]
         self.guests = StringSelect(placeholder="Select up to 4 other bosses...", min_values=0, max_values=4, options=guest_opts, custom_id="guests")
         if Label_cls:
             self.add_item(Label_cls("Anchor Votes (2.5 pts ea, max 3)", self.anchor))
@@ -1122,8 +1170,9 @@ class BossPollView(discord.ui.View):
         actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
         pool = await actual_cog.config.guild(interaction.guild).boss_pool()
         poll_data = await actual_cog.config.guild(interaction.guild).active_poll()
+        seen_bosses = await actual_cog.config.guild(interaction.guild).seen_bosses()
         cur_votes = poll_data.get("votes", {}).get(str(interaction.user.id), [])
-        await interaction.response.send_modal(BossVoteModal(actual_cog, interaction.guild, interaction.user.id, pool, cur_votes))
+        await interaction.response.send_modal(BossVoteModal(actual_cog, interaction.guild, interaction.user.id, pool, cur_votes, seen_bosses))
     @discord.ui.button(label="Total Results", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="ba_results")
     async def results(self, interaction: discord.Interaction, button: discord.ui.Button):
         actual_cog = interaction.client.get_cog("BreakingArmy") or self.cog
