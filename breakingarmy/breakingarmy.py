@@ -178,13 +178,12 @@ class BreakingArmy(commands.Cog):
         new_emote = await self.config.guild(guild).new_boss_emote()
         
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
-        sorted_names = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
         
-        # Ensure all bosses in the pool are included in the preview
-        for boss_name in boss_pool:
-            if boss_name not in sorted_names:
-                sorted_names.append(boss_name)
-                
+        # New Ranking Logic: All new bosses first, then old
+        new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
+        old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
+        sorted_names = new_p + old_p
+        
         embed = discord.Embed(title="⚔️ Breaking Army: Boss Poll", color=discord.Color.gold())
         embed.description = "Vote for your favorite bosses to determine the next 6-week season roster!"
         sample = (
@@ -198,7 +197,7 @@ class BreakingArmy(commands.Cog):
         embed.add_field(name="📋 Season Structure (Rotation)", value=sample, inline=False)
         
         if len(sorted_names) < 8:
-            leaders = f"⚠️ *Not enough votes to form a season ({len(sorted_names)}/8 bosses)*"
+            leaders = f"⚠️ *Not enough bosses in pool to form a season ({len(sorted_names)}/8)*"
         else:
             def get_n(n): 
                 name = sorted_names[n]
@@ -216,7 +215,7 @@ class BreakingArmy(commands.Cog):
                 f"7. {get_n(6)} (Guest 4)\n"
                 f"8. {get_n(7)} (Guest 5)"
             )
-        embed.add_field(name="📊 Current Leaders", value=leaders, inline=False)
+        embed.add_field(name="📊 Current Priority Order", value=leaders, inline=False)
         embed.set_footer(text=f"Total Voters: {len(poll_data.get('votes', {}))} | Updates live on vote")
         return embed
 
@@ -430,22 +429,25 @@ class BreakingArmy(commands.Cog):
         new_emote = await self.config.guild(guild).new_boss_emote()
         
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
-        ranked = [b[0] for b in sorted(tally.items(), key=lambda x: x[1], reverse=True)]
         
-        # Ensure all bosses in the pool are included in the ranked list, 
-        # even if they have 0 votes (appended at the end)
-        for boss_name in boss_pool:
-            if boss_name not in ranked:
-                ranked.append(boss_name)
+        # Split pool into new and old groups
+        new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
+        old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
+        
+        # Priority Ranking: All new bosses first, then old bosses
+        ranked = new_p + old_p
         
         if len(ranked) < 8: return None
         
         new_b = [b for b in ranked if b not in seen_bosses]
         a = [None]*3; g = [None]*5; used = []
+        
+        # Priority distribution for new bosses
         if len(new_b) >= 1: a[0] = new_b[0]; used.append(new_b[0])
         if len(new_b) >= 2: g[0] = new_b[1]; used.append(new_b[1])
         if len(new_b) >= 3: a[2] = new_b[2]; used.append(new_b[2])
         
+        # Fill remaining slots with priority ranked list
         rem = [b for b in ranked if b not in used]
         for i in range(3):
             if a[i] is None: a[i] = rem.pop(0); used.append(a[i])
@@ -454,14 +456,15 @@ class BreakingArmy(commands.Cog):
             
         async with self.config.guild(guild).season_data() as s:
             s["anchors"] = a; s["guests"] = g; s["current_week"] = 1; s["is_active"] = True
-            s["priority_bosses"] = new_b[:3]
+            # All new bosses that made the cut get the priority emote
+            s["priority_bosses"] = [b for b in used if b not in seen_bosses]
             
         async with self.config.guild(guild).seen_bosses() as seen:
             for b in used: 
                 if b not in seen: seen.append(b)
         
         embed = discord.Embed(title="🚀 New Season Initialized", color=discord.Color.green())
-        def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (f" {new_emote}" if name in new_b[:3] else "")
+        def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (f" {new_emote}" if name in new_b else "")
         embed.add_field(name="Anchors", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(a)]), inline=True)
         embed.add_field(name="Guests", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(g)]), inline=True)
         return embed
@@ -1181,10 +1184,16 @@ class BossPollView(discord.ui.View):
         new_emote = await actual_cog.config.guild(interaction.guild).new_boss_emote()
         seen_bosses = await actual_cog.config.guild(interaction.guild).seen_bosses()
         tally = actual_cog._calculate_weighted_tally(poll.get("votes", {}))
-        ranked = sorted(tally.items(), key=lambda x: x[1], reverse=True)
-        if not ranked: return await interaction.response.send_message("No votes yet.", ephemeral=True)
-        res = "**Current Ranked Totals:**\n"
-        for i, (name, pts) in enumerate(ranked):
+        
+        # New Ranking Logic: All new bosses first, then old
+        new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
+        old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
+        ranked = new_p + old_p
+        
+        if not ranked: return await interaction.response.send_message("No bosses in pool.", ephemeral=True)
+        res = "**Current Priority Order (New Bosses First):**\n"
+        for i, name in enumerate(ranked):
+            pts = tally.get(name, 0)
             role = ""
             if i == 0: role = " (Anchor 1)"
             elif i == 1: role = " (Anchor 2)"
