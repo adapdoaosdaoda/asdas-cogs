@@ -94,9 +94,9 @@ class EventPolling(commands.Cog):
             },
             "Hero's Realm (Reset)": {
                 "type": "locked",
-                "days": ["Sunday"],
-                "fixed_time": "22:00",  # UTC 21:00
-                "duration": 30,  # 30 minutes
+                "days": ["Monday"],
+                "fixed_time": "19:15",  # UTC 18:15
+                "duration": 15,  # 15 minutes (second half of 19:00-19:30 slot)
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🛡️",
                 "priority": 5,
@@ -383,7 +383,8 @@ class EventPolling(commands.Cog):
             # Get all guilds
             all_guilds = await self.config.all_guilds()
 
-            for guild_id, guild_data in all_guilds.items():
+            for guild_id_str, guild_data in all_guilds.items():
+                guild_id = int(guild_id_str)
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
                     continue
@@ -424,7 +425,8 @@ class EventPolling(commands.Cog):
             # Get all guilds
             all_guilds = await self.config.all_guilds()
 
-            for guild_id, guild_data in all_guilds.items():
+            for guild_id_str, guild_data in all_guilds.items():
+                guild_id = int(guild_id_str)
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
                     continue
@@ -456,7 +458,11 @@ class EventPolling(commands.Cog):
 
     def _snapshot_has_changed(self, old: Dict, new: Dict) -> bool:
         """Compare two snapshots to see if winning times changed"""
-        if not old: return True
+        if not old and not new: return False
+        if not old or not new: return True
+        
+        # If number of events changed, it's a change
+        if len(old) != len(new): return True
         
         # Check if all events in new exist in old and match
         for event_name, new_slots in new.items():
@@ -523,7 +529,8 @@ class EventPolling(commands.Cog):
 
             all_guilds = await self.config.all_guilds()
 
-            for guild_id, guild_data in all_guilds.items():
+            for guild_id_str, guild_data in all_guilds.items():
+                guild_id = int(guild_id_str)
                 channel_id = guild_data.get("notification_channel_id")
                 if not channel_id:
                     continue
@@ -1712,14 +1719,19 @@ class EventPolling(commands.Cog):
         all_guilds = await self.config.all_guilds()
         total_polls = 0
         updated_polls = 0
-        
-        for guild_id, guild_data in all_guilds.items():
+
+        for guild_id_str, guild_data in all_guilds.items():
+            guild_id = int(guild_id_str)
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+
             polls = guild_data.get("polls", {})
             total_polls += len(polls)
-            
+
             for poll_id, poll_data in polls.items():
                 try:
-                    await self._update_poll_message(int(guild_id), poll_id, poll_data)
+                    await self._update_poll_message(guild_id, poll_id, poll_data)
                     updated_polls += 1
                     # Add small delay to avoid rate limiting
                     import asyncio

@@ -233,6 +233,12 @@ class AddInfoView(discord.ui.View):
 
                         notification_msg = await current_channel.send(notification_content, allowed_mentions=discord.AllowedMentions(roles=True))
 
+                        # Notify owners
+                        try:
+                            await self.cog.bot.send_to_owners(f"📢 **Weekly Trade Commission** announcement posted in **{self.guild.name}** ({current_channel.mention})")
+                        except Exception:
+                            pass
+
                         # Store notification message ID
                         await self.cog.config.guild(self.guild).notification_message_id.set(notification_msg.id)
 
@@ -733,6 +739,13 @@ class TradeCommission(commands.Cog):
 
         try:
             message = await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+            
+            # Notify owners
+            try:
+                await self.bot.send_to_owners(f"📢 **Weekly Trade Commission** placeholder posted in **{guild.name}** ({channel.mention})")
+            except Exception:
+                pass
+
             # Store current message as previous for next week
             await self.config.guild(guild).previous_message_id.set(config["current_message_id"])
             # Set new current message
