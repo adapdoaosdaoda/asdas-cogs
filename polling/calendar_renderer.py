@@ -136,6 +136,7 @@ class CalendarRenderer:
             try:
                 self.font_bold = ImageFont.truetype(font_bold_path, 17)
                 self.font_large = ImageFont.truetype(font_bold_path, 19)
+                self.font_small_bold = ImageFont.truetype(font_bold_path, 11)
                 print(f"Successfully loaded bold font from: {font_bold_path}")
                 loaded_bold = True
                 break
@@ -147,6 +148,7 @@ class CalendarRenderer:
             print("ERROR: Could not load bold font from any path, using default")
             self.font_bold = ImageFont.load_default()
             self.font_large = ImageFont.load_default()
+            self.font_small_bold = ImageFont.load_default()
 
     def _fade_color(self, color: Tuple[int, int, int]) -> Tuple[int, int, int]:
         """Fade a color by blending with background for better text readability
@@ -607,11 +609,11 @@ class CalendarRenderer:
                 if has_subslot_event: break
             
             if has_subslot_event:
-                bbox_s = draw.textbbox((0, 0), subslot_time, font=self.font_small)
+                bbox_s = draw.textbbox((0, 0), subslot_time, font=self.font_small_bold)
                 tw_s = bbox_s[2] - bbox_s[0]
                 tx_s = self.TIME_COL_WIDTH + self.PADDING - tw_s - 5
                 ty_s = y + self.CELL_HEIGHT // 2 + 5
-                draw.text((tx_s, ty_s), subslot_time, fill=self.TIME_TEXT, font=self.font_small)
+                draw.text((tx_s, ty_s), subslot_time, fill=self.TIME_TEXT, font=self.font_small_bold)
 
             # Draw cells for each day
             for col, day in enumerate(days):
@@ -984,7 +986,7 @@ class CalendarRenderer:
             txt_draw = ImageDraw.Draw(txt_img)
             
             # Calculate text size to center it
-            bbox = txt_draw.textbbox((0, 0), otext, font=self.font_bold)
+            bbox = txt_draw.textbbox((0, 0), otext, font=self.font_small_bold)
             txt_w = bbox[2] - bbox[0]
             txt_h = bbox[3] - bbox[1]
             
@@ -992,7 +994,7 @@ class CalendarRenderer:
             txt_x = (oheight - txt_w) // 2
             txt_y = (txt_img_height - txt_h) // 2
             # Use 20% opacity (alpha 51) for the text
-            txt_draw.text((txt_x, txt_y), otext, font=self.font_bold, fill=(*self.HEADER_TEXT, 51))
+            txt_draw.text((txt_x, txt_y), otext, font=self.font_small_bold, fill=(*self.HEADER_TEXT, 51))
             
             # Rotate 90 degrees (vertical reading up)
             rotated_txt = txt_img.rotate(90, expand=True)
