@@ -964,46 +964,42 @@ class CalendarRenderer:
                              self._emoji_positions.append((text_x, text_y, line_text, font_to_use))
 
                     # Collect Overlays
-                    if event_name == "Guild War" and start_time == time_str:
-                        num_slots = (duration + 29) // 30
-                        overlay_height = num_slots * self.CELL_HEIGHT
-                        overlay_text = "Locked"
-                        # Use x, y from loop (cell origin)
-                        overlays.append((x, y, overlay_height, overlay_text))
-
-                    if event_name == "Hero's Realm (Reset)":
-                        # This event starts at :15 or :45, so start_time != time_str
-                        # But it only occupies one 30-min slot cell.
-                        num_slots = (duration + 29) // 30
-                        overlay_height = num_slots * self.CELL_HEIGHT
-                        overlays.append((x, y, overlay_height, "Locked"))
+                    h_st, m_st = map(int, start_time.split(':'))
+                    normalized_st = f"{h_st:02d}:{(m_st // 30) * 30:02d}"
+                    
+                    if normalized_st == time_str:
+                        if event_name in ["Guild War", "Hero's Realm (Reset)"]:
+                            # Calculate height proportionally based on duration
+                            overlay_height = int((duration / 30) * self.CELL_HEIGHT)
+                            overlay_text = "Locked"
+                            # Use rect_x and rect_y for precise placement
+                            overlays.append((rect_x, rect_y, overlay_height, overlay_text))
 
         # Draw overlays for multi-slot events
-        for x, y, height, text in overlays:
-            # Create text image - width is height because we rotate
+        for ox, oy, oheight, otext in overlays:
+            # Create text image - width is oheight because we rotate
             # Use a reasonable width for the text strip (e.g. 30px to fit descenders)
             txt_img_height = 30
-            txt_img = Image.new('RGBA', (height, txt_img_height), (0, 0, 0, 0))
+            txt_img = Image.new('RGBA', (oheight, txt_img_height), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_img)
             
             # Calculate text size to center it
-            bbox = txt_draw.textbbox((0, 0), text, font=self.font_bold)
+            bbox = txt_draw.textbbox((0, 0), otext, font=self.font_bold)
             txt_w = bbox[2] - bbox[0]
             txt_h = bbox[3] - bbox[1]
             
             # Draw text centered along the strip
-            txt_x = (height - txt_w) // 2
+            txt_x = (oheight - txt_w) // 2
             txt_y = (txt_img_height - txt_h) // 2
             # Use 20% opacity (alpha 51) for the text
-            txt_draw.text((txt_x, txt_y), text, font=self.font_bold, fill=(*self.HEADER_TEXT, 51))
+            txt_draw.text((txt_x, txt_y), otext, font=self.font_bold, fill=(*self.HEADER_TEXT, 51))
             
             # Rotate 90 degrees (vertical reading up)
             rotated_txt = txt_img.rotate(90, expand=True)
             
             # Paste onto main image at left edge of block
-            # x + padding, y (start of block)
-            paste_x = x - 5
-            paste_y = y
+            paste_x = ox - 5
+            paste_y = oy
             
             img.paste(rotated_txt, (paste_x, paste_y), rotated_txt)
 
