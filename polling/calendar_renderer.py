@@ -593,6 +593,26 @@ class CalendarRenderer:
             time_y = y + 5  # Top aligned with padding
             draw.text((time_x, time_y), time_str, fill=self.TIME_TEXT, font=self.font_bold)
 
+            # Draw sub-slot time label if any event starts at :15 or :45
+            has_subslot_event = False
+            subslot_time = ""
+            for col_idx in range(len(days)):
+                day_name = days[col_idx]
+                if time_str in schedule and day_name in schedule[time_str]:
+                    for _, _, _, s_time, _ in schedule[time_str][day_name]:
+                        if s_time.endswith(":15") or s_time.endswith(":45"):
+                            has_subslot_event = True
+                            subslot_time = s_time
+                            break
+                if has_subslot_event: break
+            
+            if has_subslot_event:
+                bbox_s = draw.textbbox((0, 0), subslot_time, font=self.font_small)
+                tw_s = bbox_s[2] - bbox_s[0]
+                tx_s = self.TIME_COL_WIDTH + self.PADDING - tw_s - 5
+                ty_s = y + self.CELL_HEIGHT // 2 + 5
+                draw.text((tx_s, ty_s), subslot_time, fill=self.TIME_TEXT, font=self.font_small)
+
             # Draw cells for each day
             for col, day in enumerate(days):
                 x = self.TIME_COL_WIDTH + (col * self.CELL_WIDTH) + self.PADDING
@@ -945,14 +965,16 @@ class CalendarRenderer:
 
                     # Collect Overlays
                     if event_name == "Guild War" and start_time == time_str:
-                        num_slots = max(1, duration // 30)
+                        num_slots = (duration + 29) // 30
                         overlay_height = num_slots * self.CELL_HEIGHT
-                        overlay_text = "2 Games / Locked"
+                        overlay_text = "Locked"
                         # Use x, y from loop (cell origin)
                         overlays.append((x, y, overlay_height, overlay_text))
 
-                    if event_name == "Hero's Realm (Reset)" and start_time == time_str:
-                        num_slots = max(1, duration // 30)
+                    if event_name == "Hero's Realm (Reset)":
+                        # This event starts at :15 or :45, so start_time != time_str
+                        # But it only occupies one 30-min slot cell.
+                        num_slots = (duration + 29) // 30
                         overlay_height = num_slots * self.CELL_HEIGHT
                         overlays.append((x, y, overlay_height, "Locked"))
 
