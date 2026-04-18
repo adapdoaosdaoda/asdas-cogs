@@ -408,7 +408,8 @@ class CalendarRenderer:
 
                 # Calculate how many time slots this event spans (based on duration)
                 duration = event_info.get("duration", 30)
-                time_slots_spanned = max(1, duration // 30)
+                # Use ceiling division to account for any partial slot overlaps
+                time_slots_spanned = (duration + 29) // 30
 
                 # Generate all time slots for this event (e.g., 19:00 and 19:30 for 60-min event)
                 from datetime import datetime, timedelta
@@ -416,7 +417,9 @@ class CalendarRenderer:
                 time_slots_for_event = []
                 for i in range(time_slots_spanned):
                     slot_time = start_time + timedelta(minutes=i * 30)
-                    slot_time_str = slot_time.strftime("%H:%M")
+                    # Normalize to 30-minute slot boundary for cell assignment
+                    normalized_m = (slot_time.minute // 30) * 30
+                    slot_time_str = f"{slot_time.hour:02d}:{normalized_m:02d}"
                     time_slots_for_event.append(slot_time_str)
 
                 # Add event to all relevant time slots and days
@@ -460,12 +463,14 @@ class CalendarRenderer:
 
                 # Parse time
                 start_dt = datetime.strptime(fixed_time_str, "%H:%M")
-                time_slots_spanned = max(1, duration // 30)
+                # Use ceiling division to account for any partial slot overlaps
+                time_slots_spanned = (duration + 29) // 30
 
-                # Generate all time slots for this locked event
                 for i in range(time_slots_spanned):
                     slot_time = start_dt + timedelta(minutes=i * 30)
-                    slot_time_str = slot_time.strftime("%H:%M")
+                    # Normalize to 30-minute slot boundary for cell assignment
+                    normalized_m = (slot_time.minute // 30) * 30
+                    slot_time_str = f"{slot_time.hour:02d}:{normalized_m:02d}"
 
                     # Create time slot if it doesn't exist
                     if slot_time_str not in schedule:
