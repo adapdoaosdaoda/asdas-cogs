@@ -346,6 +346,7 @@ class TradeCommission(commands.Cog):
         """Start the background task when cog loads."""
         self._ready = True
         self._task = asyncio.create_task(self._check_schedule_loop())
+        asyncio.create_task(self._check_on_restart())
 
     async def cog_unload(self):
         """Cancel background task when cog unloads."""
@@ -753,6 +754,73 @@ class TradeCommission(commands.Cog):
             await self.config.guild(guild).current_channel_id.set(channel.id)
         except discord.Forbidden:
             pass
+
+    async def _check_on_restart(self):
+        """Check if any guild missed their scheduled weekly message during bot downtime."""
+        await self.bot.wait_until_ready()
+        
+        # Small delay to ensure all guilds are cached
+        await asyncio.sleep(10)
+
+        for guild in self.bot.guilds:
+            config = await self.config.guild(guild).all()
+            if not config["enabled"] or not config["channel_id"]:
+                continue
+
+            channel = guild.get_channel(config["channel_id"])
+            if not channel:
+                continue
+
+            try:
+                tz = pytz.timezone(config["timezone"])
+            except pytz.UnknownTimeZoneError:
+                tz = pytz.UTC
+
+            now = datetime.now(tz)
+            
+            # Find the most recent scheduled time (e.g. last Friday at 11:00)
+            target_day = config["schedule_day"]
+            target_hour = config["schedule_hour"]
+            target_minute = config["schedule_minute"]
+            
+            # Start with "now" and go backwards until we hit the target day
+            last_scheduled = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+            
+            # Days since last scheduled day
+            days_back = (now.weekday() - target_day) % 7
+            if days_back == 0 and now < last_scheduled:
+                days_back = 7
+            
+            last_scheduled -= timedelta(days=days_back)
+            
+            # Check if last_sent is before the last_scheduled time
+            last_sent = config["last_sent"]
+            should_notify = False
+            
+            if not last_sent:
+                should_notify = True
+            else:
+                last_sent_dt = datetime.fromisoformat(last_sent)
+                # Ensure last_sent_dt is aware if last_scheduled is aware
+                if last_sent_dt.tzinfo is None:
+                    last_sent_dt = tz.localize(last_sent_dt)
+                
+                if last_sent_dt < last_scheduled:
+                    should_notify = True
+
+            if should_notify:
+                # Notify bot owner
+                try:
+                    view = ConfirmPostView(self, guild.id, channel.id)
+                    await self.bot.send_to_owners(
+                        f"⚠️ **Trade Commission Missed!**\n"
+                        f"A scheduled message for **{guild.name}** was missed (last scheduled: {last_scheduled.strftime('%Y-%m-%d %H:%M')}).\n"
+                        f"Target channel: {channel.mention}\n"
+                        f"Click the button below to post it now and clear active options.",
+                        view=view
+                    )
+                except Exception as e:
+                    print(f"Error notifying owner about missed Trade Commission in {guild.name}: {e}")
 
     async def _send_scheduled_notification(
         self,
@@ -2196,5 +2264,50 @@ class TradeCommission(commands.Cog):
             await message.edit(embed=embed)
         except discord.Forbidden:
             pass
+
+
+class ConfirmPostView(discord.ui.View):
+    """View for owner to confirm posting a missed Trade Commission message."""
+
+    def __init__(self, cog: "TradeCommission", guild_id: int, channel_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    @discord.ui.button(label="Post Now", style=discord.ButtonStyle.green, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle confirm button click."""
+        if not await self.cog.bot.is_owner(interaction.user):
+            await interaction.response.send_message("❌ Only the bot owner can use this!", ephemeral=True)
+            return
+
+        guild = self.cog.bot.get_guild(self.guild_id)
+        if not guild:
+            await interaction.response.send_message("❌ Guild not found!", ephemeral=True)
+            return
+
+        channel = guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Channel not found!", ephemeral=True)
+            return
+
+        # Disable button after click
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        # Send the message
+        await self.cog._send_weekly_message(guild, channel)
+
+        # Update last_sent to current time
+        config = await self.cog.config.guild(guild).all()
+        try:
+            tz = pytz.timezone(config["timezone"])
+        except pytz.UnknownTimeZoneError:
+            tz = pytz.UTC
+        now = datetime.now(tz)
+        await self.cog.config.guild(guild).last_sent.set(now.isoformat())
+
+        await interaction.followup.send(f"✅ Trade Commission message posted for **{guild.name}**!")
 
 # Force update
