@@ -2292,8 +2292,10 @@ class ConfirmPostView(discord.ui.View):
             await interaction.response.send_message("❌ Channel not found!", ephemeral=True)
             return
 
-        # Disable button after click
-        button.disabled = True
+        # Disable all buttons after click
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
         await interaction.response.edit_message(view=self)
 
         # Send the message
@@ -2309,5 +2311,34 @@ class ConfirmPostView(discord.ui.View):
         await self.cog.config.guild(guild).last_sent.set(now.isoformat())
 
         await interaction.followup.send(f"✅ Trade Commission message posted for **{guild.name}**!")
+
+    @discord.ui.button(label="Ignore", style=discord.ButtonStyle.gray, emoji="⏭️")
+    async def ignore(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle ignore button click."""
+        if not await self.cog.bot.is_owner(interaction.user):
+            await interaction.response.send_message("❌ Only the bot owner can use this!", ephemeral=True)
+            return
+
+        guild = self.cog.bot.get_guild(self.guild_id)
+        if not guild:
+            await interaction.response.send_message("❌ Guild not found!", ephemeral=True)
+            return
+
+        # Disable all buttons after click
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        # Update last_sent to current time to mark as "done" for this period
+        config = await self.cog.config.guild(guild).all()
+        try:
+            tz = pytz.timezone(config["timezone"])
+        except pytz.UnknownTimeZoneError:
+            tz = pytz.UTC
+        now = datetime.now(tz)
+        await self.cog.config.guild(guild).last_sent.set(now.isoformat())
+
+        await interaction.followup.send(f"⏭️ Missed message for **{guild.name}** ignored.")
 
 # Force update
