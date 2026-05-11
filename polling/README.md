@@ -21,7 +21,7 @@ pip install git+https://github.com/jay3332/pilmoji
 - **Visual Calendar Images**: Professional PNG calendar images with emoji rendering
 - **Interactive Buttons**: Color-coded buttons for events (General, Sword Trial, Breaking Army, Showdown), Results button for viewing current winners
 - **Duration-Aware Conflict Detection**: Prevents users from selecting overlapping event times based on event durations
-- **Locked Time Slots**: Saturday & Sunday 20:30-22:00 are locked from selection
+- **Locked Time Slots**: Saturday & Sunday 19:30-21:00 are locked from selection
 - **Calendar View**: Beautiful visual calendar images showing schedule with colored labels and emojis
 - **Color-Coded Buttons**: Row 1: General (Grey), Sword Trial (Green), Breaking Army (Blue), Showdown (Red); Row 2: Results (Grey)
 - **Editable Selections**: Users can freely change or clear their choices
@@ -70,7 +70,7 @@ pip install git+https://github.com/jay3332/pilmoji
 - **Button color**: Red
 
 ### Guild Wars (Blocked Event) 🏰
-- **Duration**: Sat & Sun 20:30-22:00
+- **Duration**: Sat & Sun 19:30-21:00
 - **Not selectable** - This is a blocked time period
 - **Appears in calendar** as 🏰 during blocked hours
 
@@ -173,7 +173,7 @@ The cog uses **duration-aware conflict detection** to prevent overlapping events
   - Example: Hero's Realm at 20:00-20:30 conflicts with Sword Trial at 20:15-20:45 (on any of Wed/Fri/Sat/Sun)
   - Example: Hero's Realm at 20:00-20:30 conflicts with Breaking Army slot 1 at 20:00-21:00 on Wednesday
   - Example: Hero's Realm at 20:00-20:30 does NOT conflict with Breaking Army slot 1 at 20:00-21:00 on Monday
-- **Blocked time**: Saturday & Sunday 20:30-22:00 cannot be selected for any event
+- **Blocked time**: Saturday & Sunday 19:30-21:00 cannot be selected for any event
   - Events that would overlap with this period are prevented
   - 22:00 is available for selection
 
@@ -181,7 +181,7 @@ The cog uses **duration-aware conflict detection** to prevent overlapping events
 Users receive clear, specific error messages when conflicts occur:
 - "This time conflicts with your Party selection"
 - "This conflicts with your Breaking Army #1 selection on Monday"
-- "This time conflicts with a blocked period (Sat & Sun 20:30-22:00)"
+- "This time conflicts with a blocked period (Sat & Sun 19:30-21:00)"
 
 ## Calendar View
 
@@ -218,7 +218,7 @@ Time  │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │ Sun
 - **Daily Events**: Party (🎉) appears across all days
 - **Fixed-Day Events**: Hero's Realm (🛡️) and Sword Trial (⚔️) appear on Wed/Fri/Sat/Sun
 - **Weekly Events**: Appear only on their scheduled day
-- **Locked Times**: Guild Wars (🏰) appears on Sat & Sun 20:30-22:00
+- **Locked Times**: Guild Wars (🏰) appears on Sat & Sun 19:30-21:00
 
 ## Permissions
 
@@ -271,7 +271,7 @@ Bot: *Creates interactive poll with color-coded buttons and calendar view*
 **User voting example 5 - Blocked time (Guild Wars):**
 1. Click "🏆 Showdown" (Red) button
 2. Select "Slot 1" → "Sunday" → "21:00"
-3. ⚠️ Conflict detected! This time conflicts with a blocked period (Sat & Sun 20:30-22:00)
+3. ⚠️ Conflict detected! This time conflicts with a blocked period (Sat & Sun 19:30-21:00)
 4. User sees 🏰 Guild Wars is blocking that time
 5. User selects "22:00" instead (22:00 is available)
 6. ✅ Selection saved!

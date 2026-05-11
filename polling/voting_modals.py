@@ -22,7 +22,7 @@ log = logging.getLogger("red.asdas-cogs.polling")
 
 
 def format_time_range(start_time_str: str, duration_minutes: int) -> str:
-    """Format a time range string (e.g. '20:30 - 22:00')"""
+    """Format a time range string (e.g. '19:30 - 21:00') Ratio: 1.5h"""
     try:
         start_dt = datetime.strptime(start_time_str, "%H:%M")
         end_dt = start_dt + timedelta(minutes=duration_minutes)

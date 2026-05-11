@@ -71,8 +71,8 @@ class EventPolling(commands.Cog):
             "Guild War": {
                 "type": "locked",
                 "days": ["Saturday", "Sunday"],
-                "fixed_time": "20:30",  # UTC 19:30
-                "duration": 90,  # 1.5 hours (20:30-22:00)
+                "fixed_time": "19:30",  # UTC 18:30
+                "duration": 90,  # 1.5 hours (19:30-21:00)
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🏰",
                 "priority": 6,
@@ -161,7 +161,7 @@ class EventPolling(commands.Cog):
             }
         }
 
-        # Guild Wars - blocked time event (Sat & Sun 20:30-22:00)
+        # Guild Wars - blocked time event (Sat & Sun 19:30-21:00)
         self.guild_wars_emoji = "🏰"
 
         self.days_of_week = [
@@ -174,9 +174,9 @@ class EventPolling(commands.Cog):
         # Event-specific blocked time periods (applies to all days for these events)
         # Events cannot be scheduled if they would overlap with these time periods
         self.event_blocked_times = {
-            "Showdown": {"start": "21:30", "end": "01:00"},  # Cannot run during 21:30-01:00, latest start: 20:30 (ends 21:30), earliest start: 01:00
-            "Breaking Army": {"start": "20:30", "end": "22:30"},  # Cannot run during 20:30-22:30, latest start: 19:30 (ends 20:30), earliest start: 22:30
-            "Party": {"start": "20:40", "end": "22:30"}  # Cannot run during 20:40-22:30, latest start: 20:30 (ends 20:40), earliest start: 22:30
+            "Showdown": {"start": "20:30", "end": "00:00"},  # Cannot run during 20:30-00:00
+            "Breaking Army": {"start": "19:30", "end": "21:30"},  # Cannot run during 19:30-21:30
+            "Party": {"start": "19:40", "end": "21:30"}  # Cannot run during 19:40-21:30
         }
 
         # Timezone display - customize this to match your server's timezone
@@ -3273,7 +3273,7 @@ class EventPolling(commands.Cog):
         )
         # Get display times for locked events
         heros_reset_time = self._convert_to_local_time("22:00")
-        gw_time = self._convert_to_local_time("20:30")
+        gw_time = self._convert_to_local_time("19:30")
 
         embed.add_field(
             name="🔒 Locked",
@@ -3285,7 +3285,6 @@ class EventPolling(commands.Cog):
             ),
             inline=True
         )
-
         # Calculate winning times (most votes) for each event and slot
         winning_times = {}
         for event_name, event_info in self.events.items():
@@ -4527,7 +4526,7 @@ class EventPolling(commands.Cog):
                     event_start, event_end = self._get_event_time_range(event_name, time_str)
 
                     if self._time_ranges_overlap(event_start, event_end, blocked_start, blocked_end):
-                        return True, f"This time conflicts with a blocked period (Sat & Sun 20:30-22:00)"
+                        return True, f"This time conflicts with a blocked period (Sat & Sun 19:30-21:00)"
 
         return False, None
 

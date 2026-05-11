@@ -254,8 +254,8 @@ class CalendarRenderer:
         """
         if blocked_times is None:
             blocked_times = [
-                {"day": "Saturday", "start": "20:30", "end": "22:00"},
-                {"day": "Sunday", "start": "20:30", "end": "22:00"}
+                {"day": "Saturday", "start": "19:30", "end": "21:00"},
+                {"day": "Sunday", "start": "19:30", "end": "21:00"}
             ]
 
         # Build schedule data structure

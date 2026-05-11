@@ -42,7 +42,7 @@ def is_time_blocked(day, time_str, event_name, events, blocked_times):
                 event_start, event_end = get_event_time_range(event_name, time_str, events)
 
                 if time_ranges_overlap(event_start, event_end, blocked_start, blocked_end):
-                    return True, f"This time conflicts with a blocked period (Sat 20:30-22:30)"
+                    return True, f"This time conflicts with a blocked period (Sat 19:30-20:30)"
 
     return False, None
 
@@ -58,7 +58,7 @@ events = {
 
 # Blocked times
 blocked_times = [
-    {"day": "Saturday", "start": "20:30", "end": "22:30"}
+    {"day": "Saturday", "start": "19:30", "end": "22:30"}
 ]
 
 print("=" * 70)
@@ -104,20 +104,20 @@ assert overlap2 == False
 overlap3 = time_ranges_overlap(
     datetime.strptime("20:00", "%H:%M").time(),  # 20:00
     datetime.strptime("21:00", "%H:%M").time(),  # 21:00
+    datetime.strptime("19:30", "%H:%M").time(),  # 19:30
     datetime.strptime("20:30", "%H:%M").time(),  # 20:30
-    datetime.strptime("21:30", "%H:%M").time(),  # 21:30
 )
-print(f"20:00-21:00 vs 20:30-21:30: {overlap3}")
+print(f"20:00-21:00 vs 19:30-20:30: {overlap3}")
 assert overlap3 == True
 print("✅ PASSED\n")
 
 # Test 3: Blocked time detection
-print("Test 3: Blocked time detection (Saturday 20:30-22:30)")
+print("Test 3: Blocked time detection (Saturday 19:30-20:30)")
 print("-" * 70)
 
-# Weekly event on Saturday at 20:30 (1 hour, ends 21:30) - conflicts
-is_blocked, msg = is_time_blocked("Saturday", "20:30", "Breaking Army #1", events, blocked_times)
-print(f"Breaking Army #1 on Saturday at 20:30: Blocked={is_blocked}")
+# Weekly event on Saturday at 19:30 (1 hour, ends 20:30) - conflicts
+is_blocked, msg = is_time_blocked("Saturday", "19:30", "Breaking Army #1", events, blocked_times)
+print(f"Breaking Army #1 on Saturday at 19:30: Blocked={is_blocked}")
 print(f"  Message: {msg}")
 assert is_blocked == True
 
@@ -132,14 +132,14 @@ is_blocked, msg = is_time_blocked("Saturday", "22:30", "Breaking Army #2", event
 print(f"Breaking Army #2 on Saturday at 22:30: Blocked={is_blocked}")
 assert is_blocked == False
 
-# Weekly event on Monday at 20:30 - no conflict (different day)
-is_blocked, msg = is_time_blocked("Monday", "20:30", "Showdown #2", events, blocked_times)
-print(f"Showdown #2 on Monday at 20:30: Blocked={is_blocked}")
+# Weekly event on Monday at 19:30 - no conflict (different day)
+is_blocked, msg = is_time_blocked("Monday", "19:30", "Showdown #2", events, blocked_times)
+print(f"Showdown #2 on Monday at 19:30: Blocked={is_blocked}")
 assert is_blocked == False
 
-# Daily event at 20:30 (10 min, ends 20:40) - conflicts with Saturday block
-is_blocked, msg = is_time_blocked(None, "20:30", "Party", events, blocked_times)
-print(f"Party (daily) at 20:30: Blocked={is_blocked}")
+# Daily event at 19:30 (10 min, ends 20:40) - conflicts with Saturday block
+is_blocked, msg = is_time_blocked(None, "19:30", "Party", events, blocked_times)
+print(f"Party (daily) at 19:30: Blocked={is_blocked}")
 print(f"  Message: {msg}")
 assert is_blocked == True
 
@@ -168,11 +168,11 @@ conflict = time_ranges_overlap(party_start, party_end, ba_start, ba_end)
 print(f"Party 20:00-20:10 vs Breaking Army 20:10-21:10: Conflict={conflict}")
 assert conflict == False
 
-# Breaking Army #1 at 20:00 (ends 21:00) vs Breaking Army #2 at 20:30 (ends 21:30) - CONFLICT (same day)
+# Breaking Army #1 at 20:00 (ends 21:00) vs Breaking Army #2 at 19:30 (ends 20:30) - CONFLICT (same day)
 ba1_start, ba1_end = get_event_time_range("Breaking Army #1", "20:00", events)
-ba2_start, ba2_end = get_event_time_range("Breaking Army #2", "20:30", events)
+ba2_start, ba2_end = get_event_time_range("Breaking Army #2", "19:30", events)
 conflict = time_ranges_overlap(ba1_start, ba1_end, ba2_start, ba2_end)
-print(f"Breaking Army #1 20:00-21:00 vs Breaking Army #2 20:30-21:30: Conflict={conflict}")
+print(f"Breaking Army #1 20:00-21:00 vs Breaking Army #2 19:30-20:30: Conflict={conflict}")
 assert conflict == True
 
 # Showdown #1 at 20:00 (ends 21:00) vs Showdown #2 at 21:00 (ends 22:00) - NO CONFLICT
@@ -200,6 +200,6 @@ print("=" * 70)
 print("\nSummary:")
 print("- Event durations work correctly (Party: 10min, Weekly: 60min)")
 print("- Time range overlap detection works correctly")
-print("- Blocked times (Saturday 20:30-22:30) are properly enforced")
+print("- Blocked times (Saturday 19:30-20:30) are properly enforced")
 print("- Complex conflict scenarios are handled correctly")
 print("- Edge cases (midnight rollover) work as expected")
