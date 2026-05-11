@@ -61,7 +61,8 @@ class BreakingArmy(commands.Cog):
                 "guests": [],
                 "priority_bosses": [], # Bosses that get the 'new' emote this season
                 "is_active": False,
-                "live_season_message": {} 
+                "live_season_message": {},
+                "last_reset": None  # ISO format timestamp of last reset
             }
         }
         
@@ -348,9 +349,31 @@ class BreakingArmy(commands.Cog):
                         await self._advance_run(guild)
 
                 # 2. Season Reset / Week Advancement (Sunday 22:00)
-                if day_name == "Sunday" and time_str == "22:00":
+                # We use a 1-hour window for the "active" check, but catch-up handles downtime.
+                # Target: Sunday 22:00 Server Time (UTC+1)
+                days_back = (now.weekday() - 6) % 7 # 6 = Sunday
+                target_reset = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
+                if target_reset > now:
+                    target_reset -= timedelta(days=7)
+
+                last_reset_str = (await self.config.guild(guild).season_data())["last_reset"]
+                should_reset = False
+                if not last_reset_str:
+                    # Initialize last_reset if it doesn't exist, but only trigger if it's currently Sunday 22:00
+                    if day_name == "Sunday" and time_str == "22:00":
+                        should_reset = True
+                    else:
+                        async with self.config.guild(guild).season_data() as s:
+                            s["last_reset"] = target_reset.isoformat()
+                else:
+                    last_reset = datetime.fromisoformat(last_reset_str)
+                    if last_reset < target_reset:
+                        should_reset = True
+
+                if should_reset:
                     msg = ""
                     async with self.config.guild(guild).season_data() as s:
+                        s["last_reset"] = target_reset.isoformat()
                         if s["is_active"]:
                             s["current_week"] += 1
                             if s["current_week"] > 6:
@@ -482,6 +505,15 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(guild).season_data() as s:
             s["anchors"] = a; s["guests"] = g; s["current_week"] = 1; s["is_active"] = True
             s["priority_bosses"] = [b for b in used if b not in seen_bosses]
+            
+            # Set last_reset to the most recent Sunday 22:00 to prevent immediate auto-progression
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
+            now = datetime.now(server_tz)
+            days_back = (now.weekday() - 6) % 7
+            target_reset = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
+            if target_reset > now: target_reset -= timedelta(days=7)
+            s["last_reset"] = target_reset.isoformat()
             
         async with self.config.guild(guild).seen_bosses() as seen:
             for b in used: 
@@ -866,6 +898,14 @@ class BreakingArmy(commands.Cog):
         if not (1 <= week <= 6): return await ctx.send("Week must be between 1 and 6.")
         async with self.config.guild(ctx.guild).season_data() as s:
             s["current_week"] = week; s["is_active"] = True
+            
+            # Update last_reset to the most recent Sunday 22:00
+            server_tz = timezone(timedelta(hours=1))
+            now = datetime.now(server_tz)
+            days_back = (now.weekday() - 6) % 7
+            target_reset = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
+            if target_reset > now: target_reset -= timedelta(days=7)
+            s["last_reset"] = target_reset.isoformat()
         
         season = await self.config.guild(ctx.guild).season_data()
         bosses = self._get_bosses_for_week(season, week)

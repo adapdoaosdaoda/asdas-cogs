@@ -6,6 +6,7 @@ from typing import Optional, Dict, List
 from redbot.core import commands, Config
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import box, humanize_list
+from discord.ext import tasks
 import pytz
 import re
 
@@ -337,21 +338,16 @@ class TradeCommission(commands.Cog):
 
         self.config.register_global(**default_global)
         self.config.register_guild(**default_guild)
-        self._task = None
         self._ready = False
-        self._sync_state = "sync_minute"  # States: sync_minute -> sync_second -> normal
-        self._last_sync_day = None  # Track last Friday sync
 
     async def cog_load(self):
         """Start the background task when cog loads."""
         self._ready = True
-        self._task = asyncio.create_task(self._check_schedule_loop())
-        asyncio.create_task(self._check_on_restart())
+        self.check_schedule_loop.start()
 
     async def cog_unload(self):
         """Cancel background task when cog unloads."""
-        if self._task:
-            self._task.cancel()
+        self.check_schedule_loop.cancel()
 
     async def _has_addinfo_permission(self, member: discord.Member) -> bool:
         """Check if a member has permission to use addinfo reactions."""
@@ -510,60 +506,18 @@ class TradeCommission(commands.Cog):
 
         return embed
 
-    async def _check_schedule_loop(self):
-        """Background loop to check for scheduled messages.
-
-        Uses three-stage smart syncing:
-        1. sync_minute: Check every 60s until synchronized to minute 0
-        2. sync_second: Check every 1s until synchronized to second 0
-        3. normal: Check every 3600s (fully synchronized)
-
-        Every Friday: Re-sync to minute 0 (not second 0) to correct drift
-        """
-        await self.bot.wait_until_ready()
-        while True:
+    @tasks.loop(minutes=1)
+    async def check_schedule_loop(self):
+        """Background loop to check for scheduled messages."""
+        for guild in self.bot.guilds:
             try:
-                now_utc = datetime.now(pytz.UTC)
-
-                # Check if it's Friday and we haven't synced today
-                if now_utc.weekday() == 4:  # 4 = Friday
-                    today_date = now_utc.date()
-                    if self._last_sync_day != today_date:
-                        # Re-sync to minute 0 only (not second 0)
-                        self._sync_state = "sync_minute"
-                        self._last_sync_day = today_date
-
-                # Run checks for all guilds
-                for guild in self.bot.guilds:
-                    await self._check_guild_schedule(guild)
-
-                # Determine sleep interval based on sync state
-                if self._sync_state == "sync_minute":
-                    # Stage 1: Check every minute until we hit minute 0
-                    if now_utc.minute == 0:
-                        self._sync_state = "sync_second"  # Move to second sync
-                        await asyncio.sleep(1)  # Sleep for 1 second
-                    else:
-                        await asyncio.sleep(60)  # Sleep for 1 minute
-
-                elif self._sync_state == "sync_second":
-                    # Stage 2: Check every second until we hit second 0
-                    if now_utc.second == 0:
-                        self._sync_state = "normal"  # Switch to normal mode
-                        await asyncio.sleep(3600)  # Sleep for 1 hour
-                    else:
-                        await asyncio.sleep(1)  # Sleep for 1 second
-
-                else:  # normal mode
-                    # Stage 3: Check every hour (fully synchronized)
-                    await asyncio.sleep(3600)
-
-            except asyncio.CancelledError:
-                break
+                await self._check_guild_schedule(guild)
             except Exception as e:
-                print(f"Error in Trade Commission schedule loop: {e}")
-                # On error, use safe 60 second interval
-                await asyncio.sleep(60)
+                print(f"Error in Trade Commission schedule check for guild {guild.id}: {e}")
+
+    @check_schedule_loop.before_loop
+    async def before_check_schedule_loop(self):
+        await self.bot.wait_until_ready()
 
     async def _check_guild_schedule(self, guild: discord.Guild):
         """Check if it's time to send the weekly message or scheduled notifications for a guild."""
@@ -580,65 +534,75 @@ class TradeCommission(commands.Cog):
         try:
             tz = pytz.timezone(config["timezone"])
         except pytz.UnknownTimeZoneError:
-            # If invalid timezone, fallback to UTC but log it
             tz = pytz.UTC
-            # We don't have a logger here but we can print or just ignore
-            # print(f"Invalid timezone {config['timezone']} for guild {guild.id}")
 
         now = datetime.now(tz)
 
-        # Check weekly message (only if enabled)
+        # 1. Check weekly message (only if enabled)
         if config["enabled"]:
-            # Check if it's the right day, hour, and within 2 minutes of scheduled time
-            if (now.weekday() == config["schedule_day"] and
-                now.hour == config["schedule_hour"] and
-                abs(now.minute - config["schedule_minute"]) < 2):
+            # Find the most recent scheduled time
+            target_day = config["schedule_day"]
+            target_hour = config["schedule_hour"]
+            target_minute = config["schedule_minute"]
+            
+            target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+            days_back = (now.weekday() - target_day) % 7
+            if days_back == 0 and now < target_time:
+                days_back = 7
+            target_time -= timedelta(days=days_back)
 
-                # Check if we already sent a message this week
-                last_sent = await self.config.guild(guild).get_raw("last_sent", default=None)
-                if last_sent:
-                    last_sent_dt = datetime.fromisoformat(last_sent)
-                    if (now - last_sent_dt).days < 7:
-                        pass  # Don't return, check other notifications
-                    else:
-                        # Send the weekly message
-                        await self._send_weekly_message(guild, channel)
-                        await self.config.guild(guild).last_sent.set(now.isoformat())
+            last_sent_str = config["last_sent"]
+            should_send = False
+            if not last_sent_str:
+                # If never sent, only send if we are in the scheduled minute window now
+                if now.weekday() == target_day and now.hour == target_hour and abs(now.minute - target_minute) < 2:
+                    should_send = True
                 else:
-                    # Send the weekly message
-                    await self._send_weekly_message(guild, channel)
-                    await self.config.guild(guild).last_sent.set(now.isoformat())
-
-        # Check Sunday pre-shop restock notification (weekday 6 = Sunday)
-        if (config["sunday_enabled"] and
-            now.weekday() == 6 and
-            now.hour == config["sunday_hour"] and
-            abs(now.minute - config["sunday_minute"]) < 2):
-
-            # Check if we already sent this notification today
-            last_sunday = await self.config.guild(guild).get_raw("last_sunday_notification", default=None)
-            if last_sunday:
-                last_sunday_dt = datetime.fromisoformat(last_sunday)
-                if (now - last_sunday_dt).days < 1:
-                    pass  # Already sent today
-                else:
-                    # Calculate event timestamp (hard set to 21:00 UTC as requested)
-                    event_time = pytz.UTC.localize(datetime(now.year, now.month, now.day, 21, 0, 0))
-                    # If event time has passed (e.g. notification after midnight for next day event)
-                    if event_time < now:
-                        event_time += timedelta(days=1)
-                        event_time = pytz.UTC.normalize(event_time)
-                    event_timestamp = int(event_time.timestamp())
-
-                    await self._send_scheduled_notification(
-                        channel,
-                        config["sunday_message"],
-                        config["sunday_ping_role_id"],
-                        guild,
-                        event_timestamp
-                    )
-                    await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
+                    # Just initialize last_sent to prevent double posting on first setup
+                    await self.config.guild(guild).last_sent.set(target_time.isoformat())
             else:
+                last_sent = datetime.fromisoformat(last_sent_str)
+                if last_sent.tzinfo is None:
+                    last_sent = tz.localize(last_sent)
+                
+                # If the most recent target_time hasn't been met yet
+                if last_sent < target_time:
+                    # Catch-up logic: only auto-post if it's within 24 hours of the scheduled time
+                    if now < target_time + timedelta(hours=24):
+                        should_send = True
+                    else:
+                        # Too late to auto-post, just update last_sent to target_time to skip this week
+                        await self.config.guild(guild).last_sent.set(target_time.isoformat())
+
+            if should_send:
+                await self._send_weekly_message(guild, channel)
+
+        # 2. Check Sunday pre-shop restock notification (weekday 6 = Sunday)
+        if config["sunday_enabled"]:
+            target_hour = config["sunday_hour"]
+            target_minute = config["sunday_minute"]
+            
+            # Use same logic to find most recent target Sunday
+            target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+            days_back = (now.weekday() - 6) % 7
+            if days_back == 0 and now < target_time:
+                days_back = 7
+            target_time -= timedelta(days=days_back)
+
+            last_sunday_str = config["last_sunday_notification"]
+            should_notify = False
+            if not last_sunday_str:
+                if now.weekday() == 6 and now.hour == target_hour and abs(now.minute - target_minute) < 2:
+                    should_notify = True
+                else:
+                    await self.config.guild(guild).last_sunday_notification.set(target_time.isoformat())
+            else:
+                last_sunday = datetime.fromisoformat(last_sunday_str)
+                if last_sunday.tzinfo is None: last_sunday = tz.localize(last_sunday)
+                if last_sunday < target_time and now < target_time + timedelta(hours=4):
+                    should_notify = True
+
+            if should_notify:
                 # Calculate event timestamp (hard set to 21:00 UTC as requested)
                 event_time = pytz.UTC.localize(datetime(now.year, now.month, now.day, 21, 0, 0))
                 if event_time < now:
@@ -653,37 +617,33 @@ class TradeCommission(commands.Cog):
                     guild,
                     event_timestamp
                 )
-                await self.config.guild(guild).last_sunday_notification.set(now.isoformat())
+                await self.config.guild(guild).last_sunday_notification.set(target_time.isoformat())
 
-        # Check Wednesday sell recommendation notification (weekday 2 = Wednesday)
-        if (config["wednesday_enabled"] and
-            now.weekday() == 2 and
-            now.hour == config["wednesday_hour"] and
-            abs(now.minute - config["wednesday_minute"]) < 2):
+        # 3. Check Wednesday sell recommendation notification (weekday 2 = Wednesday)
+        if config["wednesday_enabled"]:
+            target_hour = config["wednesday_hour"]
+            target_minute = config["wednesday_minute"]
+            
+            target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+            days_back = (now.weekday() - 2) % 7
+            if days_back == 0 and now < target_time:
+                days_back = 7
+            target_time -= timedelta(days=days_back)
 
-            # Check if we already sent this notification today
-            last_wednesday = await self.config.guild(guild).get_raw("last_wednesday_notification", default=None)
-            if last_wednesday:
-                last_wednesday_dt = datetime.fromisoformat(last_wednesday)
-                if (now - last_wednesday_dt).days < 1:
-                    pass  # Already sent today
+            last_wednesday_str = config["last_wednesday_notification"]
+            should_notify = False
+            if not last_wednesday_str:
+                if now.weekday() == 2 and now.hour == target_hour and abs(now.minute - target_minute) < 2:
+                    should_notify = True
                 else:
-                    # Calculate event timestamp (hard set to 22:00 UTC as requested)
-                    event_time = pytz.UTC.localize(datetime(now.year, now.month, now.day, 22, 0, 0))
-                    if event_time < now:
-                        event_time += timedelta(days=1)
-                        event_time = pytz.UTC.normalize(event_time)
-                    event_timestamp = int(event_time.timestamp())
-
-                    await self._send_scheduled_notification(
-                        channel,
-                        config["wednesday_message"],
-                        config["wednesday_ping_role_id"],
-                        guild,
-                        event_timestamp
-                    )
-                    await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
+                    await self.config.guild(guild).last_wednesday_notification.set(target_time.isoformat())
             else:
+                last_wednesday = datetime.fromisoformat(last_wednesday_str)
+                if last_wednesday.tzinfo is None: last_wednesday = tz.localize(last_wednesday)
+                if last_wednesday < target_time and now < target_time + timedelta(hours=4):
+                    should_notify = True
+
+            if should_notify:
                 # Calculate event timestamp (hard set to 22:00 UTC as requested)
                 event_time = pytz.UTC.localize(datetime(now.year, now.month, now.day, 22, 0, 0))
                 if event_time < now:
@@ -698,7 +658,7 @@ class TradeCommission(commands.Cog):
                     guild,
                     event_timestamp
                 )
-                await self.config.guild(guild).last_wednesday_notification.set(now.isoformat())
+                await self.config.guild(guild).last_wednesday_notification.set(target_time.isoformat())
 
     async def _send_weekly_message(self, guild: discord.Guild, channel: discord.TextChannel):
         """Send the weekly Trade Commission message."""
@@ -752,75 +712,16 @@ class TradeCommission(commands.Cog):
             # Set new current message
             await self.config.guild(guild).current_message_id.set(message.id)
             await self.config.guild(guild).current_channel_id.set(channel.id)
-        except discord.Forbidden:
-            pass
-
-    async def _check_on_restart(self):
-        """Check if any guild missed their scheduled weekly message during bot downtime."""
-        await self.bot.wait_until_ready()
-        
-        # Small delay to ensure all guilds are cached
-        await asyncio.sleep(10)
-
-        for guild in self.bot.guilds:
-            config = await self.config.guild(guild).all()
-            if not config["enabled"] or not config["channel_id"]:
-                continue
-
-            channel = guild.get_channel(config["channel_id"])
-            if not channel:
-                continue
-
+            
+            # Update last_sent to prevent double-posting
             try:
                 tz = pytz.timezone(config["timezone"])
             except pytz.UnknownTimeZoneError:
                 tz = pytz.UTC
-
             now = datetime.now(tz)
-            
-            # Find the most recent scheduled time (e.g. last Friday at 11:00)
-            target_day = config["schedule_day"]
-            target_hour = config["schedule_hour"]
-            target_minute = config["schedule_minute"]
-            
-            # Start with "now" and go backwards until we hit the target day
-            last_scheduled = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-            
-            # Days since last scheduled day
-            days_back = (now.weekday() - target_day) % 7
-            if days_back == 0 and now < last_scheduled:
-                days_back = 7
-            
-            last_scheduled -= timedelta(days=days_back)
-            
-            # Check if last_sent is before the last_scheduled time
-            last_sent = config["last_sent"]
-            should_notify = False
-            
-            if not last_sent:
-                should_notify = True
-            else:
-                last_sent_dt = datetime.fromisoformat(last_sent)
-                # Ensure last_sent_dt is aware if last_scheduled is aware
-                if last_sent_dt.tzinfo is None:
-                    last_sent_dt = tz.localize(last_sent_dt)
-                
-                if last_sent_dt < last_scheduled:
-                    should_notify = True
-
-            if should_notify:
-                # Notify bot owner
-                try:
-                    view = ConfirmPostView(self, guild.id, channel.id)
-                    await self.bot.send_to_owners(
-                        f"⚠️ **Trade Commission Missed!**\n"
-                        f"A scheduled message for **{guild.name}** was missed (last scheduled: {last_scheduled.strftime('%Y-%m-%d %H:%M')}).\n"
-                        f"Target channel: {channel.mention}\n"
-                        f"Click the button below to post it now and clear active options.",
-                        view=view
-                    )
-                except Exception as e:
-                    print(f"Error notifying owner about missed Trade Commission in {guild.name}: {e}")
+            await self.config.guild(guild).last_sent.set(now.isoformat())
+        except discord.Forbidden:
+            pass
 
     async def _send_scheduled_notification(
         self,
@@ -2264,81 +2165,5 @@ class TradeCommission(commands.Cog):
             await message.edit(embed=embed)
         except discord.Forbidden:
             pass
-
-
-class ConfirmPostView(discord.ui.View):
-    """View for owner to confirm posting a missed Trade Commission message."""
-
-    def __init__(self, cog: "TradeCommission", guild_id: int, channel_id: int):
-        super().__init__(timeout=None)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-
-    @discord.ui.button(label="Post Now", style=discord.ButtonStyle.green, emoji="✅")
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Handle confirm button click."""
-        if not await self.cog.bot.is_owner(interaction.user):
-            await interaction.response.send_message("❌ Only the bot owner can use this!", ephemeral=True)
-            return
-
-        guild = self.cog.bot.get_guild(self.guild_id)
-        if not guild:
-            await interaction.response.send_message("❌ Guild not found!", ephemeral=True)
-            return
-
-        channel = guild.get_channel(self.channel_id)
-        if not channel:
-            await interaction.response.send_message("❌ Channel not found!", ephemeral=True)
-            return
-
-        # Disable all buttons after click
-        for item in self.children:
-            if isinstance(item, discord.ui.Button):
-                item.disabled = True
-        await interaction.response.edit_message(view=self)
-
-        # Send the message
-        await self.cog._send_weekly_message(guild, channel)
-
-        # Update last_sent to current time
-        config = await self.cog.config.guild(guild).all()
-        try:
-            tz = pytz.timezone(config["timezone"])
-        except pytz.UnknownTimeZoneError:
-            tz = pytz.UTC
-        now = datetime.now(tz)
-        await self.cog.config.guild(guild).last_sent.set(now.isoformat())
-
-        await interaction.followup.send(f"✅ Trade Commission message posted for **{guild.name}**!")
-
-    @discord.ui.button(label="Ignore", style=discord.ButtonStyle.gray, emoji="⏭️")
-    async def ignore(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Handle ignore button click."""
-        if not await self.cog.bot.is_owner(interaction.user):
-            await interaction.response.send_message("❌ Only the bot owner can use this!", ephemeral=True)
-            return
-
-        guild = self.cog.bot.get_guild(self.guild_id)
-        if not guild:
-            await interaction.response.send_message("❌ Guild not found!", ephemeral=True)
-            return
-
-        # Disable all buttons after click
-        for item in self.children:
-            if isinstance(item, discord.ui.Button):
-                item.disabled = True
-        await interaction.response.edit_message(view=self)
-
-        # Update last_sent to current time to mark as "done" for this period
-        config = await self.cog.config.guild(guild).all()
-        try:
-            tz = pytz.timezone(config["timezone"])
-        except pytz.UnknownTimeZoneError:
-            tz = pytz.UTC
-        now = datetime.now(tz)
-        await self.cog.config.guild(guild).last_sent.set(now.isoformat())
-
-        await interaction.followup.send(f"⏭️ Missed message for **{guild.name}** ignored.")
 
 # Force update
