@@ -212,6 +212,7 @@ class ForumThreadMessage(commands.Cog):
         # Register guild-level configuration
         self.config.register_guild(
             forum_channel_id=None,  # ID of the forum channel to monitor
+            forum_channel_ids=[],  # List of IDs of the forum channels to monitor
             initial_message="Welcome to this thread!",  # Initial message content
             edited_message="Thread created successfully!",  # Message content after first edit
             third_edited_message="Thread is ready!",  # Message content after second edit (deprecated, use third_edited_default)
@@ -255,9 +256,26 @@ class ForumThreadMessage(commands.Cog):
         self.event_monitor_task = None
 
     async def cog_load(self):
-        """Start background task when cog loads."""
+        """Start background task and run migrations when cog loads."""
+        try:
+            await self._migrate_config()
+        except Exception as e:
+            log.error(f"Error migrating ForumThreadMessage config: {e}", exc_info=True)
         self.event_monitor_task = asyncio.create_task(self._event_monitor_loop())
         log.info("Started event monitor background task")
+
+    async def _migrate_config(self):
+        """Migrate single forum_channel_id config to forum_channel_ids list."""
+        all_guilds = await self.config.all_guilds()
+        for guild_id, data in all_guilds.items():
+            old_channel_id = data.get("forum_channel_id")
+            if old_channel_id is not None:
+                current_ids = data.get("forum_channel_ids", [])
+                if old_channel_id not in current_ids:
+                    current_ids = list(current_ids)
+                    current_ids.append(old_channel_id)
+                    await self.config.guild_from_id(guild_id).forum_channel_ids.set(current_ids)
+                await self.config.guild_from_id(guild_id).forum_channel_id.set(None)
 
     async def cog_unload(self):
         """Clean up background task when cog unloads."""
@@ -824,28 +842,58 @@ class ForumThreadMessage(commands.Cog):
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
-    @forumthreadmessage.command(name="channel")
-    async def set_channel(self, ctx, channel: Optional[discord.ForumChannel] = None):
-        """Set the forum channel to monitor for new threads.
+    @forumthreadmessage.group(name="channel", invoke_without_command=True)
+    async def channel_group(self, ctx):
+        """Manage forum channels to monitor for new threads."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
-        Use without arguments to disable monitoring.
-
-        Parameters
-        ----------
-        channel : discord.ForumChannel, optional
-            The forum channel to monitor. If not provided, monitoring is disabled.
+    @channel_group.command(name="add")
+    async def channel_add(self, ctx, channel: discord.ForumChannel):
+        """Add a forum channel to monitor.
 
         Examples
         --------
-        `[p]forumthreadmessage channel #my-forum` - Set the forum channel
-        `[p]forumthreadmessage channel` - Disable monitoring
+        `[p]forumthreadmessage channel add #my-forum`
         """
-        if channel is None:
-            await self.config.guild(ctx.guild).forum_channel_id.set(None)
-            await ctx.send("✅ Forum thread monitoring has been disabled.")
-        else:
-            await self.config.guild(ctx.guild).forum_channel_id.set(channel.id)
-            await ctx.send(f"✅ Forum thread monitoring enabled for {channel.mention}")
+        channels = await self.config.guild(ctx.guild).forum_channel_ids()
+        if channel.id in channels:
+            await ctx.send(f"❌ {channel.mention} is already being monitored.")
+            return
+        channels.append(channel.id)
+        await self.config.guild(ctx.guild).forum_channel_ids.set(channels)
+        await ctx.send(f"✅ Forum thread monitoring enabled for {channel.mention}")
+
+    @channel_group.command(name="remove")
+    async def channel_remove(self, ctx, channel: discord.ForumChannel):
+        """Remove a forum channel from monitoring.
+
+        Examples
+        --------
+        `[p]forumthreadmessage channel remove #my-forum`
+        """
+        channels = await self.config.guild(ctx.guild).forum_channel_ids()
+        if channel.id not in channels:
+            await ctx.send(f"❌ {channel.mention} is not being monitored.")
+            return
+        channels.remove(channel.id)
+        await self.config.guild(ctx.guild).forum_channel_ids.set(channels)
+        await ctx.send(f"✅ Forum thread monitoring disabled for {channel.mention}")
+
+    @channel_group.command(name="list")
+    async def channel_list(self, ctx):
+        """List all monitored forum channels.
+
+        Examples
+        --------
+        `[p]forumthreadmessage channel list`
+        """
+        channels = await self.config.guild(ctx.guild).forum_channel_ids()
+        if not channels:
+            await ctx.send("No forum channels are currently being monitored.")
+            return
+        mentions = [f"<#{c_id}>" for c_id in channels]
+        await ctx.send(f"**Monitored Forum Channels:**\n" + "\n".join(mentions))
 
     @forumthreadmessage.command(name="initialmessage")
     async def set_initial_message(self, ctx, *, message: str):
@@ -1535,10 +1583,16 @@ class ForumThreadMessage(commands.Cog):
         """Show the current configuration for this server."""
         guild_config = await self.config.guild(ctx.guild).all()
 
-        forum_channel_id = guild_config["forum_channel_id"]
-        if forum_channel_id:
-            forum_channel = ctx.guild.get_channel(forum_channel_id)
-            channel_display = forum_channel.mention if forum_channel else f"Unknown Channel (ID: {forum_channel_id})"
+        forum_channel_ids = guild_config["forum_channel_ids"]
+        if forum_channel_ids:
+            channel_mentions = []
+            for c_id in forum_channel_ids:
+                channel = ctx.guild.get_channel(c_id)
+                if channel:
+                    channel_mentions.append(channel.mention)
+                else:
+                    channel_mentions.append(f"Unknown Channel (ID: {c_id})")
+            channel_display = "\n".join(channel_mentions)
         else:
             channel_display = "Not configured"
 
@@ -1964,10 +2018,10 @@ class ForumThreadMessage(commands.Cog):
             return
 
         guild_config = await self.config.guild(guild).all()
-        forum_channel_id = guild_config["forum_channel_id"]
+        forum_channel_ids = guild_config["forum_channel_ids"]
 
         # Check if we're monitoring this forum channel
-        if not forum_channel_id or thread.parent.id != forum_channel_id:
+        if not forum_channel_ids or thread.parent.id not in forum_channel_ids:
             return
 
         # Get message configuration
