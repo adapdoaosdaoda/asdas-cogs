@@ -161,6 +161,12 @@ class EventPolling(commands.Cog):
             }
         }
 
+        # Disabled events: kept defined above (not deleted) but excluded from
+        # self.events so they no longer appear in polls, votes, calendars, etc.
+        disabled_events = ["Sword Trial", "Sword Trial (Echo)"]
+        for event_name in disabled_events:
+            self.events.pop(event_name, None)
+
         # Guild Wars - blocked time event (Sat & Sun 19:30-21:00)
         self.guild_wars_emoji = "🏰"
 
@@ -1014,10 +1020,13 @@ class EventPolling(commands.Cog):
 
             # Get Discord scheduled events
             discord_events = []
+            excluded_event_names = {"GVG Scrimming Data Sheet"}
             try:
                 # scheduled_events is a list of ScheduledEvent objects
                 for event in guild.scheduled_events:
                     # Only include upcoming or active events
+                    if event.name in excluded_event_names:
+                        continue
                     if event.status in [discord.EventStatus.scheduled, discord.EventStatus.active]:
                         discord_events.append({
                             "name": event.name,
@@ -3260,8 +3269,6 @@ class EventPolling(commands.Cog):
             value=(
                 "🛡️ **Hero's Realm (Catch-up)**\n"
                 "Weekly (30 min, 1 slot)\n"
-                "⚔️ **Sword Trial / (Echo)**\n"
-                "Mon(Echo)/Wed/Fri (30 min)\n"
                 "⚡ **Breaking Army**\n"
                 "Weekly (2h, 2 slots)\n"
                 "🏆 **Showdown**\n"
@@ -3361,7 +3368,7 @@ class EventPolling(commands.Cog):
             "  *(Note: Guild War only counts exact time matches)*",
             "",
             "**Event priority and tiebreak rules:**",
-            "• Priority order: Guild War (6) > Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
+            "• Priority order: Guild War (6) > Hero's Realm (5) > Party (3) > Breaking Army (2) > Showdown (1)",
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
@@ -3569,7 +3576,7 @@ class EventPolling(commands.Cog):
             "  *(Note: Guild War only counts exact time matches)*",
             "",
             "**Event priority and tiebreak rules:**",
-            "• Priority order: Guild War (6) > Hero's Realm (5) > Sword Trial (4) > Party (3) > Breaking Army (2) > Showdown (1)",
+            "• Priority order: Guild War (6) > Hero's Realm (5) > Party (3) > Breaking Army (2) > Showdown (1)",
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
