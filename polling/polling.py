@@ -3286,17 +3286,24 @@ class EventPolling(commands.Cog):
             ),
             inline=True
         )
-        # Get display times for locked events
-        heros_reset_time = self._convert_to_local_time("22:00")
-        gw_time = self._convert_to_local_time("19:30")
+        # Get display times for locked events (sourced from self.events so this
+        # can't drift out of sync with the actual configured fixed times/days)
+        hr_reset_info = self.events["Hero's Realm (Reset)"]
+        heros_reset_day = "/".join(d[:3] for d in hr_reset_info["days"])
+        heros_reset_time = self._convert_to_local_time(hr_reset_info["fixed_time"])
+
+        gw_info = self.events["Guild War"]
+        gw_day = "/".join(d[:3] for d in gw_info["days"])
+        gw_time = self._convert_to_local_time(gw_info["fixed_time"])
+        gw_duration = gw_info["duration"]
 
         embed.add_field(
             name="🔒 Locked",
             value=(
                 f"🛡️ **Hero's Realm (Reset)**\n"
-                f"Sun {heros_reset_time}\n"
+                f"{heros_reset_day} {heros_reset_time}\n"
                 f"🏰 **Guild War**\n"
-                f"Sat/Sun {gw_time} (90 min)"
+                f"{gw_day} {gw_time} ({gw_duration} min)"
             ),
             inline=True
         )
