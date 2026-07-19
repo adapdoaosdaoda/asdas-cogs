@@ -3790,6 +3790,12 @@ class EventPolling(commands.Cog):
 
         return "\n".join(lines) if len(lines) > 3 else ""
 
+    def _get_locked_event_day(self, event_name: str) -> Optional[str]:
+        """Get the fixed day for a locked event, if configured"""
+        event_info = self.events.get(event_name, {})
+        days = event_info.get("days", [])
+        return days[0] if days else None
+
     def _get_hero_realm_catchup_day(self, winning_times: Dict) -> Optional[str]:
         """Get the currently decided winning day for Hero's Realm (Catch-up), if any"""
         hr_data = winning_times.get("Hero's Realm (Catch-up)", {})
@@ -4013,15 +4019,17 @@ class EventPolling(commands.Cog):
 
                     # Select winner (highest points, latest time for ties)
                     if point_totals:
-                        # Sort by points (desc), then by whether the day avoids Hero's Realm
-                        # (Catch-up)'s day (preferred), then by time (desc) for remaining ties
-                        hr_catchup_day = (
-                            None if event_name == "Hero's Realm (Catch-up)"
-                            else self._get_hero_realm_catchup_day(winning_times)
-                        )
+                        # Sort by points (desc), then by whether the day avoids the day to
+                        # steer clear of (preferred), then by time (desc) for remaining ties.
+                        # Hero's Realm (Catch-up) itself avoids the locked Reset's day;
+                        # other events avoid Hero's Realm (Catch-up)'s own winning day.
+                        if event_name == "Hero's Realm (Catch-up)":
+                            day_to_avoid = self._get_locked_event_day("Hero's Realm (Reset)")
+                        else:
+                            day_to_avoid = self._get_hero_realm_catchup_day(winning_times)
                         sorted_entries = sorted(
                             point_totals.items(),
-                            key=lambda x: (x[1], x[0][0] != hr_catchup_day, x[0][1]),
+                            key=lambda x: (x[1], x[0][0] != day_to_avoid, x[0][1]),
                             reverse=True
                         )
 
