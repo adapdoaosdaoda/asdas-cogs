@@ -506,6 +506,7 @@ class EventPolling(commands.Cog):
             
             for slot_idx, data in sorted_slots:
                 day, time = data[0]
+                time = self._convert_to_local_time(time)
                 label = f"{event_name}"
                 if len(slots) > 1:
                     label += f" #{int(slot_idx)+1}"
@@ -3433,17 +3434,19 @@ class EventPolling(commands.Cog):
                     top_entries = []
                     for rank, (key, points) in enumerate(all_entries[:3], 1):
                         day, time = key
+                        time = self._convert_to_local_time(time)
                         entry_text = f"**{rank}.** "
                         if event_info["type"] == "daily" or event_info["type"] == "fixed_days":
                             entry_text += f"{time}"
                         else:
                             entry_text += f"{day[:3]} {time}"
-                        
+
                         entry_text += f" ({points} pts)"
                         top_entries.append(entry_text)
                     result_text = ' **|** '.join(top_entries)
                 else:
                     day, time = winner_key
+                    time = self._convert_to_local_time(time)
                     if winner_points == 0:
                         result_text = f"*Default:* {time}"
                     else:
@@ -3532,6 +3535,7 @@ class EventPolling(commands.Cog):
                 # Show top 3 entries
                 for rank, (key, points) in enumerate(all_entries[:3], 1):
                     day, time = key
+                    time = self._convert_to_local_time(time)
                     if event_info["type"] == "daily":
                         summary_lines.append(f"  {rank}. {time} - **{points} pts**")
                     elif event_info["type"] == "fixed_days":
@@ -3609,6 +3613,7 @@ class EventPolling(commands.Cog):
                     # Show top 3 entries
                     for rank, (key, points) in enumerate(all_entries[:3], 1):
                         day, time = key
+                        time = self._convert_to_local_time(time)
                         if event_info["type"] == "daily":
                             summary_lines.append(f"  {rank}. {time} - **{points} pts**")
                         elif event_info["type"] == "fixed_days":
