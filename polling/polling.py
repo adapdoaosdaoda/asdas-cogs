@@ -3371,7 +3371,7 @@ class EventPolling(commands.Cog):
             "• Priority order: Guild War (6) > Hero's Realm (5) > Party (3) > Breaking Army (2) > Showdown (1)",
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
-            "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
+            "• If still tied: days without a scheduled Hero's Realm (Catch-up) are preferred; Breaking Army/Showdown then prefer Saturday, then later time; others prefer later time",
             "",
         ]
         return "\n".join(summary_lines)
@@ -3579,7 +3579,7 @@ class EventPolling(commands.Cog):
             "• Priority order: Guild War (6) > Hero's Realm (5) > Party (3) > Breaking Army (2) > Showdown (1)",
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
-            "• If still tied: Breaking Army/Showdown prefer Saturday, then later time; others prefer later time",
+            "• If still tied: days without a scheduled Hero's Realm (Catch-up) are preferred; Breaking Army/Showdown then prefer Saturday, then later time; others prefer later time",
             "",
             "**Top 3 Options Per Event:**",
             ""
@@ -3790,6 +3790,15 @@ class EventPolling(commands.Cog):
 
         return "\n".join(lines) if len(lines) > 3 else ""
 
+    def _get_hero_realm_catchup_day(self, winning_times: Dict) -> Optional[str]:
+        """Get the currently decided winning day for Hero's Realm (Catch-up), if any"""
+        hr_data = winning_times.get("Hero's Realm (Catch-up)", {})
+        slot_data = hr_data.get(0)
+        if not slot_data:
+            return None
+        winner_key = slot_data[0]
+        return winner_key[0]
+
     def _calculate_winning_times_weighted(self, selections: Dict) -> Dict:
         """Calculate winning times using weighted point system
 
@@ -3873,10 +3882,12 @@ class EventPolling(commands.Cog):
                     saturday_index = 5  # Saturday
                     return min(abs(day_index - saturday_index), 7 - abs(day_index - saturday_index))
 
+                hr_catchup_day = self._get_hero_realm_catchup_day(winning_times)
+
                 if point_totals:
                     sorted_entries = sorted(
                         point_totals.items(),
-                        key=lambda x: (-x[1], saturday_distance(x[0][0]), -self._time_to_sort_key(x[0][1])),
+                        key=lambda x: (-x[1], x[0][0] == hr_catchup_day, saturday_distance(x[0][0]), -self._time_to_sort_key(x[0][1])),
                     )
 
                     # Assign top winners to slots
@@ -4002,10 +4013,15 @@ class EventPolling(commands.Cog):
 
                     # Select winner (highest points, latest time for ties)
                     if point_totals:
-                        # Sort by points (descending) then by time (descending for tie-breaking)
+                        # Sort by points (desc), then by whether the day avoids Hero's Realm
+                        # (Catch-up)'s day (preferred), then by time (desc) for remaining ties
+                        hr_catchup_day = (
+                            None if event_name == "Hero's Realm (Catch-up)"
+                            else self._get_hero_realm_catchup_day(winning_times)
+                        )
                         sorted_entries = sorted(
                             point_totals.items(),
-                            key=lambda x: (x[1], x[0][1]),  # Sort by points, then by time
+                            key=lambda x: (x[1], x[0][0] != hr_catchup_day, x[0][1]),
                             reverse=True
                         )
 
