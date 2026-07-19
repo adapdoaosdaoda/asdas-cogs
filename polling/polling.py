@@ -462,7 +462,7 @@ class EventPolling(commands.Cog):
                         )
                         await self.bot.send_to_owners(
                             f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n"
-                            f"*(All times shown in {self.timezone_display})*\n"
+                            f"*All times shown in {self.timezone_display}*\n"
                             f"{status_line}\n{summary}"
                         )
 
@@ -3398,7 +3398,7 @@ class EventPolling(commands.Cog):
         result_lines = [self.format_results_intro(selections)]
 
         # Timezone clarification directly above the per-event results
-        result_lines.append(f"**(All times shown in {self.timezone_display})**")
+        result_lines.append(f"**All times shown in {self.timezone_display}**")
 
         # Add results for each event
         for event_name, event_info in self.events.items():
@@ -3595,7 +3595,7 @@ class EventPolling(commands.Cog):
             "• After bonus, higher points wins the time slot",
             "• If still tied: days without a scheduled Hero's Realm (Catch-up) are preferred; Breaking Army/Showdown then prefer Saturday, then later time; others prefer later time",
             "",
-            f"**(All times shown in {self.timezone_display})**",
+            f"**All times shown in {self.timezone_display}**",
             "**Top 3 Options Per Event:**",
             ""
         ]
