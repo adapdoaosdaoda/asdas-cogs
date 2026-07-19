@@ -447,17 +447,24 @@ class EventPolling(commands.Cog):
                         # 2. Update all weekly calendar messages for this poll
                         await self._update_weekly_calendar_messages(guild, poll_data, poll_id)
                         
-                        # 3. Notify owner if schedule changed
+                        # 3. Always notify owner, clarifying whether the schedule changed
                         # Re-fetch poll data to get new snapshot
                         updated_polls = await self.config.guild(guild).polls()
                         new_snapshot = updated_polls.get(poll_id, {}).get("weekly_snapshot_winning_times", {})
-                        
-                        if self._snapshot_has_changed(old_snapshot, new_snapshot):
-                            summary = self._get_snapshot_summary(new_snapshot)
-                            await self.bot.send_to_owners(
-                                f"📅 **Schedule Change Detected** for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n"
-                                f"The new winning times for this week are:\n{summary}"
-                            )
+
+                        summary = self._get_snapshot_summary(new_snapshot)
+                        changed = self._snapshot_has_changed(old_snapshot, new_snapshot)
+                        header = "📅 **Schedule Change Detected**" if changed else "📅 **Weekly Schedule Update**"
+                        status_line = (
+                            "The new winning times for this week are:"
+                            if changed else
+                            "No changes since last week. Current winning times for this week are:"
+                        )
+                        await self.bot.send_to_owners(
+                            f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n"
+                            f"*(All times shown in {self.timezone_display})*\n"
+                            f"{status_line}\n{summary}"
+                        )
 
         except Exception as e:
             print(f"Error during weekly calendar update: {e}")
@@ -3361,6 +3368,7 @@ class EventPolling(commands.Cog):
         summary_lines = [
             "**📊 Current Results** (Weighted Voting System)",
             f"Total voters: {len(selections)}",
+            f"*(All times shown in {self.timezone_display})*",
             "",
             "**How voting works:**",
             "• 5 points: Your exact voted time",
@@ -3572,6 +3580,7 @@ class EventPolling(commands.Cog):
         summary_lines = [
             "**📊 Current Results** (Weighted Voting System)",
             f"Total voters: {len(selections)}",
+            f"*(All times shown in {self.timezone_display})*",
             "",
             "**How voting works:**",
             "• 5 points: Your exact voted time",
