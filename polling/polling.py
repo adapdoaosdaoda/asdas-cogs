@@ -3368,7 +3368,6 @@ class EventPolling(commands.Cog):
         summary_lines = [
             "**📊 Current Results** (Weighted Voting System)",
             f"Total voters: {len(selections)}",
-            f"*(All times shown in {self.timezone_display})*",
             "",
             "**How voting works:**",
             "• 5 points: Your exact voted time",
@@ -3397,6 +3396,9 @@ class EventPolling(commands.Cog):
         """
         # Start with header
         result_lines = [self.format_results_intro(selections)]
+
+        # Timezone clarification directly above the per-event results
+        result_lines.append(f"**(All times shown in {self.timezone_display})**")
 
         # Add results for each event
         for event_name, event_info in self.events.items():
@@ -3580,7 +3582,6 @@ class EventPolling(commands.Cog):
         summary_lines = [
             "**📊 Current Results** (Weighted Voting System)",
             f"Total voters: {len(selections)}",
-            f"*(All times shown in {self.timezone_display})*",
             "",
             "**How voting works:**",
             "• 5 points: Your exact voted time",
@@ -3594,6 +3595,7 @@ class EventPolling(commands.Cog):
             "• After bonus, higher points wins the time slot",
             "• If still tied: days without a scheduled Hero's Realm (Catch-up) are preferred; Breaking Army/Showdown then prefer Saturday, then later time; others prefer later time",
             "",
+            f"**(All times shown in {self.timezone_display})**",
             "**Top 3 Options Per Event:**",
             ""
         ]
