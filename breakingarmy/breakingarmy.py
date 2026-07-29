@@ -137,6 +137,58 @@ class BreakingArmy(commands.Cog):
                     if g: tally[g] = tally.get(g, 0) + 1
         return tally
 
+    def _compute_season_assignment(
+        self, new_p: List[str], old_p: List[str], boss_pool: Dict[str, str], seen_bosses: List[str]
+    ) -> Tuple[List[Optional[str]], List[Optional[str]], List[str], Dict[str, str]]:
+        """Pure assignment logic shared by season setup and poll previews.
+
+        Returns (anchors[3], guests[5], used_in_order, slot_of[boss_name]).
+        `new_p`/`old_p` are consumed as copies - callers' lists are untouched.
+        """
+        new_p = list(new_p); old_p = list(old_p)
+        ranked = new_p + old_p
+
+        a: List[Optional[str]] = [None] * 3
+        g: List[Optional[str]] = [None] * 5
+        used: List[str] = []
+
+        # 1. Fill pairs for W1, W2, W3 based on unlock order (N1&N2, N3&N4, N5&N6)
+        if new_p: b = new_p.pop(0); a[0] = b; used.append(b)
+        if new_p: b = new_p.pop(0); g[0] = b; used.append(b)
+        if new_p: b = new_p.pop(0); a[1] = b; used.append(b)
+        if new_p: b = new_p.pop(0); g[1] = b; used.append(b)
+        if new_p: b = new_p.pop(0); a[2] = b; used.append(b)
+        if new_p: b = new_p.pop(0); g[2] = b; used.append(b)
+
+        # 2. Handle repeats for W5/W6
+        if len(used) >= 4 and used[3] in boss_pool and used[3] not in seen_bosses:
+            g[3] = used[3]
+        if len(used) >= 6 and used[5] in boss_pool and used[5] not in seen_bosses:
+            g[4] = used[5]
+
+        # 3. Fill remaining empty slots from the ranked list
+        rem = [b for b in ranked if b not in used]
+        for i in range(3):
+            if a[i] is None:
+                boss = rem.pop(0)
+                a[i] = boss
+                used.append(boss)
+        for i in range(5):
+            if g[i] is None:
+                boss = rem.pop(0)
+                g[i] = boss
+                used.append(boss)
+
+        slot_of: Dict[str, str] = {}
+        for i, boss in enumerate(a):
+            if boss: slot_of[boss] = f"Anchor {i + 1}"
+        for i, boss in enumerate(g):
+            if boss:
+                label = f"Guest {i + 1}"
+                slot_of[boss] = f"{slot_of[boss]} + {label}" if boss in slot_of else label
+
+        return a, g, used, slot_of
+
     async def _update_poll_embed(self, guild: discord.Guild):
         """Update the active poll embed if one exists."""
         poll = await self.config.guild(guild).active_poll()
@@ -192,8 +244,7 @@ class BreakingArmy(commands.Cog):
         # New Ranking Logic: All new bosses first, then old
         new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
         old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
-        sorted_names = new_p + old_p
-        
+
         embed = discord.Embed(title="⚔️ Breaking Army: Boss Poll", color=discord.Color.gold())
         embed.description = "Vote for your favorite bosses to determine the next 6-week season roster!"
         sample = (
@@ -205,26 +256,19 @@ class BreakingArmy(commands.Cog):
             "**Week 6**: Anchor 3 & Guest 5"
         )
         embed.add_field(name="📋 Season Structure (Rotation)", value=sample, inline=False)
-        
-        if len(sorted_names) < 8:
-            leaders = f"⚠️ *Not enough bosses in pool to form a season ({len(sorted_names)}/8)*"
+
+        if len(new_p) + len(old_p) < 8:
+            leaders = f"⚠️ *Not enough bosses in pool to form a season ({len(new_p) + len(old_p)}/8)*"
         else:
-            def get_n(n): 
-                name = sorted_names[n]
+            _, _, used, slot_of = self._compute_season_assignment(new_p, old_p, boss_pool, seen_bosses)
+
+            def fmt(name):
                 emote = boss_pool.get(name, '⚔️')
                 suffix = f" {new_emote}" if name not in seen_bosses else ""
                 return f"{emote} {name}{suffix}"
-                
-            leaders = (
-                f"1. {get_n(0)} (Anchor 1)\n"
-                f"2. {get_n(1)} (Anchor 2)\n"
-                f"3. {get_n(2)} (Anchor 3)\n"
-                f"4. {get_n(3)} (Guest 1 - Encore)\n"
-                f"5. {get_n(4)} (Guest 2)\n"
-                f"6. {get_n(5)} (Guest 3)\n"
-                f"7. {get_n(6)} (Guest 4)\n"
-                f"8. {get_n(7)} (Guest 5)"
-            )
+
+            lines = [f"{i + 1}. {fmt(name)} ({slot_of.get(name, '?')})" for i, name in enumerate(used)]
+            leaders = "\n".join(lines)
         embed.add_field(name="📊 Current Priority Order", value=leaders, inline=False)
         embed.set_footer(text=f"Total Voters: {len(poll_data.get('votes', {}))} | Updates live on vote")
         return embed
@@ -509,50 +553,11 @@ class BreakingArmy(commands.Cog):
         # Split pool into new and old groups
         new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
         old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
-        ranked = new_p + old_p
-        
-        if len(ranked) < 8: return None
-        
-        a = [None]*3; g = [None]*5; used = []
-        
-        # 1. Fill pairs for W1, W2, W3 based on unlock order (N1&N2, N3&N4, N5&N6)
-        # Week 1: A1 & G1
-        if new_p: b = new_p.pop(0); a[0] = b; used.append(b)
-        if new_p: b = new_p.pop(0); g[0] = b; used.append(b)
-        
-        # Week 2: A2 & G2
-        if new_p: b = new_p.pop(0); a[1] = b; used.append(b)
-        if new_p: b = new_p.pop(0); g[1] = b; used.append(b)
-        
-        # Week 3: A3 & G3
-        if new_p: b = new_p.pop(0); a[2] = b; used.append(b)
-        if new_p: b = new_p.pop(0); g[2] = b; used.append(b)
-        
-        # 2. Handle repeats for W5/W6
-        # If G2 was a new boss, make it repeat in G4 (W5)
-        if len(used) >= 4 and used[3] in boss_pool and used[3] not in seen_bosses:
-            g[3] = used[3]
-        # If G3 was a new boss, make it repeat in G5 (W6)
-        if len(used) >= 6 and used[5] in boss_pool and used[5] not in seen_bosses:
-            g[4] = used[5]
 
-        # 3. Fill remaining empty slots from the ranked list
-        rem = [b for b in ranked if b not in used]
-        
-        # Fill Anchors
-        for i in range(3):
-            if a[i] is None:
-                boss = rem.pop(0)
-                a[i] = boss
-                used.append(boss)
-        
-        # Fill Guests
-        for i in range(5):
-            if g[i] is None:
-                boss = rem.pop(0)
-                g[i] = boss
-                used.append(boss)
-            
+        if len(new_p) + len(old_p) < 8: return None
+
+        a, g, used, _ = self._compute_season_assignment(new_p, old_p, boss_pool, seen_bosses)
+
         new_season = {
             "staged": True,
             "anchors": a,
@@ -1453,17 +1458,17 @@ class BossPollView(discord.ui.View):
         new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
         old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
         ranked = new_p + old_p
-        
+
         if not ranked: return await interaction.response.send_message("No bosses in pool.", ephemeral=True)
+
+        slot_of: Dict[str, str] = {}
+        if len(new_p) + len(old_p) >= 8:
+            _, _, _, slot_of = actual_cog._compute_season_assignment(new_p, old_p, boss_pool, seen_bosses)
+
         res = "**Current Priority Order (New Bosses First):**\n"
         for i, name in enumerate(ranked):
             pts = tally.get(name, 0)
-            role = ""
-            if i == 0: role = " (Anchor 1)"
-            elif i == 1: role = " (Anchor 2)"
-            elif i == 2: role = " (Anchor 3)"
-            elif i == 3: role = " (Guest 1 - Encore)"
-            elif i <= 7: role = f" (Guest {i-2})"
+            role = f" ({slot_of[name]})" if name in slot_of else ""
             suffix = f" {new_emote}" if name not in seen_bosses else ""
             res += f"{i+1}. {boss_pool.get(name, '⚔️')} **{name}**{suffix}: {pts:g} pts{role}\n"
         await interaction.response.send_message(res, ephemeral=True)
