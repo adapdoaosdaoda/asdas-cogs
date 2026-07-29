@@ -57,12 +57,13 @@ class BreakingArmy(commands.Cog):
             },
             "season_data": {
                 "current_week": 1,
-                "anchors": [], 
+                "anchors": [],
                 "guests": [],
                 "priority_bosses": [], # Bosses that get the 'new' emote this season
                 "is_active": False,
                 "live_season_message": {},
-                "last_reset": None  # ISO format timestamp of last reset
+                "last_reset": None,  # ISO format timestamp of last reset
+                "pending_season": None  # Staged season (anchors/guests/priority_bosses) awaiting next Sunday 22:00 rollover
             }
         }
         
@@ -289,13 +290,15 @@ class BreakingArmy(commands.Cog):
             suffix = f" {new_emote}" if n in priority else ""
             return f"{e} {n}{suffix}"
 
+        pending = season.get("pending_season")
+
         sched = ""
         matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
         for i, (b1, b2) in enumerate(matrix):
             w = i+1
             n1 = get_fmt_name(b1)
             n2 = get_fmt_name(b2)
-            
+
             if w < season["current_week"]:
                 sched += f"💀 ~~**Week {w}**: {n1} & {n2}~~\n"
             elif w == season["current_week"] and season["is_active"]:
@@ -303,10 +306,34 @@ class BreakingArmy(commands.Cog):
                     sched += f"⚔️ **Week {w}**: {n1} & {n2} (Active)\n"
                 else:
                     sched += f"⏳ **Week {w}**: {n1} & {n2}\n"
+            elif pending and w > season["current_week"]:
+                # A new season is staged - these weeks will never happen, they get
+                # replaced by the staged season's Week 1 at the next rollover.
+                sched += f"🔁 ~~**Week {w}**: {n1} & {n2}~~ *(replaced by new season)*\n"
             else:
                 sched += f"⏳ **Week {w}**: {n1} & {n2}\n"
         sched_embed.description = sched
-        
+
+        if pending:
+            p_a = pending["anchors"]; p_g = pending["guests"]
+            p_priority = pending.get("priority_bosses", [])
+
+            def get_fmt_pending_name(n):
+                e = boss_pool.get(n, "⚔️")
+                suffix = f" {new_emote}" if n in p_priority else ""
+                return f"{e} {n}{suffix}"
+
+            next_week_num = season["current_week"] + 1
+            sched_embed.add_field(
+                name=f"🚀 New Season Staged — Replaces Week {next_week_num}+",
+                value=(
+                    f"**Anchors:** {', '.join(get_fmt_pending_name(x) for x in p_a)}\n"
+                    f"**Guests:** {', '.join(get_fmt_pending_name(x) for x in p_g)}\n"
+                    f"*Starts as Week 1 at the next Sunday 22:00 reset.*"
+                ),
+                inline=False,
+            )
+
         embeds = [sched_embed]
         # Always show run dashboard if season is active
         if season["is_active"] and (run["boss_order"] or run["is_running"]):
@@ -372,18 +399,32 @@ class BreakingArmy(commands.Cog):
 
                 if should_reset:
                     msg = ""
+                    pending_applied = False
                     async with self.config.guild(guild).season_data() as s:
                         s["last_reset"] = target_reset.isoformat()
-                        if s["is_active"]:
+
+                        # A staged season (from `season setup <true>`) always takes priority
+                        # over natural progression at this rollover point.
+                        pending = s.get("pending_season")
+                        if pending:
+                            s["anchors"] = pending["anchors"]
+                            s["guests"] = pending["guests"]
+                            s["priority_bosses"] = pending["priority_bosses"]
+                            s["current_week"] = 1
+                            s["is_active"] = True
+                            s["pending_season"] = None
+                            pending_applied = True
+                            msg = f"🚀 **Staged Breaking Army Season Started** in {guild.name}!"
+                        elif s["is_active"]:
                             s["current_week"] += 1
                             if s["current_week"] > 6:
                                 s["is_active"] = False
                                 msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
                             else:
                                 msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name}."
-                        
-                        # Trigger New Season Setup if cycle ended
-                        if not s["is_active"] and s.get("current_week", 1) > 6:
+
+                        # Trigger New Season Setup if cycle ended (and nothing was staged)
+                        if not pending_applied and not s["is_active"] and s.get("current_week", 1) > 6:
                             setup_embed = await self._setup_new_season_logic(guild)
                             if setup_embed:
                                 msg = f"🚀 **New Breaking Army Season Started** in {guild.name}!"
@@ -447,7 +488,7 @@ class BreakingArmy(commands.Cog):
     async def before_schedule_checker(self):
         await self.bot.wait_until_red_ready()
 
-    async def _setup_new_season_logic(self, guild: discord.Guild) -> Optional[discord.Embed]:
+    async def _setup_new_season_logic(self, guild: discord.Guild, next_week: bool = False) -> Optional[discord.Embed]:
         poll_data = await self.config.guild(guild).active_poll()
         boss_pool = await self.config.guild(guild).boss_pool()
         seen_bosses = await self.config.guild(guild).seen_bosses()
@@ -502,27 +543,60 @@ class BreakingArmy(commands.Cog):
                 g[i] = boss
                 used.append(boss)
             
+        new_season = {
+            "anchors": a,
+            "guests": g,
+            "priority_bosses": [b for b in used if b not in seen_bosses],
+        }
+
+        staged = False
         async with self.config.guild(guild).season_data() as s:
-            s["anchors"] = a; s["guests"] = g; s["current_week"] = 1; s["is_active"] = True
-            s["priority_bosses"] = [b for b in used if b not in seen_bosses]
-            
-            # Set last_reset to the most recent Sunday 22:00 to prevent immediate auto-progression
-            from datetime import timezone
-            server_tz = timezone(timedelta(hours=1))
-            now = datetime.now(server_tz)
-            days_back = (now.weekday() - 6) % 7
-            target_reset = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
-            if target_reset > now: target_reset -= timedelta(days=7)
-            s["last_reset"] = target_reset.isoformat()
-            
+            if next_week and s["is_active"]:
+                # Don't touch the currently running season - stage this one
+                # to be swapped in automatically at the next Sunday 22:00 rollover.
+                s["pending_season"] = new_season
+                staged = True
+            else:
+                s["anchors"] = a; s["guests"] = g; s["is_active"] = True
+                s["priority_bosses"] = new_season["priority_bosses"]
+                s["pending_season"] = None
+
+                # Set last_reset to the most recent Sunday 22:00 to prevent immediate auto-progression
+                from datetime import timezone
+                server_tz = timezone(timedelta(hours=1))
+                now = datetime.now(server_tz)
+                days_back = (now.weekday() - 6) % 7
+                target_reset = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
+                if target_reset > now: target_reset -= timedelta(days=7)
+
+                if next_week:
+                    # No season was active - "next week" just means a deferred fresh start.
+                    # Week 0 is a "pending" state that rolls over to week 1 at the very
+                    # next Sunday 22:00 reset instead of starting now.
+                    s["current_week"] = 0
+                    target_reset -= timedelta(days=7)
+                else:
+                    s["current_week"] = 1
+                s["last_reset"] = target_reset.isoformat()
+
         async with self.config.guild(guild).seen_bosses() as seen:
-            for b in used: 
+            for b in used:
                 if b not in seen: seen.append(b)
-        
-        embed = discord.Embed(title="🚀 New Season Initialized", color=discord.Color.green())
+
+        title = "🚀 New Season Staged (Starts Next Week)" if staged else (
+            "🚀 New Season Initialized (Starts Next Week)" if next_week else "🚀 New Season Initialized"
+        )
+        embed = discord.Embed(title=title, color=discord.Color.green())
         def fmt(name): return f"{boss_pool.get(name, '⚔️')} **{name}**" + (f" {new_emote}" if name in [b for b in used if b not in seen_bosses] else "")
         embed.add_field(name="Anchors", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(a)]), inline=True)
         embed.add_field(name="Guests", value="\n".join([f"{i+1}. {fmt(x)}" for i, x in enumerate(g)]), inline=True)
+        if staged:
+            embed.description = (
+                "The current season keeps running unchanged. This new season is staged and will "
+                "automatically replace it, starting at Week 1, at the next Sunday 22:00 reset."
+            )
+        elif next_week:
+            embed.description = "Week 1 will begin automatically at the next Sunday 22:00 reset."
         return embed
 
     async def _get_boss_index_for_day(self, guild: discord.Guild, day_name: str) -> int:
@@ -895,33 +969,51 @@ class BreakingArmy(commands.Cog):
         pass
 
     @ba_season.command(name="setup")
-    async def season_setup(self, ctx: commands.Context):
+    async def season_setup(self, ctx: commands.Context, next_week: bool = False):
         """Initialize a new 6-week season based on current poll votes.
-        
+
         Requires at least 8 unique bosses to have received votes in the current poll.
+
+        By default the season's Week 1 starts immediately (this week). Pass
+        `true` for `next_week` to instead have Week 1 begin at the next
+        Sunday 22:00 reset.
+
+        **Examples:**
+        - `[p]ba season setup` - Start the season this week
+        - `[p]ba season setup true` - Defer the season to start next week
         """
         async with ctx.typing():
             poll_data = await self.config.guild(ctx.guild).active_poll()
             votes = poll_data.get("votes", {})
-            
+
             if not votes:
                 return await ctx.send("❌ **Setup Failed:** No votes found in the current poll. Use `[p]ba poll start` and have members vote first.")
-            
+
             tally = self._calculate_weighted_tally(votes)
             if len(tally) < 8:
                 return await ctx.send(f"❌ **Setup Failed:** Only **{len(tally)}** unique bosses have votes. Need at least **8** to generate a 6-week season.")
 
-            embed = await self._setup_new_season_logic(ctx.guild)
-            if embed: 
+            was_active = (await self.config.guild(ctx.guild).season_data())["is_active"]
+            embed = await self._setup_new_season_logic(ctx.guild, next_week=next_week)
+            if embed:
                 await ctx.send(embed=embed)
                 season = await self.config.guild(ctx.guild).season_data()
-                bosses = self._get_bosses_for_week(season, season["current_week"])
-                await self.config.guild(ctx.guild).active_run.set({
-                    "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
-                })
+                staged = next_week and was_active
+                if not staged:
+                    # Only reset the run dashboard when we actually replaced the live season -
+                    # a staged season leaves the currently running week untouched.
+                    bosses = self._get_bosses_for_week(season, season["current_week"])
+                    await self.config.guild(ctx.guild).active_run.set({
+                        "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
+                    })
                 await self._refresh_live_season_view(ctx.guild)
-                await ctx.send("✅ **Success:** Season 1 initialized and Week 1 schedule set.")
-            else: 
+                if staged:
+                    await ctx.send("✅ **Success:** New season staged. It will automatically replace the current one at the next Sunday 22:00 reset.")
+                elif next_week:
+                    await ctx.send("✅ **Success:** Season initialized. Week 1 will begin at the next Sunday 22:00 reset.")
+                else:
+                    await ctx.send("✅ **Success:** Season 1 initialized and Week 1 schedule set.")
+            else:
                 await ctx.send("❌ **Setup Failed:** An internal error occurred while generating the season matrix.")
 
     @ba_season.command(name="setweek")
