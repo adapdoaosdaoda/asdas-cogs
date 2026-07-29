@@ -259,6 +259,10 @@ class AddInfoView(discord.ui.View):
                     await interaction.response.send_message("✅ All 3 options selected! The addinfo panel has been closed.", ephemeral=True)
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     pass
+
+                # Data has replaced the placeholder - stop nagging
+                await self.cog.config.guild(self.guild).placeholder_posted_at.set(None)
+                await self.cog.config.guild(self.guild).addinfo_reminders_sent.set(0)
                 return
             else:
                 # Recreate the view with updated selections
@@ -318,6 +322,10 @@ class TradeCommission(commands.Cog):
             "last_sent": None,
             "last_sunday_notification": None,
             "last_wednesday_notification": None,
+
+            # Addinfo reminder nagging (pesters owners until placeholder is replaced with real data)
+            "placeholder_posted_at": None,  # ISO timestamp of when the current placeholder was posted
+            "addinfo_reminders_sent": 3,  # How many of the (up to 3) reminders have been sent for the current placeholder
 
             # Sunday pre-shop restock notification
             "sunday_enabled": False,
@@ -577,6 +585,9 @@ class TradeCommission(commands.Cog):
             if should_send:
                 await self._send_weekly_message(guild, channel)
 
+            # Nag owners every 12 hours (up to 3 times) until the placeholder is replaced with real data
+            await self._check_addinfo_reminder(guild)
+
         # 2. Check Sunday pre-shop restock notification (weekday 6 = Sunday)
         if config["sunday_enabled"]:
             target_hour = config["sunday_hour"]
@@ -720,8 +731,39 @@ class TradeCommission(commands.Cog):
                 tz = pytz.UTC
             now = datetime.now(tz)
             await self.config.guild(guild).last_sent.set(now.isoformat())
+
+            # Reset addinfo reminder nagging for this new placeholder
+            await self.config.guild(guild).placeholder_posted_at.set(now.isoformat())
+            await self.config.guild(guild).addinfo_reminders_sent.set(0)
         except discord.Forbidden:
             pass
+
+    async def _check_addinfo_reminder(self, guild: discord.Guild):
+        """Pester the owners every 12 hours (up to 3 times) until addinfo replaces the placeholder."""
+        placeholder_posted_at = await self.config.guild(guild).placeholder_posted_at()
+        if not placeholder_posted_at:
+            return
+
+        reminders_sent = await self.config.guild(guild).addinfo_reminders_sent()
+        if reminders_sent >= 3:
+            return
+
+        posted_at = datetime.fromisoformat(placeholder_posted_at)
+        now = datetime.now(posted_at.tzinfo) if posted_at.tzinfo else datetime.now()
+
+        due_reminders = int((now - posted_at).total_seconds() // (12 * 3600))
+        if due_reminders <= reminders_sent:
+            return
+
+        try:
+            await self.bot.send_to_owners(
+                f"⏰ **Reminder:** The Trade Commission placeholder in **{guild.name}** still needs "
+                f"`addinfo` to fill in this week's options! (Reminder {reminders_sent + 1}/3)"
+            )
+        except Exception:
+            pass
+
+        await self.config.guild(guild).addinfo_reminders_sent.set(reminders_sent + 1)
 
     async def _send_scheduled_notification(
         self,
