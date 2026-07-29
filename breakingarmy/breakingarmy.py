@@ -794,6 +794,38 @@ class BreakingArmy(commands.Cog):
             p[name] = emoji
         await ctx.tick()
 
+    @ba_config.command(name="listboss")
+    async def config_list_boss(self, ctx: commands.Context):
+        """List all bosses currently in the pool."""
+        pool = await self.config.guild(ctx.guild).boss_pool()
+        if not pool:
+            return await ctx.send("Boss pool is empty.")
+
+        seen = await self.config.guild(ctx.guild).seen_bosses()
+        lines = []
+        for name in sorted(pool.keys()):
+            emoji = pool[name]
+            status = "seen" if name in seen else "new"
+            lines.append(f"{emoji} **{name}** ({status})")
+
+        embed = discord.Embed(
+            title=f"Boss Pool ({len(pool)})",
+            color=discord.Color.blurple(),
+        )
+        description = ""
+        chunk_index = 1
+        for line in lines:
+            if len(description) + len(line) + 1 > 4000:
+                embed.add_field(name=f"Bosses ({chunk_index})", value=description, inline=False)
+                description = ""
+                chunk_index += 1
+            description += line + "\n"
+        if description:
+            field_name = "Bosses" if chunk_index == 1 else f"Bosses ({chunk_index})"
+            embed.add_field(name=field_name, value=description, inline=False)
+
+        await ctx.send(embed=embed)
+
     @ba_config.command(name="removeboss")
     async def config_remove_boss(self, ctx: commands.Context, *, name: str):
         """Remove a boss from the pool.
