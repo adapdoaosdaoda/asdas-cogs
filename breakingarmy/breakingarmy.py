@@ -808,23 +808,22 @@ class BreakingArmy(commands.Cog):
             status = "seen" if name in seen else "new"
             lines.append(f"{emoji} **{name}** ({status})")
 
-        embed = discord.Embed(
-            title=f"Boss Pool ({len(pool)})",
-            color=discord.Color.blurple(),
-        )
-        description = ""
-        chunk_index = 1
+        chunks = []
+        current = ""
         for line in lines:
-            if len(description) + len(line) + 1 > 4000:
-                embed.add_field(name=f"Bosses ({chunk_index})", value=description, inline=False)
-                description = ""
-                chunk_index += 1
-            description += line + "\n"
-        if description:
-            field_name = "Bosses" if chunk_index == 1 else f"Bosses ({chunk_index})"
-            embed.add_field(name=field_name, value=description, inline=False)
+            if len(current) + len(line) + 1 > 4000:
+                chunks.append(current)
+                current = ""
+            current += line + "\n"
+        if current:
+            chunks.append(current)
 
-        await ctx.send(embed=embed)
+        for i, chunk in enumerate(chunks):
+            title = f"Boss Pool ({len(pool)})"
+            if len(chunks) > 1:
+                title += f" [{i + 1}/{len(chunks)}]"
+            embed = discord.Embed(title=title, description=chunk, color=discord.Color.blurple())
+            await ctx.send(embed=embed)
 
     @ba_config.command(name="removeboss")
     async def config_remove_boss(self, ctx: commands.Context, *, name: str):
