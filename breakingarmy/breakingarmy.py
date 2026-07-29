@@ -936,6 +936,62 @@ class BreakingArmy(commands.Cog):
         await self.config.guild(ctx.guild).new_boss_emote.set(emote)
         await ctx.send(f"New priority boss emote set to: {emote}")
 
+    @ba_config.command(name="markunseen")
+    async def config_mark_unseen(self, ctx: commands.Context, *emotes: str):
+        """Mark one or more bosses as unseen again, identified by their boss icon/emote.
+
+        Removes the matching boss(es) from the 'seen' history so they'll be
+        treated as 'New' again in the next season setup. Pass multiple emotes
+        to reset multiple bosses at once.
+
+        Usage: [p]ba config markunseen <emote> [emote2] [emote3] ...
+        """
+        if not emotes:
+            return await ctx.send("❌ Provide at least one boss emote to mark as unseen.")
+
+        pool = await self.config.guild(ctx.guild).boss_pool()
+
+        # Map emote -> [boss names using it] (an emote can be shared by multiple bosses)
+        emote_to_names: Dict[str, List[str]] = {}
+        for name, emoji in pool.items():
+            emote_to_names.setdefault(emoji, []).append(name)
+
+        not_found = []
+        ambiguous = []
+        to_reset = []
+        for emote in emotes:
+            names = emote_to_names.get(emote)
+            if not names:
+                not_found.append(emote)
+            elif len(names) > 1:
+                ambiguous.append((emote, names))
+            else:
+                to_reset.append(names[0])
+
+        if ambiguous:
+            lines = "\n".join(f"{emote} → {', '.join(names)}" for emote, names in ambiguous)
+            return await ctx.send(
+                f"❌ **Ambiguous emote(s):** multiple bosses share the same icon. "
+                f"Use `[p]ba config listboss` and remove/re-add with a unique emote, "
+                f"or resolve manually:\n{lines}"
+            )
+
+        if not to_reset:
+            return await ctx.send(f"❌ No bosses found using emote(s): {' '.join(not_found)}")
+
+        async with self.config.guild(ctx.guild).seen_bosses() as seen:
+            actually_reset = [name for name in to_reset if name in seen]
+            for name in actually_reset:
+                seen.remove(name)
+
+        msg = f"✅ Marked as unseen: {', '.join(actually_reset) if actually_reset else 'none (already unseen)'}"
+        if not_found:
+            msg += f"\n⚠️ No boss found for emote(s): {' '.join(not_found)}"
+        already_unseen = [name for name in to_reset if name not in actually_reset]
+        if already_unseen:
+            msg += f"\nℹ️ Already unseen: {', '.join(already_unseen)}"
+        await ctx.send(msg)
+
     @ba_config.command(name="editboss")
     async def config_edit_boss(self, ctx: commands.Context, old_name: str, new_name: str, new_emoji: Optional[str] = None):
         """Edit a boss's name and/or emote."""
