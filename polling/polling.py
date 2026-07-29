@@ -454,11 +454,11 @@ class EventPolling(commands.Cog):
 
                         summary = self._get_snapshot_summary(new_snapshot)
                         changed = self._snapshot_has_changed(old_snapshot, new_snapshot)
-                        header = "📅 **Schedule Change Detected**" if changed else "📅 **Weekly Schedule Update**"
+                        header = "📅 **Schedule Change Detected**" if changed else "📅 **No Schedule Changes**"
                         status_line = (
                             "The new winning times for this week are:"
                             if changed else
-                            "No changes since last week. Current winning times for this week are:"
+                            "Nothing to do — the winning times are unchanged from last week:"
                         )
                         await self.bot.send_to_owners(
                             f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n"
