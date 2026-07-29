@@ -63,7 +63,15 @@ class BreakingArmy(commands.Cog):
                 "is_active": False,
                 "live_season_message": {},
                 "last_reset": None,  # ISO format timestamp of last reset
-                "pending_season": None  # Staged season (anchors/guests/priority_bosses) awaiting next Sunday 22:00 rollover
+                "pending_season": {
+                    # Staged season (anchors/guests/priority_bosses) awaiting next Sunday 22:00 rollover.
+                    # "staged" toggles whether a pending season exists (Config's nested_update can't
+                    # mix a dict default with a None default for the same key).
+                    "staged": False,
+                    "anchors": [],
+                    "guests": [],
+                    "priority_bosses": [],
+                }
             }
         }
         
@@ -291,6 +299,8 @@ class BreakingArmy(commands.Cog):
             return f"{e} {n}{suffix}"
 
         pending = season.get("pending_season")
+        if not pending or not pending.get("staged"):
+            pending = None
 
         sched = ""
         matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
@@ -406,13 +416,13 @@ class BreakingArmy(commands.Cog):
                         # A staged season (from `season setup <true>`) always takes priority
                         # over natural progression at this rollover point.
                         pending = s.get("pending_season")
-                        if pending:
+                        if pending and pending.get("staged"):
                             s["anchors"] = pending["anchors"]
                             s["guests"] = pending["guests"]
                             s["priority_bosses"] = pending["priority_bosses"]
                             s["current_week"] = 1
                             s["is_active"] = True
-                            s["pending_season"] = None
+                            s["pending_season"] = {"staged": False, "anchors": [], "guests": [], "priority_bosses": []}
                             pending_applied = True
                             msg = f"🚀 **Staged Breaking Army Season Started** in {guild.name}!"
                         elif s["is_active"]:
@@ -544,6 +554,7 @@ class BreakingArmy(commands.Cog):
                 used.append(boss)
             
         new_season = {
+            "staged": True,
             "anchors": a,
             "guests": g,
             "priority_bosses": [b for b in used if b not in seen_bosses],
@@ -559,7 +570,7 @@ class BreakingArmy(commands.Cog):
             else:
                 s["anchors"] = a; s["guests"] = g; s["is_active"] = True
                 s["priority_bosses"] = new_season["priority_bosses"]
-                s["pending_season"] = None
+                s["pending_season"] = {"staged": False, "anchors": [], "guests": [], "priority_bosses": []}
 
                 # Set last_reset to the most recent Sunday 22:00 to prevent immediate auto-progression
                 from datetime import timezone
