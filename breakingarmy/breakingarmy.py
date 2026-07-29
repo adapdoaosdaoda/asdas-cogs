@@ -377,14 +377,16 @@ class BreakingArmy(commands.Cog):
                 suffix = f" {new_emote}" if n in p_priority else ""
                 return f"{e} {n}{suffix}"
 
+            p_matrix = [(p_a[0],p_g[0]), (p_a[1],p_g[1]), (p_a[2],p_g[2]), (p_a[0],p_g[0]), (p_a[1],p_g[3]), (p_a[2],p_g[4])]
+            p_sched = "\n".join(
+                f"⏳ **Week {i + 1}**: {get_fmt_pending_name(b1)} & {get_fmt_pending_name(b2)}"
+                for i, (b1, b2) in enumerate(p_matrix)
+            )
+
             next_week_num = season["current_week"] + 1
             sched_embed.add_field(
                 name=f"🚀 New Season Staged — Replaces Week {next_week_num}+",
-                value=(
-                    f"**Anchors:** {', '.join(get_fmt_pending_name(x) for x in p_a)}\n"
-                    f"**Guests:** {', '.join(get_fmt_pending_name(x) for x in p_g)}\n"
-                    f"*Starts as Week 1 at the next Sunday 22:00 reset.*"
-                ),
+                value=f"{p_sched}\n*Starts as Week 1 at the next Sunday 22:00 reset.*",
                 inline=False,
             )
 
