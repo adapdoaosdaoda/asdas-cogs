@@ -247,7 +247,8 @@ class ActivityLogger(commands.Cog):
     @commands.guild_only()
     async def activity(self, ctx):
         """Activity logging commands."""
-        pass
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
     @activity.command(name="roles", with_app_command=False)
     @checks.admin_or_permissions(manage_guild=True)
@@ -298,7 +299,9 @@ class ActivityLogger(commands.Cog):
             ("[p]birthday remove (or /birthday remove)", "Remove your saved birthday."),
             ("[p]birthday show (or /birthday show)", "Show your saved birthday (DM only)."),
             ("[p]borkedsince info (or /borkedsince info)", "Show how long it's been since the bot last crashed. **Bot Owner only.**"),
-            ("[p]bork (or /bork)", "Mark Luo or Melon as 'borked'. **Bot Owner only** — will not work for you unless you are the bot owner."),
+            ("[p]bork member <user> (or /bork member)", "Reset a member's bork streak. **Requires a bork-team role** — not open to everyone."),
+            ("[p]bork melon (or /bork melon)", "Reset the bot's crash counter. **Bot Owner only.**"),
+            ("[p]borked <user> (or /borked)", "View a member's bork stats, shown only to you. **Requires a bork-team role** — not open to everyone."),
             ("[p]activity stats (or /activity stats)", "View your own activity stats. Add a user to view theirs — that part requires staff."),
         ]
 

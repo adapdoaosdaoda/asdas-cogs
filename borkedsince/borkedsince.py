@@ -267,7 +267,8 @@ class BorkedSince(commands.Cog):
 
         Tracks days since the bot last crashed and displays it in the bot's About Me section.
         """
-        pass
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
     @borkedsince.command(name="enable", with_app_command=False)
     async def bs_enable(self, ctx: commands.Context):
