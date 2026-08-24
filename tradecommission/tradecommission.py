@@ -51,13 +51,18 @@ def extract_final_emoji(text: str) -> Optional[str]:
 class AddInfoView(discord.ui.View):
     """View for adding Trade Commission information with dropdowns organized by category."""
 
-    def __init__(self, cog: "TradeCommission", guild: discord.Guild, trade_options: List[Dict], active_options: List[int], emoji_titles: Dict[str, str], allowed_user_id: int):
+    def __init__(self, cog: "TradeCommission", guild: discord.Guild, trade_options: List[Dict], active_options: List[int], emoji_titles: Dict[str, str], allowed_user_id: int, track_message: bool = True):
         super().__init__(timeout=None)  # Persistent view
         self.cog = cog
         self.guild = guild
         self.trade_options = trade_options
         self.active_options = active_options
         self.allowed_user_id = allowed_user_id
+        # Whether this view's message is the single tracked "official" addinfo panel
+        # (addinfo_message_id). Ephemeral copies (e.g. from the notifier button) must not
+        # participate in that tracking, since Discord won't let the bot delete/fetch an
+        # ephemeral message from another interaction context.
+        self.track_message = track_message
 
         # Group options by their final emoji for organized display
         emoji_groups = {}  # {emoji: [(idx, option), ...]}
@@ -151,6 +156,11 @@ class AddInfoView(discord.ui.View):
 
         if not await self.cog._has_addinfo_permission(member):
             await interaction.response.send_message("❌ You don't have permission to use this!", ephemeral=True)
+            return
+
+        if not self.track_message:
+            # Ephemeral copy: nothing tracked in config, just dismiss this message.
+            await interaction.response.edit_message(content="❌ Cancelled.", embed=None, view=None)
             return
 
         # Delete the addinfo message
@@ -255,13 +265,22 @@ class AddInfoView(discord.ui.View):
                 except (discord.Forbidden, discord.HTTPException):
                     pass  # Couldn't send notification
 
-                # Delete the addinfo message
-                try:
-                    await interaction.message.delete()
-                    await self.cog.config.guild(self.guild).addinfo_message_id.set(None)
-                    await interaction.response.send_message("✅ All 3 options selected! The addinfo panel has been closed.", ephemeral=True)
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    pass
+                # Close the addinfo panel
+                if self.track_message:
+                    try:
+                        await interaction.message.delete()
+                        await self.cog.config.guild(self.guild).addinfo_message_id.set(None)
+                        await interaction.response.send_message("✅ All 3 options selected! The addinfo panel has been closed.", ephemeral=True)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
+                else:
+                    try:
+                        await interaction.response.edit_message(
+                            content="✅ All 3 options selected! The Trade Commission message has been updated.",
+                            embed=None, view=None
+                        )
+                    except discord.HTTPException:
+                        pass
 
                 # Data has replaced the placeholder - stop nagging
                 await self.cog.config.guild(self.guild).placeholder_posted_at.set(None)
@@ -270,7 +289,7 @@ class AddInfoView(discord.ui.View):
             else:
                 # Recreate the view with updated selections
                 emoji_titles = await self.cog.config.emoji_titles()
-                new_view = AddInfoView(self.cog, self.guild, self.trade_options, self.active_options, emoji_titles, self.allowed_user_id)
+                new_view = AddInfoView(self.cog, self.guild, self.trade_options, self.active_options, emoji_titles, self.allowed_user_id, track_message=self.track_message)
 
                 # Get updated embed
                 embed = await self.cog._create_addinfo_embed(self.guild, self.trade_options, self.active_options)
@@ -282,6 +301,46 @@ class AddInfoView(discord.ui.View):
                     pass
 
         return callback
+
+
+class AddInfoLogButtonView(discord.ui.View):
+    """Attached to the placeholder-posted / reminder log messages so admins can fill in
+    addinfo directly from the log channel, without needing to run `[p]tc addinfo` in the
+    Trade Commission channel itself. Opens the addinfo panel as an ephemeral message,
+    private to whoever clicks."""
+
+    def __init__(self, cog: "TradeCommission", guild: discord.Guild):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.guild = guild
+
+    @discord.ui.button(label="Add Info", style=discord.ButtonStyle.primary, emoji="📝", custom_id="tc_log_addinfo")
+    async def add_info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        member = interaction.user
+        if not isinstance(member, discord.Member):
+            member = self.guild.get_member(interaction.user.id)
+        if not member or not await self.cog._has_addinfo_permission(member):
+            await interaction.response.send_message("❌ You don't have permission to use addinfo!", ephemeral=True)
+            return
+
+        current_msg_id = await self.cog.config.guild(self.guild).current_message_id()
+        current_ch_id = await self.cog.config.guild(self.guild).current_channel_id()
+        if not current_msg_id or not current_ch_id:
+            await interaction.response.send_message("❌ No current Trade Commission message found! Use `[p]tc post` first.", ephemeral=True)
+            return
+
+        trade_options = await self.cog.config.trade_options()
+        if not trade_options:
+            await interaction.response.send_message("❌ No trade options configured! Use `[p]tc setoption` to add options first.", ephemeral=True)
+            return
+
+        active_options = await self.cog.config.guild(self.guild).active_options()
+        emoji_titles = await self.cog.config.emoji_titles()
+
+        embed = await self.cog._create_addinfo_embed(self.guild, trade_options, active_options)
+        view = AddInfoView(self.cog, self.guild, trade_options, active_options, emoji_titles, member.id, track_message=False)
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class TradeCommission(commands.Cog):
@@ -361,8 +420,11 @@ class TradeCommission(commands.Cog):
         """Cancel background task when cog unloads."""
         self.check_schedule_loop.cancel()
 
-    async def _send_log(self, guild: discord.Guild, msg: str):
-        """Send a bot-status message to the owners (DM) and the configured log channel, if any."""
+    async def _send_log(self, guild: discord.Guild, msg: str, view: Optional[discord.ui.View] = None):
+        """Send a bot-status message to the owners (DM) and the configured log channel, if any.
+
+        `view` (if given) is only attached to the log-channel post, not the owner DM.
+        """
         try:
             await self.bot.send_to_owners(msg)
         except Exception:
@@ -372,7 +434,7 @@ class TradeCommission(commands.Cog):
             channel = guild.get_channel(log_channel_id)
             if channel:
                 try:
-                    await channel.send(msg)
+                    await channel.send(msg, view=view)
                 except discord.HTTPException:
                     log.warning(f"Failed to send log message to configured log channel in {guild.name}")
 
@@ -734,7 +796,8 @@ class TradeCommission(commands.Cog):
             # Notify owners
             await self._send_log(
                 guild,
-                f"📢 **Weekly Trade Commission** placeholder posted in **{guild.name}** ({channel.mention})"
+                f"📢 **Weekly Trade Commission** placeholder posted in **{guild.name}** ({channel.mention})",
+                view=AddInfoLogButtonView(self, guild)
             )
 
             # Store current message as previous for next week
@@ -777,7 +840,8 @@ class TradeCommission(commands.Cog):
         await self._send_log(
             guild,
             f"⏰ **Reminder:** The Trade Commission placeholder in **{guild.name}** still needs "
-            f"`addinfo` to fill in this week's options! (Reminder {reminders_sent + 1}/3)"
+            f"`addinfo` to fill in this week's options! (Reminder {reminders_sent + 1}/3)",
+            view=AddInfoLogButtonView(self, guild)
         )
 
         await self.config.guild(guild).addinfo_reminders_sent.set(reminders_sent + 1)
