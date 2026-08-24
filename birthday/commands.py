@@ -46,6 +46,8 @@ class BirthdayCommands(MixinMeta):
     @commands.hybrid_group(aliases=["bday"])
     async def birthday(self, ctx: commands.Context):
         """Set and manage your birthday."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
     @birthday.command(aliases=["add"])
     async def set(self, ctx: commands.Context, *, birthday: BirthdayConverter):
