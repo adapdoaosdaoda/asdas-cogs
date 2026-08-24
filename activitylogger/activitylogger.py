@@ -279,9 +279,57 @@ class ActivityLogger(commands.Cog):
         users = await self.config.guild(ctx.guild).users()
         data = users.get(str(member.id))
         if not data: return await ctx.send("No data.")
-        
+
         view = ActivityUserStatsView(self, ctx, member, data)
         await view.start()
+
+    @commands.hybrid_command(name="commands")
+    @commands.guild_only()
+    async def commands_reference(self, ctx: commands.Context):
+        """List useful commands available to you, with a short explanation of each."""
+        is_owner = await self.bot.is_owner(ctx.author)
+        is_admin = ctx.author.guild_permissions.manage_guild
+        staff_ids = await self.config.guild(ctx.guild).staff_roles()
+        has_staff_role = any(r.id in staff_ids for r in ctx.author.roles)
+        is_staff = is_owner or is_admin or has_staff_role
+
+        base_entries = [
+            ("[p]birthday set", "Set your birthday (month/day only)."),
+            ("[p]birthday remove", "Remove your saved birthday."),
+            ("[p]birthday show", "Show your saved birthday (DM only)."),
+            ("[p]borked", "Show how long it's been since the bot last crashed."),
+            ("[p]bork", "Mark Luo or Melon as 'borked'. **Bot Owner only** — will not work for you unless you are the bot owner."),
+            ("[p]activity stats", "View your own activity stats. Add a user to view theirs — that part requires staff."),
+        ]
+
+        staff_only_entries = [
+            ("[p]mcwhitelist <player>", "Add a Java player to the Minecraft whitelist. **Requires Manage Server**, not just a staff role."),
+            ("[p]mcwhitelist bedrock <player>", "Add a Bedrock player to the whitelist. **Requires Manage Server.**"),
+            ("[p]mcwhitelist list", "List all whitelisted players. **Requires Manage Server.**"),
+            ("[p]mcwhitelist remove <player>", "Remove a Java player from the whitelist. **Requires Manage Server.**"),
+            ("[p]mcwhitelist removebedrock <player>", "Remove a Bedrock player from the whitelist. **Requires Manage Server.**"),
+            ("[p]activity dashboard", "Server-wide activity dashboard. Open to everyone, listed here as a staff tool."),
+            ("[p]activity leaderboard", "Message/voice leaderboard. Open to everyone, listed here as a staff tool."),
+            ("[p]activity retention", "Member retention stats. Open to everyone, listed here as a staff tool."),
+            ("[p]activity trends", "Server-wide activity trends. Open to everyone, listed here as a staff tool."),
+            ("[p]msgcount", "Reply to a message with this to count messages sent since. Open to everyone."),
+            ("[p]voters", "List users who voted in active polls. **Requires its own allowed role or Manage Server** — separate from activity staff roles."),
+        ]
+
+        if is_staff:
+            title = "📖 Staff Command Reference"
+            description = "You have staff access. Commands below are open to everyone unless noted."
+            entries = base_entries + staff_only_entries
+        else:
+            title = "📖 Command Reference"
+            description = "Commands available to you. Some require staff access (set via `[p]activity roles`)."
+            entries = base_entries
+
+        embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
+        for name, explanation in entries:
+            embed.add_field(name=name, value=explanation, inline=False)
+
+        await ctx.send(embed=embed, ephemeral=True)
 
     @activity.command(name="trends")
     async def activity_trends(self, ctx, months: int = 0):
