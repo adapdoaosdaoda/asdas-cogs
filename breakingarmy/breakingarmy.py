@@ -792,7 +792,7 @@ class BreakingArmy(commands.Cog):
     def _has_ba_role(self, member: discord.Member) -> bool:
         return any(r.id in self.BA_ROLE_IDS for r in getattr(member, "roles", []))
 
-    @commands.hybrid_group(name="breakingarmy", invoke_without_command=True)
+    @commands.hybrid_group(name="breakingarmy", invoke_without_command=True, fallback="vote")
     @commands.guild_only()
     async def breakingarmy(self, ctx: commands.Context):
         """Privately view (and vote on) the Breaking Army boss poll."""

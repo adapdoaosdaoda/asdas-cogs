@@ -1438,6 +1438,117 @@ class ResultsCategoryView(discord.ui.View):
 
 
 
+def resolve_timezone_str(user_input: str) -> str:
+    """Map a free-form city name to its IANA timezone string, or pass through as-is."""
+    normalized_input = user_input.strip().lower()
+    return CITY_TIMEZONE_MAP.get(normalized_input, user_input.strip())
+
+
+async def build_timezone_calendar_embed(cog, guild, guild_id: int, poll_id: str, timezone_str: str, is_weekly: bool = False):
+    """Build the calendar embed/file for a poll converted into an arbitrary timezone.
+
+    Returns (embed, file) on success, or (None, error_message) if the timezone is invalid
+    or the poll is no longer active.
+    """
+    import pytz
+    from datetime import datetime
+    from .calendar_renderer import CalendarRenderer
+
+    # Validate timezone
+    try:
+        pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        return None, (
+            f"❌ Unknown timezone or city: `{timezone_str}`\n\n"
+            f"You can use city names like:\n"
+            f"• London, Paris, Berlin\n"
+            f"• New York, Los Angeles, Chicago\n"
+            f"• Tokyo, Singapore, Sydney\n\n"
+            f"Or standard timezone formats like:\n"
+            f"• US/Eastern, US/Pacific\n"
+            f"• Europe/London, Asia/Tokyo\n\n"
+            f"See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+        )
+
+    # Get poll data
+    polls = await cog.config.guild_from_id(guild_id).polls()
+    if poll_id not in polls:
+        return None, "❌ This poll is no longer active!"
+
+    poll_data = polls[poll_id]
+
+    # Calculate winning times - use cached snapshot for weekly calendars
+    # Always get selections for total voter count
+    selections = poll_data.get("selections", {})
+
+    if is_weekly:
+        # Use cached winning_times snapshot from Sunday 10 PM
+        winning_times = poll_data.get("weekly_snapshot_winning_times", {})
+        if not winning_times:
+            # Fallback to live data if no snapshot exists yet
+            winning_times = cog._calculate_winning_times_weighted(selections)
+    else:
+        # Use live selections for real-time calendars
+        winning_times = cog._calculate_winning_times_weighted(selections)
+
+    # Convert winning times to calendar data format
+    # IMPORTANT: Set convert_to_local=False because we manually convert to user_tz below
+    calendar_data = cog._prepare_calendar_data(winning_times, convert_to_local=False)
+
+    # Create calendar renderer with user's timezone
+    user_tz_renderer = CalendarRenderer(timezone=timezone_str)
+
+    # Convert calendar data from server timezone (Fixed UTC+1) to user timezone
+    server_tz = pytz.FixedOffset(60)  # UTC+1
+    user_tz = pytz.timezone(timezone_str)
+
+    # Use current date to account for DST
+    # Note: server_tz is fixed UTC+1, but we still use current_date from user_tz or UTC to be safe
+    current_date = datetime.now(pytz.UTC).date()
+
+    converted_calendar_data = {}
+    for event_name, day_times in calendar_data.items():
+        converted_calendar_data[event_name] = {}
+        for day, time_str in day_times.items():
+            # Parse time in server timezone
+            hour, minute = map(int, time_str.split(':'))
+            # Create a datetime object for the current day
+            dt_server = server_tz.localize(datetime(current_date.year, current_date.month, current_date.day, hour, minute))
+            # Convert to user timezone
+            dt_user = dt_server.astimezone(user_tz)
+            # Format back to HH:MM
+            converted_time = dt_user.strftime("%H:%M")
+            # Handle day changes due to timezone conversion
+            day_offset = (dt_user.day - dt_server.day) % 7
+            days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            day_idx = days_list.index(day) if day in days_list else 0
+            new_day_idx = (day_idx + day_offset) % 7
+            new_day = days_list[new_day_idx]
+
+            converted_calendar_data[event_name][new_day] = converted_time
+
+    # Generate calendar image with the user's timezone
+    image_buffer = user_tz_renderer.render_calendar(
+        converted_calendar_data,
+        cog.events,
+        [],  # No blocked times anymore
+        len(selections)
+    )
+
+    # Create embed
+    embed = discord.Embed(
+        title=f"📅 Calendar ({timezone_str})",
+        description=f"This calendar shows times in **{timezone_str}** timezone.",
+        color=cog._get_embed_color(guild)
+    )
+
+    # Create file attachment
+    calendar_file = discord.File(image_buffer, filename=f"calendar_{timezone_str.replace('/', '_')}.png")
+    embed.set_image(url=f"attachment://calendar_{timezone_str.replace('/', '_')}.png")
+
+    return embed, calendar_file
+
+
 class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"):
     """Modal for entering timezone"""
 
@@ -1448,7 +1559,7 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
         required=True,
         max_length=45
     )
-    
+
     def __init__(self, cog, guild_id: int, poll_id: str, is_weekly: bool = False):
         super().__init__()
         self.cog = cog
@@ -1458,126 +1569,21 @@ class TimezoneModal(discord.ui.Modal, title="Generate Calendar in Your Timezone"
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle timezone submission and generate calendar"""
-        import pytz
-        from io import BytesIO
-
         user_input = self.timezone_input.value.strip()
+        timezone_str = resolve_timezone_str(user_input)
 
-        # Try to map city name to timezone first
-        normalized_input = user_input.lower()
-        if normalized_input in CITY_TIMEZONE_MAP:
-            timezone_str = CITY_TIMEZONE_MAP[normalized_input]
-        else:
-            timezone_str = user_input
+        embed, result = await build_timezone_calendar_embed(
+            self.cog, interaction.guild, self.guild_id, self.poll_id, timezone_str, is_weekly=self.is_weekly
+        )
 
-        # Validate timezone
-        try:
-            tz = pytz.timezone(timezone_str)
-        except pytz.exceptions.UnknownTimeZoneError:
-            await interaction.response.send_message(
-                f"❌ Unknown timezone or city: `{user_input}`\n\n"
-                f"You can use city names like:\n"
-                f"• London, Paris, Berlin\n"
-                f"• New York, Los Angeles, Chicago\n"
-                f"• Tokyo, Singapore, Sydney\n\n"
-                f"Or standard timezone formats like:\n"
-                f"• US/Eastern, US/Pacific\n"
-                f"• Europe/London, Asia/Tokyo\n\n"
-                f"See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
-                view=DismissibleView(),
-                ephemeral=True
-            )
+        if embed is None:
+            await interaction.response.send_message(result, view=DismissibleView(), ephemeral=True)
             return
 
-        # Get poll data
-        polls = await self.cog.config.guild_from_id(self.guild_id).polls()
-        if self.poll_id not in polls:
-            await interaction.response.send_message(
-                "❌ This poll is no longer active!",
-                view=DismissibleView(),
-                ephemeral=True
-            )
-            return
-
-        poll_data = polls[self.poll_id]
-
-        # Calculate winning times - use cached snapshot for weekly calendars
-        # Always get selections for total voter count
-        selections = poll_data.get("selections", {})
-
-        if self.is_weekly:
-            # Use cached winning_times snapshot from Sunday 10 PM
-            winning_times = poll_data.get("weekly_snapshot_winning_times", {})
-            if not winning_times:
-                # Fallback to live data if no snapshot exists yet
-                winning_times = self.cog._calculate_winning_times_weighted(selections)
-        else:
-            # Use live selections for real-time calendars
-            winning_times = self.cog._calculate_winning_times_weighted(selections)
-
-        # Convert to calendar data format first
-        from datetime import datetime
-        from .calendar_renderer import CalendarRenderer
-
-        # Convert winning times to calendar data format
-        # IMPORTANT: Set convert_to_local=False because we manually convert to user_tz below
-        calendar_data = self.cog._prepare_calendar_data(winning_times, convert_to_local=False)
-
-        # Create calendar renderer with user's timezone
-        user_tz_renderer = CalendarRenderer(timezone=timezone_str)
-
-        # Convert calendar data from server timezone (Fixed UTC+1) to user timezone
-        server_tz = pytz.FixedOffset(60)  # UTC+1
-        user_tz = pytz.timezone(timezone_str)
-        
-        # Use current date to account for DST
-        # Note: server_tz is fixed UTC+1, but we still use current_date from user_tz or UTC to be safe
-        current_date = datetime.now(pytz.UTC).date()
-
-        converted_calendar_data = {}
-        for event_name, day_times in calendar_data.items():
-            converted_calendar_data[event_name] = {}
-            for day, time_str in day_times.items():
-                # Parse time in server timezone
-                hour, minute = map(int, time_str.split(':'))
-                # Create a datetime object for the current day
-                dt_server = server_tz.localize(datetime(current_date.year, current_date.month, current_date.day, hour, minute))
-                # Convert to user timezone
-                dt_user = dt_server.astimezone(user_tz)
-                # Format back to HH:MM
-                converted_time = dt_user.strftime("%H:%M")
-                # Handle day changes due to timezone conversion
-                day_offset = (dt_user.day - dt_server.day) % 7
-                days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                day_idx = days_list.index(day) if day in days_list else 0
-                new_day_idx = (day_idx + day_offset) % 7
-                new_day = days_list[new_day_idx]
-
-                converted_calendar_data[event_name][new_day] = converted_time
-
-        # Generate calendar image with the user's timezone
-        image_buffer = user_tz_renderer.render_calendar(
-            converted_calendar_data,
-            self.cog.events,
-            [], # No blocked times anymore
-            len(selections)
-        )
-        
-        # Create embed
-        embed = discord.Embed(
-            title=f"📅 Calendar ({timezone_str})",
-            description=f"This calendar shows times in **{timezone_str}** timezone.",
-            color=self.cog._get_embed_color(interaction.guild)
-        )
-        
-        # Create file attachment
-        calendar_file = discord.File(image_buffer, filename=f"calendar_{timezone_str.replace('/', '_')}.png")
-        embed.set_image(url=f"attachment://calendar_{timezone_str.replace('/', '_')}.png")
-        
         # Send as ephemeral message with dismissible view
         await interaction.response.send_message(
             embed=embed,
-            file=calendar_file,
+            file=result,
             view=DismissibleView(),
             ephemeral=True
         )

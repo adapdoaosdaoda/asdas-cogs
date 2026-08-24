@@ -1552,7 +1552,7 @@ class EventPolling(commands.Cog):
         poll_id = max(polls.keys(), key=lambda pid: int(pid))
         return poll_id, polls[poll_id]
 
-    @commands.hybrid_group(name="schedule", invoke_without_command=True)
+    @commands.hybrid_group(name="schedule", invoke_without_command=True, fallback="vote")
     @commands.guild_only()
     async def schedule(self, ctx: commands.Context):
         """Privately view (and vote on) the event schedule poll."""
@@ -1577,7 +1577,8 @@ class EventPolling(commands.Cog):
         await ctx.send(embeds=[embed, week_embed], file=week_file, view=view, ephemeral=True)
 
     @schedule.command(name="show")
-    async def schedule_show(self, ctx: commands.Context):
+    @discord.app_commands.describe(timezone="Show the calendar in this timezone or city (e.g. Tokyo, US/Eastern)")
+    async def schedule_show(self, ctx: commands.Context, *, timezone: Optional[str] = None):
         """Privately view the active event schedule (calendar) embed."""
         if not self._has_schedule_role(ctx.author):
             await ctx.send("❌ You do not have permission to use this command.", ephemeral=True)
@@ -1586,6 +1587,18 @@ class EventPolling(commands.Cog):
         poll_id, poll_data = await self._get_latest_poll(ctx.guild)
         if poll_id is None:
             await ctx.send("There is no active event poll in this server.", ephemeral=True)
+            return
+
+        if timezone:
+            from .views import resolve_timezone_str, build_timezone_calendar_embed
+            timezone_str = resolve_timezone_str(timezone)
+            embed, result = await build_timezone_calendar_embed(
+                self, ctx.guild, ctx.guild.id, poll_id, timezone_str, is_weekly=True
+            )
+            if embed is None:
+                await ctx.send(result, ephemeral=True)
+                return
+            await ctx.send(embed=embed, file=result, ephemeral=True)
             return
 
         week_embed, week_file, week_view, _ = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
