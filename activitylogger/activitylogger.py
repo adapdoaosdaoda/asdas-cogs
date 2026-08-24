@@ -243,13 +243,13 @@ class ActivityLogger(commands.Cog):
                 res[d_str] = count
         return res
 
-    @commands.group(aliases=["act"])
+    @commands.hybrid_group(aliases=["act"])
     @commands.guild_only()
     async def activity(self, ctx):
         """Activity logging commands."""
         pass
 
-    @activity.command(name="roles")
+    @activity.command(name="roles", with_app_command=False)
     @checks.admin_or_permissions(manage_guild=True)
     async def activity_roles(self, ctx, role: discord.Role):
         """Add/Remove a role that can view other users' stats and interact with any buttons."""
@@ -294,26 +294,26 @@ class ActivityLogger(commands.Cog):
         is_staff = is_owner or is_admin or has_staff_role
 
         base_entries = [
-            ("[p]birthday set", "Set your birthday (month/day only)."),
-            ("[p]birthday remove", "Remove your saved birthday."),
-            ("[p]birthday show", "Show your saved birthday (DM only)."),
-            ("[p]borked", "Show how long it's been since the bot last crashed."),
-            ("[p]bork", "Mark Luo or Melon as 'borked'. **Bot Owner only** — will not work for you unless you are the bot owner."),
-            ("[p]activity stats", "View your own activity stats. Add a user to view theirs — that part requires staff."),
+            ("[p]birthday set (or /birthday set)", "Set your birthday (month/day only)."),
+            ("[p]birthday remove (or /birthday remove)", "Remove your saved birthday."),
+            ("[p]birthday show (or /birthday show)", "Show your saved birthday (DM only)."),
+            ("[p]borkedsince info (or /borkedsince info)", "Show how long it's been since the bot last crashed. **Bot Owner only.**"),
+            ("[p]bork (or /bork)", "Mark Luo or Melon as 'borked'. **Bot Owner only** — will not work for you unless you are the bot owner."),
+            ("[p]activity stats (or /activity stats)", "View your own activity stats. Add a user to view theirs — that part requires staff."),
         ]
 
         staff_only_entries = [
-            ("[p]mcwhitelist <player>", "Add a Java player to the Minecraft whitelist. **Requires Manage Server**, not just a staff role."),
-            ("[p]mcwhitelist bedrock <player>", "Add a Bedrock player to the whitelist. **Requires Manage Server.**"),
-            ("[p]mcwhitelist list", "List all whitelisted players. **Requires Manage Server.**"),
-            ("[p]mcwhitelist remove <player>", "Remove a Java player from the whitelist. **Requires Manage Server.**"),
-            ("[p]mcwhitelist removebedrock <player>", "Remove a Bedrock player from the whitelist. **Requires Manage Server.**"),
-            ("[p]activity dashboard", "Server-wide activity dashboard. Open to everyone, listed here as a staff tool."),
-            ("[p]activity leaderboard", "Message/voice leaderboard. Open to everyone, listed here as a staff tool."),
-            ("[p]activity retention", "Member retention stats. Open to everyone, listed here as a staff tool."),
-            ("[p]activity trends", "Server-wide activity trends. Open to everyone, listed here as a staff tool."),
-            ("[p]msgcount", "Reply to a message with this to count messages sent since. Open to everyone."),
-            ("[p]voters", "List users who voted in active polls. **Requires its own allowed role or Manage Server** — separate from activity staff roles."),
+            ("[p]mcwhitelist <player> (or /mcwhitelist add)", "Add a Java player to the Minecraft whitelist. **Requires Manage Server**, not just a staff role."),
+            ("[p]mcwhitelist bedrock <player> (or /mcwhitelist bedrock)", "Add a Bedrock player to the whitelist. **Requires Manage Server.**"),
+            ("[p]mcwhitelist list (or /mcwhitelist list)", "List all whitelisted players. **Requires Manage Server.**"),
+            ("[p]mcwhitelist remove <player> (or /mcwhitelist remove)", "Remove a Java player from the whitelist. **Requires Manage Server.**"),
+            ("[p]mcwhitelist removebedrock <player> (or /mcwhitelist removebedrock)", "Remove a Bedrock player from the whitelist. **Requires Manage Server.**"),
+            ("[p]activity dashboard (or /activity dashboard)", "Server-wide activity dashboard. Open to everyone, listed here as a staff tool."),
+            ("[p]activity leaderboard (or /activity leaderboard)", "Message/voice leaderboard. Open to everyone, listed here as a staff tool."),
+            ("[p]activity retention (or /activity retention)", "Member retention stats. Open to everyone, listed here as a staff tool."),
+            ("[p]activity trends (or /activity trends)", "Server-wide activity trends. Open to everyone, listed here as a staff tool."),
+            ("[p]msgcount", "Reply to a message with this to count messages sent since. Prefix-only — no slash equivalent, since it relies on replying to a message. Open to everyone."),
+            ("[p]voters (or /voters)", "List users who voted in active polls. **Requires its own allowed role or Manage Server** — separate from activity staff roles."),
         ]
 
         if is_staff:
@@ -369,7 +369,7 @@ class ActivityLogger(commands.Cog):
             pages.append(discord.Embed(title="Activity Leaderboard", description=desc, color=discord.Color.gold()))
         await menu(ctx, pages, DEFAULT_CONTROLS)
 
-    @activity.command(name="inactive")
+    @activity.command(name="inactive", with_app_command=False)
     @checks.admin_or_permissions(manage_guild=True)
     async def activity_inactive(self, ctx, days: int = 30):
         """Find members inactive for X+ days."""
@@ -391,7 +391,7 @@ class ActivityLogger(commands.Cog):
         rate = (len(a1 & a2) / len(a2) * 100) if a2 else 0
         await ctx.send(embed=discord.Embed(title="Retention", description=f"**Active (0-30d):** {len(a1)}\n**Active (30-60d):** {len(a2)}\n**Retention:** {rate:.1f}%", color=discord.Color.green()))
 
-    @activity.command(name="resetall")
+    @activity.command(name="resetall", with_app_command=False)
     @checks.is_owner()
     async def activity_reset_all(self, ctx, confirm: bool = False):
         """DANGEROUS: Wipe all activity data."""
@@ -400,7 +400,7 @@ class ActivityLogger(commands.Cog):
         await self.config.guild(ctx.guild).clear()
         await ctx.send("✅ Data wiped.")
 
-    @activity.command(name="resetbacktrack")
+    @activity.command(name="resetbacktrack", with_app_command=False)
     @checks.admin_or_permissions(manage_guild=True)
     async def activity_reset_backtrack(self, ctx):
         """Reset backtrack status."""
@@ -421,7 +421,7 @@ class ActivityLogger(commands.Cog):
         view = ActivityDashboardView(self, ctx)
         await view.start()
 
-    @activity.command(name="backtrack")
+    @activity.command(name="backtrack", with_app_command=False)
     @checks.admin_or_permissions(manage_guild=True)
     async def activity_backtrack(self, ctx):
         """Sync history."""

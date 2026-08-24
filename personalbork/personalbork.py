@@ -1,7 +1,7 @@
 """PersonalBork cog - Track days since owners last borked."""
 import discord
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Union
+from typing import Optional, List, Dict, Union, Literal
 from redbot.core import commands, Config
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import box, humanize_list
@@ -112,9 +112,9 @@ class PersonalBork(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @commands.command(name="bork")
+    @commands.hybrid_command(name="bork")
     @commands.is_owner()
-    async def bork(self, ctx: commands.Context, target: str, *, reason: Optional[str] = None):
+    async def bork(self, ctx: commands.Context, target: Literal["luo", "melon"], *, reason: Optional[str] = None):
         """Mark Luo or Melon (the bot) as 'borked'.
 
         - `!bork luo [reason]`: Reset Luo's personal streak.

@@ -52,13 +52,13 @@ class MCWhitelist(commands.Cog):
             log.error(f"RCON Error: {e}")
             return False, f"An unexpected error occurred: {e}"
 
-    @commands.group(name="mcwhitelist", aliases=["mcwl"], invoke_without_command=True)
+    @commands.hybrid_group(name="mcwhitelist", aliases=["mcwl"], invoke_without_command=True, fallback="add")
     @checks.admin_or_permissions(manage_guild=True)
     async def mcwhitelist(self, ctx, player: Optional[str] = None):
         """
         Add a player to the Minecraft whitelist.
-        
-        Usage: [p]mcwhitelist <player>
+
+        Usage: [p]mcwhitelist <player> (or /mcwhitelist add <player>)
         """
         if ctx.invoked_subcommand is None:
             if player is None:

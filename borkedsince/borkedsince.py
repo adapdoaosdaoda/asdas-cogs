@@ -259,7 +259,7 @@ class BorkedSince(commands.Cog):
             f"**Sample output:**\n{box(test_full)}"
         )
 
-    @commands.group(name="borkedsince", aliases=["bs"])
+    @commands.hybrid_group(name="borkedsince", aliases=["bs"])
     @commands.is_owner()
     async def borkedsince(self, ctx: commands.Context):
         """
@@ -269,7 +269,7 @@ class BorkedSince(commands.Cog):
         """
         pass
 
-    @borkedsince.command(name="enable")
+    @borkedsince.command(name="enable", with_app_command=False)
     async def bs_enable(self, ctx: commands.Context):
         """Enable the BorkedSince counter and bio updates."""
         # Check if base bio is set
@@ -312,7 +312,7 @@ class BorkedSince(commands.Cog):
                 f"You can try `[p]borkedsince updatenow` later."
             )
 
-    @borkedsince.command(name="disable")
+    @borkedsince.command(name="disable", with_app_command=False)
     async def bs_disable(self, ctx: commands.Context):
         """Disable bio updates (counter continues in background)."""
         await self.config.enabled.set(False)
@@ -327,7 +327,7 @@ class BorkedSince(commands.Cog):
             "Use `[p]borkedsince enable` to resume bio updates."
         )
 
-    @borkedsince.command(name="setbio")
+    @borkedsince.command(name="setbio", with_app_command=False)
     async def bs_setbio(self, ctx: commands.Context, *, bio_text: str):
         """Set the base bio text (before the counter suffix).
 
@@ -361,7 +361,7 @@ class BorkedSince(commands.Cog):
                     f"Your base bio has been saved and will be used for future updates."
                 )
 
-    @borkedsince.command(name="settext")
+    @borkedsince.command(name="settext", with_app_command=False)
     async def bs_settext(self, ctx: commands.Context, *, prefix_text: str):
         """Set the prefix text for the counter (e.g., "Last borked:", "Days without incident:", etc.).
 
@@ -410,7 +410,7 @@ class BorkedSince(commands.Cog):
                     f"Your prefix text has been saved and will be used for future updates."
                 )
 
-    @borkedsince.command(name="reset")
+    @borkedsince.command(name="reset", with_app_command=False)
     async def bs_reset(self, ctx: commands.Context, *, reason: Optional[str] = None):
         """Manually reset the counter to 0 (e.g., after fixing a bug).
 
@@ -526,7 +526,7 @@ class BorkedSince(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @borkedsince.command(name="history")
+    @borkedsince.command(name="history", with_app_command=False)
     async def bs_history(self, ctx: commands.Context, limit: int = 10):
         """Show crash history with longest streaks.
 
@@ -597,7 +597,7 @@ class BorkedSince(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @borkedsince.command(name="recent")
+    @borkedsince.command(name="recent", with_app_command=False)
     async def bs_recent(self, ctx: commands.Context, limit: int = 10):
         """Show most recent crashes chronologically.
 
@@ -650,7 +650,7 @@ class BorkedSince(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @borkedsince.command(name="checkbio")
+    @borkedsince.command(name="checkbio", with_app_command=False)
     async def bs_checkbio(self, ctx: commands.Context):
         """Check if your current base bio will fit the 10.000 days format."""
         base_bio = await self.config.base_bio()
@@ -666,7 +666,7 @@ class BorkedSince(commands.Cog):
         is_valid, message = self._validate_bio_length(base_bio, last_borked_text)
         await ctx.send(message)
 
-    @borkedsince.command(name="updatenow")
+    @borkedsince.command(name="updatenow", with_app_command=False)
     async def bs_updatenow(self, ctx: commands.Context):
         """Manually trigger a bio update immediately."""
         if not await self.config.enabled():
@@ -693,7 +693,7 @@ class BorkedSince(commands.Cog):
                 f"The counter is still tracking, but the Discord bio was not updated."
             )
 
-    @borkedsince.command(name="increment")
+    @borkedsince.command(name="increment", with_app_command=False)
     async def bs_increment(self, ctx: commands.Context):
         """Manually increment the counter by 1 day.
 
@@ -726,7 +726,7 @@ class BorkedSince(commands.Cog):
             f"**New:** {new_days_formatted} day{'s' if new_days != 1 else ''}{bio_status}"
         )
 
-    @borkedsince.command(name="undo")
+    @borkedsince.command(name="undo", with_app_command=False)
     async def bs_undo(self, ctx: commands.Context):
         """Undo the last reset and restore the previous counter state.
 

@@ -70,7 +70,7 @@ class Voters(commands.Cog):
     async def before_check_cogs_loaded(self):
         await self.bot.wait_until_ready()
 
-    @commands.group(invoke_without_command=True)
+    @commands.hybrid_group(invoke_without_command=True)
     @commands.guild_only()
     async def voters(self, ctx: commands.Context):
         """Show list of voters or manage settings."""
@@ -212,13 +212,13 @@ class Voters(commands.Cog):
             for e in ep_embeds:
                 await ctx.send(embed=e)
 
-    @voters.group(name="settings", aliases=["set"])
+    @voters.group(name="settings", aliases=["set"], with_app_command=False)
     @commands.admin_or_permissions(manage_guild=True)
     async def voters_settings(self, ctx: commands.Context):
         """Manage Voters configuration."""
         pass
 
-    @voters_settings.command(name="addrole")
+    @voters_settings.command(name="addrole", with_app_command=False)
     async def add_allowed_role(self, ctx: commands.Context, role: discord.Role):
         """Add a role to the allowed list for the !voters command."""
         async with self.config.guild(ctx.guild).allowed_roles() as roles:
@@ -227,7 +227,7 @@ class Voters(commands.Cog):
             roles.append(role.id)
         await ctx.send(f"✅ Added {role.name} to allowed voters roles.")
 
-    @voters_settings.command(name="removerole")
+    @voters_settings.command(name="removerole", with_app_command=False)
     async def remove_allowed_role(self, ctx: commands.Context, role: discord.Role):
         """Remove a role from the allowed list."""
         async with self.config.guild(ctx.guild).allowed_roles() as roles:
@@ -236,7 +236,7 @@ class Voters(commands.Cog):
             roles.remove(role.id)
         await ctx.send(f"✅ Removed {role.name} from allowed voters roles.")
 
-    @voters_settings.command(name="listroles")
+    @voters_settings.command(name="listroles", with_app_command=False)
     async def list_allowed_roles(self, ctx: commands.Context):
         """List all allowed roles."""
         roles_ids = await self.config.guild(ctx.guild).allowed_roles()
