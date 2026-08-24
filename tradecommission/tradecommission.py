@@ -285,6 +285,7 @@ class AddInfoView(discord.ui.View):
                 # Data has replaced the placeholder - stop nagging
                 await self.cog.config.guild(self.guild).placeholder_posted_at.set(None)
                 await self.cog.config.guild(self.guild).addinfo_reminders_sent.set(0)
+                await self.cog._clear_addinfo_log_buttons(self.guild)
                 return
             else:
                 # Recreate the view with updated selections
@@ -364,6 +365,7 @@ class TradeCommission(commands.Cog):
         default_guild = {
             "channel_id": None,
             "log_channel_id": None,
+            "addinfo_log_messages": [],  # [{"channel_id": int, "message_id": int}, ...] - log messages with a live Add Info button
             "schedule_day": 0,  # 0 = Monday, 6 = Sunday
             "schedule_hour": 9,  # Hour in 24h format
             "schedule_minute": 0,
@@ -423,7 +425,9 @@ class TradeCommission(commands.Cog):
     async def _send_log(self, guild: discord.Guild, msg: str, view: Optional[discord.ui.View] = None):
         """Send a bot-status message to the owners (DM) and the configured log channel, if any.
 
-        `view` (if given) is only attached to the log-channel post, not the owner DM.
+        `view` (if given) is only attached to the log-channel post, not the owner DM. If it's an
+        AddInfoLogButtonView, the sent message is remembered so its button can be stripped later
+        once addinfo is completed (see _clear_addinfo_log_buttons).
         """
         try:
             await self.bot.send_to_owners(msg)
@@ -434,9 +438,28 @@ class TradeCommission(commands.Cog):
             channel = guild.get_channel(log_channel_id)
             if channel:
                 try:
-                    await channel.send(msg, view=view)
+                    sent = await channel.send(msg, view=view)
+                    if isinstance(view, AddInfoLogButtonView):
+                        async with self.config.guild(guild).addinfo_log_messages() as tracked:
+                            tracked.append({"channel_id": channel.id, "message_id": sent.id})
                 except discord.HTTPException:
                     log.warning(f"Failed to send log message to configured log channel in {guild.name}")
+
+    async def _clear_addinfo_log_buttons(self, guild: discord.Guild):
+        """Strip the Add Info button from any tracked log messages now that addinfo is complete."""
+        tracked = await self.config.guild(guild).addinfo_log_messages()
+        if not tracked:
+            return
+        for entry in tracked:
+            channel = guild.get_channel(entry["channel_id"])
+            if not channel:
+                continue
+            try:
+                message = await channel.fetch_message(entry["message_id"])
+                await message.edit(view=None)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+        await self.config.guild(guild).addinfo_log_messages.set([])
 
     async def _has_addinfo_permission(self, member: discord.Member) -> bool:
         """Check if a member has permission to use addinfo reactions."""
@@ -792,7 +815,11 @@ class TradeCommission(commands.Cog):
 
         try:
             message = await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
-            
+
+            # A new placeholder replaces last week's - any leftover Add Info buttons from an
+            # incomplete previous cycle are now stale.
+            await self._clear_addinfo_log_buttons(guild)
+
             # Notify owners
             await self._send_log(
                 guild,
