@@ -1,6 +1,7 @@
 """Trade Commission weekly message cog for Where Winds Meet."""
 import asyncio
 import discord
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 from redbot.core import commands, Config
@@ -9,6 +10,8 @@ from redbot.core.utils.chat_formatting import box, humanize_list
 from discord.ext import tasks
 import pytz
 import re
+
+log = logging.getLogger("red.asdas-cogs.tradecommission")
 
 # Unicode emoji pattern - matches standard emoji characters
 EMOJI_PATTERN = re.compile(
@@ -235,10 +238,10 @@ class AddInfoView(discord.ui.View):
                         notification_msg = await current_channel.send(notification_content, allowed_mentions=discord.AllowedMentions(roles=True))
 
                         # Notify owners
-                        try:
-                            await self.cog.bot.send_to_owners(f"📢 **Weekly Trade Commission** announcement posted in **{self.guild.name}** ({current_channel.mention})")
-                        except Exception:
-                            pass
+                        await self.cog._send_log(
+                            self.guild,
+                            f"📢 **Weekly Trade Commission** announcement posted in **{self.guild.name}** ({current_channel.mention})"
+                        )
 
                         # Store notification message ID
                         await self.cog.config.guild(self.guild).notification_message_id.set(notification_msg.id)
@@ -301,6 +304,7 @@ class TradeCommission(commands.Cog):
         # Per-guild config - only for addinfo tracking
         default_guild = {
             "channel_id": None,
+            "log_channel_id": None,
             "schedule_day": 0,  # 0 = Monday, 6 = Sunday
             "schedule_hour": 9,  # Hour in 24h format
             "schedule_minute": 0,
@@ -356,6 +360,21 @@ class TradeCommission(commands.Cog):
     async def cog_unload(self):
         """Cancel background task when cog unloads."""
         self.check_schedule_loop.cancel()
+
+    async def _send_log(self, guild: discord.Guild, msg: str):
+        """Send a bot-status message to the owners (DM) and the configured log channel, if any."""
+        try:
+            await self.bot.send_to_owners(msg)
+        except Exception:
+            pass
+        log_channel_id = await self.config.guild(guild).log_channel_id()
+        if log_channel_id:
+            channel = guild.get_channel(log_channel_id)
+            if channel:
+                try:
+                    await channel.send(msg)
+                except discord.HTTPException:
+                    log.warning(f"Failed to send log message to configured log channel in {guild.name}")
 
     async def _has_addinfo_permission(self, member: discord.Member) -> bool:
         """Check if a member has permission to use addinfo reactions."""
@@ -713,10 +732,10 @@ class TradeCommission(commands.Cog):
             message = await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
             
             # Notify owners
-            try:
-                await self.bot.send_to_owners(f"📢 **Weekly Trade Commission** placeholder posted in **{guild.name}** ({channel.mention})")
-            except Exception:
-                pass
+            await self._send_log(
+                guild,
+                f"📢 **Weekly Trade Commission** placeholder posted in **{guild.name}** ({channel.mention})"
+            )
 
             # Store current message as previous for next week
             await self.config.guild(guild).previous_message_id.set(config["current_message_id"])
@@ -755,13 +774,11 @@ class TradeCommission(commands.Cog):
         if due_reminders <= reminders_sent:
             return
 
-        try:
-            await self.bot.send_to_owners(
-                f"⏰ **Reminder:** The Trade Commission placeholder in **{guild.name}** still needs "
-                f"`addinfo` to fill in this week's options! (Reminder {reminders_sent + 1}/3)"
-            )
-        except Exception:
-            pass
+        await self._send_log(
+            guild,
+            f"⏰ **Reminder:** The Trade Commission placeholder in **{guild.name}** still needs "
+            f"`addinfo` to fill in this week's options! (Reminder {reminders_sent + 1}/3)"
+        )
 
         await self.config.guild(guild).addinfo_reminders_sent.set(reminders_sent + 1)
 
@@ -891,6 +908,18 @@ class TradeCommission(commands.Cog):
             f"**Channel:** {channel.mention}\n"
             f"**Schedule:** Every {day.title()} at {hour:02d}:{minute:02d} {timezone}"
         )
+
+    @tradecommission.command(name="setlogchannel")
+    @commands.guild_only()
+    @commands.admin_or_permissions(manage_guild=True)
+    async def tc_setlogchannel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """Set the channel that receives owner-status log messages (posted/reminder notices). Leave empty to disable."""
+        if channel:
+            await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
+            await ctx.send(f"✅ Log messages will also be sent to {channel.mention}")
+        else:
+            await self.config.guild(ctx.guild).log_channel_id.set(None)
+            await ctx.send("✅ Log channel disabled. Messages will only be sent to the bot owner(s).")
 
     @tradecommission.command(name="disable")
     @commands.guild_only()

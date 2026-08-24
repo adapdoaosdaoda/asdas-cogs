@@ -42,6 +42,7 @@ class EventPolling(commands.Cog):
             notification_messages={},  # event_name -> message
             sent_notifications={},  # event_name -> last_notification_day_str (YYYY-MM-DD)
             event_roles={},  # event_name -> role_id
+            log_channel_id=None,
         )
 
         self.config.register_global(
@@ -464,7 +465,8 @@ class EventPolling(commands.Cog):
                             if changed else
                             "Nothing to do — the winning times are unchanged from last week:"
                         )
-                        await self.bot.send_to_owners(
+                        await self._send_log(
+                            guild,
                             f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n"
                             f"*All times shown in {self.timezone_display}*\n"
                             f"{status_line}\n{summary}"
@@ -1544,6 +1546,18 @@ class EventPolling(commands.Cog):
     def _has_schedule_role(self, member: discord.Member) -> bool:
         return any(r.id in self.SCHEDULE_ROLE_IDS for r in getattr(member, "roles", []))
 
+    async def _send_log(self, guild: discord.Guild, msg: str):
+        """Send a bot-status message to the owners (DM) and the configured log channel, if any."""
+        await self.bot.send_to_owners(msg)
+        log_channel_id = await self.config.guild(guild).log_channel_id()
+        if log_channel_id:
+            channel = guild.get_channel(log_channel_id)
+            if channel:
+                try:
+                    await channel.send(msg)
+                except discord.HTTPException:
+                    log.warning(f"Failed to send log message to configured log channel in {guild.name}")
+
     async def _get_latest_poll(self, guild: discord.Guild):
         """Return (poll_id, poll_data) for the most recently created poll in this guild, or (None, None)."""
         polls = await self.config.guild(guild).polls()
@@ -2469,6 +2483,16 @@ class EventPolling(commands.Cog):
         else:
             await self.config.guild(ctx.guild).notification_channel_id.set(None)
             await ctx.send("✅ Event notifications disabled")
+
+    @eventpoll.command(name="setlogchannel")
+    async def eventpoll_setlogchannel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """Set the channel that receives owner-status log messages (schedule change summaries). Leave empty to disable."""
+        if channel:
+            await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
+            await ctx.send(f"✅ Log messages will also be sent to {channel.mention}")
+        else:
+            await self.config.guild(ctx.guild).log_channel_id.set(None)
+            await ctx.send("✅ Log channel disabled. Messages will only be sent to the bot owner(s).")
 
     @eventpoll.command(name="setmessage")
     async def eventpoll_setmessage(self, ctx: commands.Context, option: Optional[str] = None, *, message: str = None):

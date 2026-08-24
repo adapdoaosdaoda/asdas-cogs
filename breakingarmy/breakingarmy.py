@@ -38,6 +38,7 @@ class BreakingArmy(commands.Cog):
             "admin_roles": [],
             "seen_bosses": [],
             "notification_channel": None,
+            "log_channel_id": None,
             "new_boss_emote": "✨",
             "max_bosses_in_run": 5,
             "min_vote_threshold": 3,
@@ -84,6 +85,18 @@ class BreakingArmy(commands.Cog):
 
     def cog_unload(self):
         self.schedule_checker.cancel()
+
+    async def _send_log(self, guild: discord.Guild, msg: str):
+        """Send a bot-status message to the owners (DM) and the configured log channel, if any."""
+        await self.bot.send_to_owners(msg)
+        log_channel_id = await self.config.guild(guild).log_channel_id()
+        if log_channel_id:
+            channel = guild.get_channel(log_channel_id)
+            if channel:
+                try:
+                    await channel.send(msg)
+                except discord.HTTPException:
+                    log.warning(f"Failed to send log message to configured log channel in {guild.name}")
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
@@ -499,7 +512,7 @@ class BreakingArmy(commands.Cog):
                         msg += f"\nScheduled Bosses: {boss_info}"
                     
                     if msg:
-                        await self.bot.send_to_owners(msg)
+                        await self._send_log(guild, msg)
                     
                     await self._refresh_live_season_view(guild)
 
@@ -895,6 +908,16 @@ class BreakingArmy(commands.Cog):
         else:
             await self.config.guild(ctx.guild).notification_channel.set(None)
             await ctx.send("✅ Notifications disabled.")
+
+    @ba_config.command(name="logchannel")
+    async def config_log_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """Set the channel that receives owner-status log messages (week advances, schedule/trade commission updates). Leave empty to disable."""
+        if channel:
+            await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
+            await ctx.send(f"✅ Log messages will also be sent to {channel.mention}")
+        else:
+            await self.config.guild(ctx.guild).log_channel_id.set(None)
+            await ctx.send("✅ Log channel disabled. Messages will only be sent to the bot owner(s).")
 
     @ba_config.command(name="addboss")
     async def config_add_boss(self, ctx: commands.Context, emoji: Optional[str] = "⚔️", *, name: str):
