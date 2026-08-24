@@ -408,17 +408,21 @@ class EventPolling(commands.Cog):
         """Wait for bot to be ready before starting weekly results update task"""
         await self.bot.wait_until_ready()
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=1)
     async def weekly_calendar_update(self):
-        """Update weekly calendar embeds every Sunday at 10 PM server time (UTC+1)"""
+        """Update weekly calendar embeds every Sunday at 21:55 server time (UTC+1).
+
+        Runs a few minutes before BreakingArmy's Sunday 22:00 advancement alert so the
+        Schedule Change notification always reaches the owner first.
+        """
         try:
             # Get current datetime in server timezone (UTC+1)
             from datetime import timezone
             server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
 
-            # Check if it's Sunday (6 = Sunday) and between 22:00-22:59 PM
-            if now.weekday() != 6 or now.hour != 22:
+            # Check if it's Sunday (6 = Sunday) at 21:55
+            if now.weekday() != 6 or now.hour != 21 or now.minute != 55:
                 return
 
             last_run = await self.config.last_weekly_calendar_update()
