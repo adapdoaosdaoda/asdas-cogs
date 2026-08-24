@@ -787,6 +787,35 @@ class BreakingArmy(commands.Cog):
         suffix = f" {new_emote}" if boss_name in priority else ""
         return f"{emoji} {boss_name}{suffix}"
 
+    BA_ROLE_IDS = (1439747785644703754, 1452430729115078850)
+
+    def _has_ba_role(self, member: discord.Member) -> bool:
+        return any(r.id in self.BA_ROLE_IDS for r in getattr(member, "roles", []))
+
+    @commands.hybrid_group(name="breakingarmy", invoke_without_command=True)
+    @commands.guild_only()
+    async def breakingarmy(self, ctx: commands.Context):
+        """Privately view (and vote on) the Breaking Army boss poll."""
+        if ctx.invoked_subcommand is not None:
+            return
+        if not self._has_ba_role(ctx.author):
+            await ctx.send("❌ You do not have permission to use this command.", ephemeral=True)
+            return
+
+        embed = await self._generate_poll_embed(ctx.guild)
+        view = BossPollView(self)
+        await ctx.send(embed=embed, view=view, ephemeral=True)
+
+    @breakingarmy.command(name="show")
+    async def breakingarmy_show(self, ctx: commands.Context):
+        """Privately view the active Breaking Army season status."""
+        if not self._has_ba_role(ctx.author):
+            await ctx.send("❌ You do not have permission to use this command.", ephemeral=True)
+            return
+
+        embeds = await self._generate_season_status_embeds(ctx.guild)
+        await ctx.send(embeds=embeds, ephemeral=True)
+
     @commands.group(name="ba")
     @commands.guild_only()
     async def ba(self, ctx: commands.Context):

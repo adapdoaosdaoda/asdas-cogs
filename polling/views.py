@@ -191,7 +191,7 @@ class EventPollView(discord.ui.View):
         async def callback(interaction: discord.Interaction):
             try:
                 # Get poll_id from the message
-                poll_id = str(interaction.message.id)
+                poll_id = self.poll_id or str(interaction.message.id)
                 guild_id = interaction.guild.id
 
                 # Get user's current selections
@@ -233,7 +233,7 @@ class EventPollView(discord.ui.View):
         """Show current poll results with category buttons"""
         try:
             # Get poll_id from the message
-            poll_id = str(interaction.message.id)
+            poll_id = self.poll_id or str(interaction.message.id)
             guild_id = interaction.guild.id
 
             # Get poll data
@@ -271,7 +271,7 @@ class EventPollView(discord.ui.View):
         async def callback(interaction: discord.Interaction):
             try:
                 # Get poll_id from the message (for persistent views)
-                poll_id = str(interaction.message.id)
+                poll_id = self.poll_id or str(interaction.message.id)
                 guild_id = interaction.guild.id
 
                 # Get user's current selections

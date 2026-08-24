@@ -1539,6 +1539,58 @@ class EventPolling(commands.Cog):
 
         return calendar_data
 
+    SCHEDULE_ROLE_IDS = (1439747785644703754, 1452430729115078850)
+
+    def _has_schedule_role(self, member: discord.Member) -> bool:
+        return any(r.id in self.SCHEDULE_ROLE_IDS for r in getattr(member, "roles", []))
+
+    async def _get_latest_poll(self, guild: discord.Guild):
+        """Return (poll_id, poll_data) for the most recently created poll in this guild, or (None, None)."""
+        polls = await self.config.guild(guild).polls()
+        if not polls:
+            return None, None
+        poll_id = max(polls.keys(), key=lambda pid: int(pid))
+        return poll_id, polls[poll_id]
+
+    @commands.hybrid_group(name="schedule", invoke_without_command=True)
+    @commands.guild_only()
+    async def schedule(self, ctx: commands.Context):
+        """Privately view (and vote on) the event schedule poll."""
+        if ctx.invoked_subcommand is not None:
+            return
+        if not self._has_schedule_role(ctx.author):
+            await ctx.send("❌ You do not have permission to use this command.", ephemeral=True)
+            return
+
+        poll_id, poll_data = await self._get_latest_poll(ctx.guild)
+        if poll_id is None:
+            await ctx.send("There is no active event poll in this server.", ephemeral=True)
+            return
+
+        embed = await self._create_poll_embed(poll_data.get("title", "Event Schedule Poll"), ctx.guild.id, poll_id)
+        embed.set_footer(text="Click the buttons below to set your preferences")
+        view = EventPollView(self, ctx.guild.id, poll_data.get("creator_id"), self.events, self.days_of_week, self.blocked_times)
+        view.poll_id = poll_id
+
+        week_embed, week_file, week_view, _ = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+
+        await ctx.send(embeds=[embed, week_embed], file=week_file, view=view, ephemeral=True)
+
+    @schedule.command(name="show")
+    async def schedule_show(self, ctx: commands.Context):
+        """Privately view the active event schedule (calendar) embed."""
+        if not self._has_schedule_role(ctx.author):
+            await ctx.send("❌ You do not have permission to use this command.", ephemeral=True)
+            return
+
+        poll_id, poll_data = await self._get_latest_poll(ctx.guild)
+        if poll_id is None:
+            await ctx.send("There is no active event poll in this server.", ephemeral=True)
+            return
+
+        week_embed, week_file, week_view, _ = await self._create_weekly_calendar_embed(poll_data, ctx.guild.id, poll_id)
+        await ctx.send(embed=week_embed, file=week_file, ephemeral=True)
+
     @commands.group(name="eventpoll")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)

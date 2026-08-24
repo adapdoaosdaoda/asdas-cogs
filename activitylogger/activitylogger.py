@@ -303,6 +303,10 @@ class ActivityLogger(commands.Cog):
             ("[p]bork melon (or /bork melon)", "Reset the bot's crash counter. **Bot Owner only.**"),
             ("[p]borked <user> (or /borked)", "View a member's bork stats, shown only to you. **Requires a bork-team role** — not open to everyone."),
             ("[p]activity stats (or /activity stats)", "View your own activity stats. Add a user to view theirs — that part requires staff."),
+            ("/breakingarmy", "Privately view and vote on the Breaking Army boss poll — your votes count toward the real poll. **Requires a bork-team role.**"),
+            ("/breakingarmy show", "Privately view the active Breaking Army season status. **Requires a bork-team role.**"),
+            ("/schedule", "Privately view and vote on the event schedule poll — your votes count toward the real poll. **Requires a bork-team role.**"),
+            ("/schedule show", "Privately view the active event schedule (calendar). **Requires a bork-team role.**"),
         ]
 
         staff_only_entries = [
