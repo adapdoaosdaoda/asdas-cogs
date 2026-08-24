@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Any, Tuple
 
 from redbot.core import commands, Config, data_manager, checks
 from redbot.core.bot import Red
+from redbot.core.commands.requires import PrivilegeLevel
 from discord.ext import tasks
 
 log = logging.getLogger("red.asdas-cogs.guildops")
@@ -1252,6 +1253,187 @@ class GuildOps(commands.Cog):
             
             view = SyncView(missing_members, member_role, left_role)
             await ctx.send(embed=embed, view=view)
+
+    @commands.command()
+    @checks.is_owner()
+    async def cmdaccess(self, ctx):
+        """
+        DM-friendly audit of every loaded command: whether it works in DMs,
+        and which role-tiers can run it in each mutual guild.
+
+        Produces a text file since the full report is normally too long for a message.
+        """
+        async with ctx.typing():
+            lines = ["Command Access Report", "=" * 60, ""]
+            all_commands = sorted(self.bot.walk_commands(), key=lambda c: c.qualified_name)
+
+            lines.append("Direct Messages")
+            lines.append("-" * 60)
+            for command in all_commands:
+                if command.hidden or not self._is_dm_usable(command):
+                    continue
+                privilege_level = self._privilege_level(command)
+                owner_only = privilege_level is not None and privilege_level.name == "BOT_OWNER"
+                who = "Bot Owner only" if owner_only else "Anyone (subject to command's own checks)"
+                lines.append(f"[p]{command.qualified_name} | Usable by: {who}")
+            lines.append("")
+
+            for guild in self.bot.guilds:
+                lines.append(f"Guild: {guild.name} ({guild.id})")
+                lines.append("-" * 60)
+
+                admin_roles = await self.bot.get_admin_roles(guild)
+                mod_roles = await self.bot.get_mod_roles(guild)
+                admin_role_ids = {r.id for r in admin_roles}
+                mod_role_ids = {r.id for r in mod_roles}
+
+                probe_channel = guild.system_channel or next(iter(guild.text_channels), None)
+
+                roles_with_members = sorted(
+                    (r for r in guild.roles if r.members),
+                    key=lambda r: r.position,
+                    reverse=True,
+                )
+                if guild.default_role not in roles_with_members:
+                    roles_with_members.append(guild.default_role)
+
+                for command in all_commands:
+                    if command.hidden:
+                        continue
+
+                    dm_ok = self._is_dm_usable(command)
+                    allowed_labels = []
+                    seen_labels = set()
+                    for role in roles_with_members:
+                        can_run, reason = self._evaluate_command(
+                            command, guild, role, probe_channel, admin_role_ids, mod_role_ids
+                        )
+                        if can_run:
+                            label = self._role_label(role, guild, admin_role_ids, mod_role_ids)
+                            if label not in seen_labels:
+                                seen_labels.add(label)
+                                allowed_labels.append(label)
+
+                    if allowed_labels:
+                        who = ", ".join(allowed_labels)
+                    else:
+                        who = "Nobody with current roles (may still require Bot Owner)"
+                    dm_str = "Yes" if dm_ok else "No"
+                    lines.append(f"[p]{command.qualified_name} | DM: {dm_str} | Usable by: {who}")
+
+                lines.append("")
+
+            lines.append(
+                "Note: 'Usable by' reflects each guild's configured Admin/Mod roles and each "
+                "role's Discord permissions, evaluated against Red's privilege/permission rules. "
+                "It is best-effort: custom command checks that depend on live state (specific "
+                "channels, message content, external APIs, or Permissions-cog rule overrides) "
+                "are not simulated and may change the real outcome. Bot Owner can always run "
+                "every command regardless of what is listed here."
+            )
+
+            report = "\n".join(lines)
+            buffer = BytesIO(report.encode("utf-8"))
+            file = discord.File(buffer, filename="command_access_report.txt")
+
+            try:
+                await ctx.author.send(
+                    "Here is the full command access report.", file=file
+                )
+                if ctx.guild is not None:
+                    await ctx.send("✅ Sent you the command access report via DM.")
+            except discord.Forbidden:
+                await ctx.send("❌ Could not DM you the report. Please enable DMs from server members and try again.")
+
+    def _is_dm_usable(self, command: commands.Command) -> bool:
+        """Best-effort check for whether a command can be invoked outside a guild."""
+        commands_chain = [command]
+        parent = command.parent
+        while parent is not None:
+            commands_chain.append(parent)
+            parent = parent.parent
+        for cmd in commands_chain:
+            for check in cmd.checks:
+                check_name = getattr(check, "__qualname__", "") or getattr(check, "__name__", "")
+                if "guild_only" in check_name.lower():
+                    return False
+        return True
+
+    def _privilege_level(self, command: commands.Command):
+        """Walks up to the first ancestor (inclusive) with an explicit privilege_level set."""
+        cmd = command
+        while cmd is not None:
+            requires = getattr(cmd, "requires", None)
+            if requires is not None and requires.privilege_level is not None:
+                return requires.privilege_level
+            cmd = cmd.parent
+        return None
+
+    def _role_label(self, role: discord.Role, guild: discord.Guild, admin_role_ids: set, mod_role_ids: set) -> str:
+        if role.id == guild.default_role.id:
+            return "@everyone"
+        if role.id in admin_role_ids:
+            return f"{role.name} (Admin)"
+        if role.id in mod_role_ids:
+            return f"{role.name} (Mod)"
+        return role.name
+
+    def _evaluate_command(
+        self,
+        command: commands.Command,
+        guild: discord.Guild,
+        role: discord.Role,
+        probe_channel: Optional[discord.abc.GuildChannel],
+        admin_role_ids: set,
+        mod_role_ids: set,
+    ) -> Tuple[bool, str]:
+        """
+        Best-effort reimplementation of Red's Requires._verify_user for a hypothetical
+        member holding only the given role (plus @everyone). Does not attempt to simulate
+        Permissions-cog rule overrides or arbitrary custom checks with side effects.
+        """
+        # Walk the command chain: every ancestor's requirements must also be satisfied.
+        chain = [command]
+        parent = command.parent
+        while parent is not None:
+            chain.append(parent)
+            parent = parent.parent
+
+        resolved_perms = (
+            probe_channel.permissions_for(role) if probe_channel is not None else role.permissions
+        )
+
+        for cmd in chain:
+            requires = getattr(cmd, "requires", None)
+            if requires is None:
+                continue
+
+            if requires.privilege_level is PrivilegeLevel.BOT_OWNER:
+                return False, "bot owner only"
+
+            perms_ok = False
+            if requires.user_perms is not None:
+                if resolved_perms.administrator or resolved_perms >= requires.user_perms:
+                    perms_ok = True
+
+            privilege_ok = False
+            if requires.privilege_level is not None:
+                level = requires.privilege_level
+                if level is PrivilegeLevel.ADMIN and role.id in admin_role_ids:
+                    privilege_ok = True
+                elif level is PrivilegeLevel.MOD and (
+                    role.id in admin_role_ids or role.id in mod_role_ids
+                ):
+                    privilege_ok = True
+                # GUILD_OWNER and NONE can't be represented by a role probe; skipped deliberately
+                # (NONE is never set by Red's decorators, and GUILD_OWNER requires the actual owner).
+
+            if requires.user_perms is None and requires.privilege_level is None:
+                continue
+            if not (perms_ok or privilege_ok):
+                return False, "insufficient privilege/permissions"
+
+        return True, "ok"
 
 class SyncView(discord.ui.View):
     def __init__(self, members: List[discord.Member], m_role: discord.Role, l_role: discord.Role):
