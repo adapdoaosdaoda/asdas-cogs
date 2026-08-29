@@ -365,7 +365,8 @@ class TradeCommission(commands.Cog):
         default_guild = {
             "channel_id": None,
             "log_channel_id": None,
-            "addinfo_log_message": {},  # {"channel_id": int, "message_id": int} of the latest log message with a live Add Info button
+            "addinfo_log_channel_id": None,  # Channel ID of the latest log message with a live Add Info button
+            "addinfo_log_message_id": None,  # Message ID of the latest log message with a live Add Info button
             "schedule_day": 0,  # 0 = Monday, 6 = Sunday
             "schedule_hour": 9,  # Hour in 24h format
             "schedule_minute": 0,
@@ -442,23 +443,24 @@ class TradeCommission(commands.Cog):
                 try:
                     sent = await channel.send(msg, view=view)
                     if isinstance(view, AddInfoLogButtonView):
-                        await self.config.guild(guild).addinfo_log_message.set(
-                            {"channel_id": channel.id, "message_id": sent.id}
-                        )
+                        await self.config.guild(guild).addinfo_log_channel_id.set(channel.id)
+                        await self.config.guild(guild).addinfo_log_message_id.set(sent.id)
                 except discord.HTTPException:
                     log.warning(f"Failed to send log message to configured log channel in {guild.name}")
 
     async def _clear_addinfo_log_button(self, guild: discord.Guild):
         """Strip the Add Info button from the currently tracked log message, if any."""
-        tracked = await self.config.guild(guild).addinfo_log_message()
-        if not tracked:
+        tracked_channel_id = await self.config.guild(guild).addinfo_log_channel_id()
+        tracked_message_id = await self.config.guild(guild).addinfo_log_message_id()
+        if not tracked_channel_id or not tracked_message_id:
             return
-        await self.config.guild(guild).addinfo_log_message.set({})
-        channel = guild.get_channel(tracked["channel_id"])
+        await self.config.guild(guild).addinfo_log_channel_id.set(None)
+        await self.config.guild(guild).addinfo_log_message_id.set(None)
+        channel = guild.get_channel(tracked_channel_id)
         if not channel:
             return
         try:
-            message = await channel.fetch_message(tracked["message_id"])
+            message = await channel.fetch_message(tracked_message_id)
             await message.edit(view=None)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
