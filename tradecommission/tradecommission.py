@@ -1959,6 +1959,20 @@ class TradeCommission(commands.Cog):
         await self._send_weekly_message(ctx.guild, channel)
         await ctx.send(f"✅ Test message sent to {channel.mention}")
 
+    @tradecommission.command(name="rawdump")
+    @commands.guild_only()
+    @commands.is_owner()
+    async def tc_rawdump(self, ctx: commands.Context):
+        """[Owner only] [TEMP DIAGNOSTIC] Dump this guild's raw stored config, bypassing .all()."""
+        group = self.config.guild(ctx.guild)
+        try:
+            raw = await group._driver.get(group.identifier_data)
+        except KeyError:
+            raw = {}
+        text = str(raw)
+        for chunk_start in range(0, len(text), 1900):
+            await ctx.send(f"```py\n{text[chunk_start:chunk_start + 1900]}\n```")
+
     @tradecommission.group(name="sunday")
     @commands.guild_only()
     @commands.admin_or_permissions(manage_guild=True)
