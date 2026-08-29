@@ -365,7 +365,7 @@ class TradeCommission(commands.Cog):
         default_guild = {
             "channel_id": None,
             "log_channel_id": None,
-            "addinfo_log_message": None,  # {"channel_id": int, "message_id": int} of the latest log message with a live Add Info button
+            "addinfo_log_message": {},  # {"channel_id": int, "message_id": int} of the latest log message with a live Add Info button
             "schedule_day": 0,  # 0 = Monday, 6 = Sunday
             "schedule_hour": 9,  # Hour in 24h format
             "schedule_minute": 0,
@@ -453,7 +453,7 @@ class TradeCommission(commands.Cog):
         tracked = await self.config.guild(guild).addinfo_log_message()
         if not tracked:
             return
-        await self.config.guild(guild).addinfo_log_message.set(None)
+        await self.config.guild(guild).addinfo_log_message.set({})
         channel = guild.get_channel(tracked["channel_id"])
         if not channel:
             return
