@@ -418,6 +418,13 @@ class TradeCommission(commands.Cog):
         """Start the background task when cog loads."""
         self._ready = True
         self.check_schedule_loop.start()
+        asyncio.create_task(self._restore_addinfo_log_views())
+
+    async def _restore_addinfo_log_views(self):
+        """Re-bind the persistent Add Info log button so it still works after a restart."""
+        await self.bot.wait_until_ready()
+        for guild in self.bot.guilds:
+            self.bot.add_view(AddInfoLogButtonView(self, guild))
 
     async def cog_unload(self):
         """Cancel background task when cog unloads."""
