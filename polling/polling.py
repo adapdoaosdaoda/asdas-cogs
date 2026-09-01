@@ -457,19 +457,24 @@ class EventPolling(commands.Cog):
                         updated_polls = await self.config.guild(guild).polls()
                         new_snapshot = updated_polls.get(poll_id, {}).get("weekly_snapshot_winning_times", {})
 
-                        summary = self._get_snapshot_summary(new_snapshot)
                         changed = self._snapshot_has_changed(old_snapshot, new_snapshot)
                         header = "📅 **Schedule Change Detected**" if changed else "📅 **No Schedule Changes**"
-                        status_line = (
-                            "The new winning times for this week are:"
-                            if changed else
-                            "Nothing to do — the winning times are unchanged from last week:"
-                        )
+
+                        if changed:
+                            summary = self._get_snapshot_summary(new_snapshot, use_discord_timestamps=True)
+                            body = (
+                                f"*All times shown in {self.timezone_display}*\n"
+                                f"The new winning times for this week are:\n{summary}"
+                            )
+                        else:
+                            body = (
+                                f"*All times shown in {self.timezone_display}*\n"
+                                f"Nothing to do — the winning times are unchanged from last week."
+                            )
+
                         await self._send_log(
                             guild,
-                            f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n"
-                            f"*All times shown in {self.timezone_display}*\n"
-                            f"{status_line}\n{summary}"
+                            f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n{body}"
                         )
 
         except Exception as e:
@@ -499,13 +504,39 @@ class EventPolling(commands.Cog):
                 if new_data[0] != old_data[0]: return True
         return False
 
-    def _get_snapshot_summary(self, snapshot: Dict) -> str:
-        """Create a text summary of winning times"""
+    def _next_occurrence_timestamp(self, day: str, local_time_str: str) -> int:
+        """Unix timestamp (seconds) of the next occurrence of `day` at `local_time_str`
+        (HH:MM, already-converted Berlin local time). "Daily"/"Fixed" have no specific
+        weekday, so they resolve to the next occurrence of that time (today or tomorrow)."""
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        now = datetime.now(berlin_tz)
+        h, m = map(int, local_time_str.split(':'))
+
+        if day in ("Daily", "Fixed"):
+            target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+        else:
+            target_weekday = self.days_of_week.index(day) if day in self.days_of_week else now.weekday()
+            days_ahead = (target_weekday - now.weekday()) % 7
+            target = now.replace(hour=h, minute=m, second=0, microsecond=0) + timedelta(days=days_ahead)
+            if days_ahead == 0 and target <= now:
+                target += timedelta(days=7)
+
+        return int(target.timestamp())
+
+    def _get_snapshot_summary(self, snapshot: Dict, use_discord_timestamps: bool = False) -> str:
+        """Create a text summary of winning times.
+
+        use_discord_timestamps renders each entry as a <t:...:f> Discord timestamp
+        instead of plain text - only meaningful in a plain message (not an embed),
+        since embeds don't render Discord timestamp markup live per-viewer.
+        """
         lines = []
         # Sort events by priority (Hero's Realm first, etc.)
         sorted_events = sorted(
-            snapshot.keys(), 
-            key=lambda e: self.events.get(e, {}).get("priority", 0), 
+            snapshot.keys(),
+            key=lambda e: self.events.get(e, {}).get("priority", 0),
             reverse=True
         )
 
@@ -513,18 +544,21 @@ class EventPolling(commands.Cog):
             slots = snapshot[event_name]
             event_info = self.events.get(event_name, {})
             emoji = event_info.get("emoji", "•")
-            
+
             # Sort slots by index
             sorted_slots = sorted(slots.items(), key=lambda x: int(x[0]))
-            
+
             for slot_idx, data in sorted_slots:
                 day, time = data[0]
                 time = self._convert_to_local_time(time)
                 label = f"{event_name}"
                 if len(slots) > 1:
                     label += f" #{int(slot_idx)+1}"
-                
-                if day in ("Daily", "Fixed"):
+
+                if use_discord_timestamps:
+                    ts = self._next_occurrence_timestamp(day, time)
+                    lines.append(f"{emoji} {label}: <t:{ts}:f>")
+                elif day in ("Daily", "Fixed"):
                     lines.append(f"{emoji} {label}: **{time}**")
                 else:
                     lines.append(f"{emoji} {label}: **{day} {time}**")
