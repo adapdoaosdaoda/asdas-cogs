@@ -5,6 +5,7 @@ from discord.ext import tasks
 import asyncio
 import logging
 import pytz
+import random
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Union, Any, Tuple
@@ -564,12 +565,22 @@ class BreakingArmy(commands.Cog):
         new_emote = await self.config.guild(guild).new_boss_emote()
         
         tally = self._calculate_weighted_tally(poll_data.get("votes", {}))
-        
-        # Split pool into new and old groups
-        new_p = sorted([b for b in boss_pool if b not in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
-        old_p = sorted([b for b in boss_pool if b in seen_bosses], key=lambda x: tally.get(x, 0), reverse=True)
 
-        if len(new_p) + len(old_p) < 8: return None
+        if len(boss_pool) < 8: return None
+
+        # Split pool into new and old groups, ranked by votes. Bosses with no
+        # votes sort together at the back of their group in random order, so a
+        # season can still be formed (and stays varied) even with partial or
+        # no voter turnout.
+        def _ranked(names: List[str]) -> List[str]:
+            voted = [b for b in names if tally.get(b, 0) > 0]
+            unvoted = [b for b in names if tally.get(b, 0) <= 0]
+            random.shuffle(unvoted)
+            voted.sort(key=lambda x: tally.get(x, 0), reverse=True)
+            return voted + unvoted
+
+        new_p = _ranked([b for b in boss_pool if b not in seen_bosses])
+        old_p = _ranked([b for b in boss_pool if b in seen_bosses])
 
         a, g, used, _ = self._compute_season_assignment(new_p, old_p, boss_pool, seen_bosses)
 
@@ -613,6 +624,12 @@ class BreakingArmy(commands.Cog):
         async with self.config.guild(guild).seen_bosses() as seen:
             for b in used:
                 if b not in seen: seen.append(b)
+
+        # Wipe the poll so each new season starts with a clean vote - stops
+        # stale votes (including from members who've since left) carrying
+        # over, and keeps the roster relevant to whoever wants to vote now.
+        await self.config.guild(guild).active_poll.votes.set({})
+        await self._update_poll_embed(guild)
 
         title = "🚀 New Season Staged (Starts Next Week)" if staged else (
             "🚀 New Season Initialized (Starts Next Week)" if next_week else "🚀 New Season Initialized"
@@ -1098,7 +1115,9 @@ class BreakingArmy(commands.Cog):
     async def season_setup(self, ctx: commands.Context, next_week: bool = False):
         """Initialize a new 6-week season based on current poll votes.
 
-        Requires at least 8 unique bosses to have received votes in the current poll.
+        Needs at least 8 bosses in the boss pool overall. Any slots not
+        covered by votes are filled randomly (unvoted/new bosses first) so a
+        season can still be formed even with low or no turnout.
 
         By default the season's Week 1 starts immediately (this week). Pass
         `true` for `next_week` to instead have Week 1 begin at the next
@@ -1111,13 +1130,14 @@ class BreakingArmy(commands.Cog):
         async with ctx.typing():
             poll_data = await self.config.guild(ctx.guild).active_poll()
             votes = poll_data.get("votes", {})
+            boss_pool = await self.config.guild(ctx.guild).boss_pool()
 
-            if not votes:
-                return await ctx.send("❌ **Setup Failed:** No votes found in the current poll. Use `[p]ba poll start` and have members vote first.")
+            if len(boss_pool) < 8:
+                return await ctx.send(f"❌ **Setup Failed:** Only **{len(boss_pool)}** bosses in the pool. Need at least **8** to generate a 6-week season.")
 
             tally = self._calculate_weighted_tally(votes)
             if len(tally) < 8:
-                return await ctx.send(f"❌ **Setup Failed:** Only **{len(tally)}** unique bosses have votes. Need at least **8** to generate a 6-week season.")
+                await ctx.send(f"⚠️ Only **{len(tally)}** boss(es) have votes - filling the rest of the roster randomly.")
 
             was_active = (await self.config.guild(ctx.guild).season_data())["is_active"]
             embed = await self._setup_new_season_logic(ctx.guild, next_week=next_week)
