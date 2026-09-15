@@ -475,15 +475,32 @@ class BreakingArmy(commands.Cog):
                     msg = ""
                     is_active = False
                     async with self.config.guild(guild).season_data() as s:
-                        s["last_reset"] = target_reset.isoformat()
-
-                        if s["is_active"]:
+                        # Catch up on every Sunday 22:00 boundary missed since last_reset
+                        # (e.g. the bot was offline across 2+ rollovers) instead of only
+                        # advancing current_week by 1 - otherwise the week count desyncs
+                        # from real elapsed weeks and a missed advance is never logged.
+                        missed_reset = datetime.fromisoformat(last_reset_str) if last_reset_str else target_reset
+                        weeks_advanced = 0
+                        season_ended = False
+                        r = missed_reset
+                        while r < target_reset:
+                            r += timedelta(days=7)
+                            if not s["is_active"]:
+                                break
                             s["current_week"] += 1
+                            weeks_advanced += 1
                             if s["current_week"] > s.get("max_week", 4):
                                 s["is_active"] = False
-                                msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
-                            else:
-                                msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name}."
+                                season_ended = True
+                                break
+                        s["last_reset"] = target_reset.isoformat()
+
+                        if season_ended:
+                            msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
+                        elif weeks_advanced == 1:
+                            msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name}."
+                        elif weeks_advanced > 1:
+                            msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name} *(caught up {weeks_advanced} missed weeks)*."
                         is_active = s["is_active"]
 
                         # Keep the year's schedule populated (covers first-ever setup too).
