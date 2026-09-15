@@ -379,22 +379,25 @@ class BreakingArmy(commands.Cog):
                 suffix = f" {new_emote}" if n in priority else ""
                 return f"{e} {n}{suffix}"
 
+            max_week = season.get("max_week", 4)
             sched = ""
             for w in range(1, 5):
                 b1, b2 = self._get_bosses_for_week(season, w)
                 n1 = get_fmt_name(b1)
                 n2 = get_fmt_name(b2)
-                label = " (Encore)" if w == 4 else ""
 
-                if w < season["current_week"]:
-                    sched += f"💀 ~~**Week {w}**: {n1} & {n2}{label}~~\n"
+                if w > max_week:
+                    # Fallback season - this week is beyond max_week and will never run.
+                    sched += f"🚫 ~~**Week {w}**: {n1} & {n2}~~ *(skipped - season ends after Week {max_week})*\n"
+                elif w < season["current_week"]:
+                    sched += f"💀 ~~**Week {w}**: {n1} & {n2}~~\n"
                 elif w == season["current_week"] and season["is_active"]:
                     if run["is_running"]:
-                        sched += f"⚔️ **Week {w}**: {n1} & {n2}{label} (Active)\n"
+                        sched += f"⚔️ **Week {w}**: {n1} & {n2} (Active)\n"
                     else:
-                        sched += f"⏳ **Week {w}**: {n1} & {n2}{label}\n"
+                        sched += f"⏳ **Week {w}**: {n1} & {n2}\n"
                 else:
-                    sched += f"⏳ **Week {w}**: {n1} & {n2}{label}\n"
+                    sched += f"⏳ **Week {w}**: {n1} & {n2}\n"
             sched_embed.description = sched
 
         queue = season.get("season_queue", [])
@@ -622,6 +625,23 @@ class BreakingArmy(commands.Cog):
         # over, and keeps the roster relevant to whoever wants to vote now.
         await self.config.guild(guild).active_poll.votes.set({})
         await self._update_poll_embed(guild)
+
+        # Notify the boss-change channel that a new season's bosses are live - this is
+        # the same channel/style _advance_run uses for regular "Next Boss" pings, so
+        # players watching for boss changes see season starts too (including fallback
+        # seasons, which can start well after the usual weekly schedule tick).
+        notif_channel_id = await self.config.guild(guild).notification_channel()
+        notif_channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
+        if notif_channel:
+            week1_bosses = self._get_bosses_for_week({"roster": roster}, 1)
+            week1_info = " & ".join(
+                f"{boss_pool.get(b, '⚔️')} {b}" + (f" {new_emote}" if b in priority_bosses else "")
+                for b in week1_bosses
+            )
+            try:
+                await notif_channel.send(f"🚀 **New Breaking Army Season!** Week 1 Boss: {week1_info}")
+            except discord.HTTPException:
+                log.warning(f"Failed to send season-start boss-change notice in {guild.name}")
 
         title = "🚀 New Season Initialized" if max_week >= 4 else f"🚀 New Season Initialized ({max_week} Week{'s' if max_week != 1 else ''})"
         embed = discord.Embed(title=title, color=discord.Color.green())
