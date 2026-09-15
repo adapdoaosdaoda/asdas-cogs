@@ -1097,23 +1097,26 @@ class EventPolling(commands.Cog):
                     ba_season = ba_config.get("season_data", {})
                     if ba_season.get("is_active"):
                         boss_pool = ba_config.get("boss_pool", {})
-                        a = ba_season.get("anchors", [])
-                        g = ba_season.get("guests", [])
-                        if a and g:
-                            matrix = [(a[0],g[0]), (a[1],g[1]), (a[2],g[2]), (a[0],g[0]), (a[1],g[3]), (a[2],g[4])]
-                            ba_season_data = {
-                                "current_week": ba_season.get("current_week", 1),
-                                "schedule": []
-                            }
-                            for i, (b1, b2) in enumerate(matrix):
-                                b1_emoji = await get_emoji_url(boss_pool.get(b1, "⚔️"))
-                                b2_emoji = await get_emoji_url(boss_pool.get(b2, "⚔️"))
-                                ba_season_data["schedule"].append({
-                                    "week": i + 1,
-                                    "boss1": {"name": b1, "emoji": b1_emoji},
-                                    "boss2": {"name": b2, "emoji": b2_emoji},
-                                    "is_encore": (i + 1 == 4)
-                                })
+                        weeks = ba_season.get("weeks", 4)
+                        max_week = ba_season.get("max_week", weeks)
+                        encore_week = 4
+                        ba_season_data = {
+                            "current_week": ba_season.get("current_week", 1),
+                            "schedule": []
+                        }
+                        for week in range(1, max_week + 1):
+                            bosses = ba_cog._get_bosses_for_week(ba_season, week)
+                            if len(bosses) < 2:
+                                continue
+                            b1, b2 = bosses[0], bosses[1]
+                            b1_emoji = await get_emoji_url(boss_pool.get(b1, "⚔️"))
+                            b2_emoji = await get_emoji_url(boss_pool.get(b2, "⚔️"))
+                            ba_season_data["schedule"].append({
+                                "week": week,
+                                "boss1": {"name": b1, "emoji": b1_emoji},
+                                "boss2": {"name": b2, "emoji": b2_emoji},
+                                "is_encore": (week == encore_week)
+                            })
                 except Exception as e:
                     log.error(f"Failed to fetch Breaking Army data: {e}")
 
