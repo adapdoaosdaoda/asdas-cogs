@@ -388,7 +388,7 @@ class BreakingArmy(commands.Cog):
 
                 if w > max_week:
                     # Fallback season - this week is beyond max_week and will never run.
-                    sched += f"🚫 ~~**Week {w}**: {n1} & {n2}~~ *(skipped - season ends after Week {max_week})*\n"
+                    sched += f"🚫 ~~**Week {w}**: {n1} & {n2}~~\n-# (skipped - season ends after Week {max_week})\n"
                 elif w < season["current_week"]:
                     sched += f"💀 ~~**Week {w}**: {n1} & {n2}~~\n"
                 elif w == season["current_week"] and season["is_active"]:
