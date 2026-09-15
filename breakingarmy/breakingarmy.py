@@ -504,14 +504,14 @@ class BreakingArmy(commands.Cog):
             a = season.get("special_anchors", [])
             g = season.get("special_guests", [])
             if len(a) < 3 or len(g) < 4: return []
-            matrix = [(a[0], g[0]), (a[1], g[1]), (a[2], g[2]), (a[1], a[0]), (a[2], g[3])]
+            matrix = [(a[0], g[0]), (a[1], g[1]), (a[2], g[2]), (a[1], a[0]), (g[3], a[2])]
             if 1 <= week <= 5:
                 return list(matrix[week-1])
             return []
 
         r = season.get("roster", [])
         if len(r) < 6: return []
-        matrix = [(r[0], r[1]), (r[2], r[3]), (r[4], r[5]), (r[0], r[1])]
+        matrix = [(r[0], r[1]), (r[2], r[3]), (r[4], r[5]), (r[2], r[0])]
         if 1 <= week <= 4:
             return list(matrix[week-1])
         return []
