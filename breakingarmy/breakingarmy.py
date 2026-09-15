@@ -1392,7 +1392,10 @@ class BreakingArmy(commands.Cog):
     async def _show_season_queue(self, ctx: commands.Context, queue: List[Dict[str, str]]):
         if not queue:
             return await ctx.send("*No upcoming seasons queued.*")
-        lines = [f"🗓️ {datetime.fromisoformat(e['start']).strftime('%b %d, %Y')}" for e in queue]
+        lines = [
+            f"🗓️ {'✨ ' if e.get('weeks') == 5 else ''}{datetime.fromisoformat(e['start']).strftime('%b %d, %Y')}"
+            for e in queue
+        ]
         await ctx.send("**Upcoming Seasons:**\n" + "\n".join(lines))
 
     @ba_season.command(name="setweek")
