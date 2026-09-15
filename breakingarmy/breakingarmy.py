@@ -274,13 +274,16 @@ class BreakingArmy(commands.Cog):
         the NEXT month's start boundary - so there's never a dead gap between seasons.
         That gap is 4 or 5 weeks depending on the calendar, giving an occasional
         "special" 5-week season.
-        Existing entries are kept; months already covered OR already started (start <=
+        Existing entries are kept, but self-heal: an entry whose "start" matches but is
+        missing/wrong on "end" or "weeks" (e.g. queued by an older version of this
+        function, before variable-length seasons existed) gets those fields recomputed
+        and overwritten in-place - so stale queues quietly repair themselves the next
+        time this runs, without needing a manual wipe. Months already started (start <=
         from_date, e.g. a season just activated from this month's slot) are skipped -
         this makes the function idempotent/safe to call at any point.
         """
         server_tz = from_date.tzinfo
-        covered_starts = {entry["start"] for entry in existing_queue}
-        queue = list(existing_queue)
+        by_start = {entry["start"]: entry for entry in existing_queue}
         year = from_date.year
 
         def month_start(y, m):
@@ -292,9 +295,17 @@ class BreakingArmy(commands.Cog):
             next_start = self._nearest_month_start_sunday(month_start(next_year, next_month))
             weeks = (next_start - this_start).days // 7
 
-            if this_start.isoformat() in covered_starts or this_start <= from_date:
+            if this_start <= from_date:
                 continue
-            queue.append({"start": this_start.isoformat(), "end": next_start.isoformat(), "weeks": weeks})
+            start_iso = this_start.isoformat()
+            existing = by_start.get(start_iso)
+            if existing is None:
+                by_start[start_iso] = {"start": start_iso, "end": next_start.isoformat(), "weeks": weeks}
+            elif existing.get("end") != next_start.isoformat() or existing.get("weeks") != weeks:
+                existing["end"] = next_start.isoformat()
+                existing["weeks"] = weeks
+
+        queue = list(by_start.values())
         queue.sort(key=lambda e: e["start"])
         return queue
 
