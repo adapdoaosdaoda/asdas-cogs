@@ -471,7 +471,7 @@ class BreakingArmy(commands.Cog):
 
                 if w > max_week:
                     # Fallback season - this week is beyond max_week and will never run.
-                    sched += f"🚫 ~~**Week {w}**: {n1} & {n2}~~\n-# (skipped - season ends after Week {max_week})\n"
+                    sched += f"🚫 ~~**Week {w}**: {n1} & {n2}~~\n-# (skipped - season ends after Week {max_week})\n\n"
                 elif w < season["current_week"]:
                     sched += f"💀 ~~**Week {w}**: {n1} & {n2}~~\n"
                 elif w == season["current_week"] and season["is_active"]:
@@ -486,7 +486,7 @@ class BreakingArmy(commands.Cog):
         queue = season.get("season_queue", [])
         if queue:
             upcoming = "\n".join(
-                f"🗓️ {'✨ ' if entry.get('weeks') == 5 else ''}{datetime.fromisoformat(entry['start']).strftime('%b %d, %Y')}"
+                f"🗓️ {datetime.fromisoformat(entry['start']).strftime('%b %d, %Y')}{' ✨special' if entry.get('weeks') == 5 else ''}"
                 for entry in queue[:3]
             )
             sched_embed.add_field(name="📆 Upcoming Seasons", value=upcoming, inline=False)
@@ -1393,7 +1393,7 @@ class BreakingArmy(commands.Cog):
         if not queue:
             return await ctx.send("*No upcoming seasons queued.*")
         lines = [
-            f"🗓️ {'✨ ' if e.get('weeks') == 5 else ''}{datetime.fromisoformat(e['start']).strftime('%b %d, %Y')}"
+            f"🗓️ {datetime.fromisoformat(e['start']).strftime('%b %d, %Y')}{' ✨special' if e.get('weeks') == 5 else ''}"
             for e in queue
         ]
         await ctx.send("**Upcoming Seasons:**\n" + "\n".join(lines))
