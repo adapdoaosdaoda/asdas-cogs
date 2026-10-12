@@ -100,6 +100,19 @@ class BreakingArmy(commands.Cog):
                 except Exception:
                     channel = None
         if not channel:
+            log_cid = await self.config.guild(guild).log_channel_id()
+            if log_cid:
+                channel = (
+                    guild.get_channel(log_cid)
+                    or (guild.get_thread(log_cid) if hasattr(guild, "get_thread") else None)
+                    or self.bot.get_channel(log_cid)
+                )
+                if not channel:
+                    try:
+                        channel = await self.bot.fetch_channel(log_cid)
+                    except Exception:
+                        channel = None
+        if not channel:
             poll_data = await self.config.guild(guild).active_poll()
             p_cid = poll_data.get("channel_id")
             if p_cid:
@@ -1325,8 +1338,8 @@ class BreakingArmy(commands.Cog):
         await ctx.tick()
 
     @ba_config.command(name="notifchannel")
-    async def config_notif_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
-        """Set the channel for Breaking Army start/advance notifications. Leave empty to disable."""
+    async def config_notif_channel(self, ctx: commands.Context, channel: Union[discord.TextChannel, discord.Thread] = None):
+        """Set the channel or thread for Breaking Army start/advance notifications. Leave empty to disable."""
         if channel:
             await self.config.guild(ctx.guild).notification_channel.set(channel.id)
             await ctx.send(f"✅ Notifications will be sent to {channel.mention}")
@@ -1335,14 +1348,26 @@ class BreakingArmy(commands.Cog):
             await ctx.send("✅ Notifications disabled.")
 
     @ba_config.command(name="logchannel")
-    async def config_log_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
-        """Set the channel that receives owner-status log messages (week advances, schedule/trade commission updates). Leave empty to disable."""
+    async def config_log_channel(self, ctx: commands.Context, channel: Union[discord.TextChannel, discord.Thread] = None):
+        """Set the channel or thread that receives owner-status log messages (week advances, schedule/trade commission updates). Leave empty to disable."""
         if channel:
             await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
             await ctx.send(f"✅ Log messages will also be sent to {channel.mention}")
         else:
             await self.config.guild(ctx.guild).log_channel_id.set(None)
             await ctx.send("✅ Log channel disabled. Messages will only be sent to the bot owner(s).")
+
+    @ba.command(name="setnotif", aliases=["setnotifchannel"])
+    async def ba_set_notif(self, ctx: commands.Context, channel: Union[discord.TextChannel, discord.Thread] = None):
+        """Set the channel or thread for Breaking Army start/advance notifications. Leave empty to disable."""
+        if not await self.is_ba_admin(ctx.author): raise commands.CheckFailure()
+        await self.config_notif_channel(ctx, channel)
+
+    @ba.command(name="setlogchannel", aliases=["setlog"])
+    async def ba_set_log_channel(self, ctx: commands.Context, channel: Union[discord.TextChannel, discord.Thread] = None):
+        """Set the channel or thread that receives owner-status log messages (week advances, schedule updates). Leave empty to disable."""
+        if not await self.is_ba_admin(ctx.author): raise commands.CheckFailure()
+        await self.config_log_channel(ctx, channel)
 
     @ba_config.command(name="addboss")
     async def config_add_boss(self, ctx: commands.Context, emoji: Optional[str] = "⚔️", *, name: str):
@@ -1643,6 +1668,10 @@ class BreakingArmy(commands.Cog):
             notif_channel = ctx.guild.get_channel(notif_cid) or (ctx.guild.get_thread(notif_cid) if hasattr(ctx.guild, "get_thread") else None) if notif_cid else None
             notif_str = notif_channel.mention if notif_channel else ("Disabled/Unset" if not notif_cid else f"`{notif_cid}`")
 
+            log_cid = await self.config.guild(ctx.guild).log_channel_id()
+            log_channel = ctx.guild.get_channel(log_cid) or (ctx.guild.get_thread(log_cid) if hasattr(ctx.guild, "get_thread") else None) if log_cid else None
+            log_str = log_channel.mention if log_channel else ("Disabled/Unset" if not log_cid else f"`{log_cid}`")
+
             boss_info = await self._get_upcoming_boss_info(ctx.guild)
 
             lines = []
@@ -1653,6 +1682,7 @@ class BreakingArmy(commands.Cog):
 
             lines.append(f"⚔️ **Current Week Bosses:** {boss_info}")
             lines.append(f"📢 **Notification Channel:** {notif_str}")
+            lines.append(f"📋 **Log Channel:** {log_str}")
             if live_ok:
                 lines.append(f"📺 **Live View:** {live_status}")
             else:
