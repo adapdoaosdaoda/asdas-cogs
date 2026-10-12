@@ -84,48 +84,32 @@ class BreakingArmy(commands.Cog):
     def cog_unload(self):
         self.schedule_checker.cancel()
 
+    async def _resolve_channel_or_thread(self, guild: discord.Guild, cid: Optional[int]):
+        """Helper to resolve a TextChannel or Thread by ID from cache or API fetch."""
+        if not cid:
+            return None
+        channel = (
+            guild.get_channel(cid)
+            or (guild.get_thread(cid) if hasattr(guild, "get_thread") else None)
+            or self.bot.get_channel(cid)
+        )
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(cid)
+            except Exception:
+                channel = None
+        return channel
+
     async def _send_notification(self, guild: discord.Guild, msg: str) -> bool:
-        """Send a notification message to the configured notification channel (or active poll channel fallback)."""
+        """Send a notification message to the configured notification channel.
+
+        If notification_channel is unset, do nothing and return False.
+        """
         notif_channel_id = await self.config.guild(guild).notification_channel()
-        channel = None
-        if notif_channel_id:
-            channel = (
-                guild.get_channel(notif_channel_id)
-                or (guild.get_thread(notif_channel_id) if hasattr(guild, "get_thread") else None)
-                or self.bot.get_channel(notif_channel_id)
-            )
-            if not channel:
-                try:
-                    channel = await self.bot.fetch_channel(notif_channel_id)
-                except Exception:
-                    channel = None
-        if not channel:
-            log_cid = await self.config.guild(guild).log_channel_id()
-            if log_cid:
-                channel = (
-                    guild.get_channel(log_cid)
-                    or (guild.get_thread(log_cid) if hasattr(guild, "get_thread") else None)
-                    or self.bot.get_channel(log_cid)
-                )
-                if not channel:
-                    try:
-                        channel = await self.bot.fetch_channel(log_cid)
-                    except Exception:
-                        channel = None
-        if not channel:
-            poll_data = await self.config.guild(guild).active_poll()
-            p_cid = poll_data.get("channel_id")
-            if p_cid:
-                channel = (
-                    guild.get_channel(p_cid)
-                    or (guild.get_thread(p_cid) if hasattr(guild, "get_thread") else None)
-                    or self.bot.get_channel(p_cid)
-                )
-                if not channel:
-                    try:
-                        channel = await self.bot.fetch_channel(p_cid)
-                    except Exception:
-                        channel = None
+        if not notif_channel_id:
+            return False
+
+        channel = await self._resolve_channel_or_thread(guild, notif_channel_id)
         if channel:
             try:
                 await channel.send(msg)
@@ -133,7 +117,7 @@ class BreakingArmy(commands.Cog):
             except discord.HTTPException as e:
                 log.warning(f"Failed to send notification to channel {channel.id} in {guild.name}: {e}")
         else:
-            log.warning(f"No notification channel found to send notification in {guild.name}")
+            log.warning(f"Configured notification channel {notif_channel_id} not found in {guild.name}")
         return False
 
     async def _send_log(self, guild: discord.Guild, msg: str):
@@ -144,7 +128,7 @@ class BreakingArmy(commands.Cog):
             log.warning(f"Failed to send log message to owners: {e}")
         log_channel_id = await self.config.guild(guild).log_channel_id()
         if log_channel_id:
-            channel = guild.get_channel(log_channel_id)
+            channel = await self._resolve_channel_or_thread(guild, log_channel_id)
             if channel:
                 try:
                     await channel.send(msg)
@@ -777,11 +761,14 @@ class BreakingArmy(commands.Cog):
                 if q_start <= now:
                     due_weeks = queue[0].get("weeks", 4)
 
+            season_started = False
+            special_tag = ""
             if due_weeks:
                 setup_embed = await self._setup_new_season_logic(guild, weeks=due_weeks, max_week=due_weeks)
                 if setup_embed:
                     await self._consume_due_season_slot(guild)
                     special_tag = "✨ Special (5-Week) " if due_weeks == 5 else ""
+                    season_started = True
                     msg = f"🚀 **New {special_tag}Breaking Army Season Started** in {guild.name}!"
                     poll_data = await self.config.guild(guild).active_poll()
                     channel = guild.get_channel(poll_data["channel_id"])
@@ -805,6 +792,8 @@ class BreakingArmy(commands.Cog):
             if weeks_advanced >= 1:
                 catchup_note = f" *(caught up {weeks_advanced} missed weeks)*" if weeks_advanced > 1 else ""
                 notif_msg = f"📈 **Breaking Army Advanced to Week {season['current_week']}** in {guild.name}!{catchup_note}\nScheduled Bosses: {boss_info}"
+            elif not is_active and season.get("is_active"):
+                notif_msg = f"🚀 **New {special_tag}Breaking Army Season Started** in {guild.name}!\nScheduled Bosses: {boss_info}"
 
         if notif_msg:
             sent = await self._send_notification(guild, notif_msg)
@@ -1091,7 +1080,7 @@ class BreakingArmy(commands.Cog):
     async def _auto_start_run(self, guild, day_name: Optional[str] = None):
         season = await self.config.guild(guild).season_data()
         notif_channel_id = await self.config.guild(guild).notification_channel()
-        channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
+        channel = await self._resolve_channel_or_thread(guild, notif_channel_id)
 
         if not season["is_active"]:
             status, weeks, max_week = await self._resolve_season_activation(guild)
@@ -1150,7 +1139,7 @@ class BreakingArmy(commands.Cog):
         run = await self.config.guild(guild).active_run()
         if run["is_running"]:
             notif_channel_id = await self.config.guild(guild).notification_channel()
-            channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
+            channel = await self._resolve_channel_or_thread(guild, notif_channel_id)
             if channel:
                 boss_info = await self._get_current_boss_info(guild)
                 await channel.send(f"⚔️ **Next Boss:** {boss_info}")
@@ -1173,14 +1162,14 @@ class BreakingArmy(commands.Cog):
             else:
                 # Reset timer for the reverted boss so it doesn't immediately auto-death
                 run["start_time"] = datetime.now(timezone.utc).isoformat()
-
+ 
         await self._refresh_live_season_view(guild)
         
         # Notify current boss (the one we went back to)
         run = await self.config.guild(guild).active_run()
         if run["is_running"] and run["current_index"] >= 0:
             notif_channel_id = await self.config.guild(guild).notification_channel()
-            channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
+            channel = await self._resolve_channel_or_thread(guild, notif_channel_id)
             if channel:
                 boss_info = await self._get_current_boss_info(guild)
                 await channel.send(f"⏪ **Reverted to Boss:** {boss_info}")
