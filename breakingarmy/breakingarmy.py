@@ -69,6 +69,7 @@ class BreakingArmy(commands.Cog):
                 "live_season_message": {},
                 "last_reset": None,  # ISO format timestamp of last reset
                 "season_start": None,  # ISO format timestamp of season start boundary (Week 1 start)
+                "last_notified_week": None,  # Track which week's notification was last sent to prevent missed/duplicate announcements
                 "season_queue": [],  # Pre-generated future season windows: [{"start": iso, "end": iso, "weeks": 4|5}, ...]
             }
         }
@@ -82,6 +83,45 @@ class BreakingArmy(commands.Cog):
 
     def cog_unload(self):
         self.schedule_checker.cancel()
+
+    async def _send_notification(self, guild: discord.Guild, msg: str) -> bool:
+        """Send a notification message to the configured notification channel (or active poll channel fallback)."""
+        notif_channel_id = await self.config.guild(guild).notification_channel()
+        channel = None
+        if notif_channel_id:
+            channel = (
+                guild.get_channel(notif_channel_id)
+                or (guild.get_thread(notif_channel_id) if hasattr(guild, "get_thread") else None)
+                or self.bot.get_channel(notif_channel_id)
+            )
+            if not channel:
+                try:
+                    channel = await self.bot.fetch_channel(notif_channel_id)
+                except Exception:
+                    channel = None
+        if not channel:
+            poll_data = await self.config.guild(guild).active_poll()
+            p_cid = poll_data.get("channel_id")
+            if p_cid:
+                channel = (
+                    guild.get_channel(p_cid)
+                    or (guild.get_thread(p_cid) if hasattr(guild, "get_thread") else None)
+                    or self.bot.get_channel(p_cid)
+                )
+                if not channel:
+                    try:
+                        channel = await self.bot.fetch_channel(p_cid)
+                    except Exception:
+                        channel = None
+        if channel:
+            try:
+                await channel.send(msg)
+                return True
+            except discord.HTTPException as e:
+                log.warning(f"Failed to send notification to channel {channel.id} in {guild.name}: {e}")
+        else:
+            log.warning(f"No notification channel found to send notification in {guild.name}")
+        return False
 
     async def _send_log(self, guild: discord.Guild, msg: str):
         """Send a bot-status message to the owners (DM) and the configured log channel, if any."""
@@ -395,42 +435,67 @@ class BreakingArmy(commands.Cog):
         embed.set_footer(text=f"Total Voters: {len(poll_data.get('votes', {}))} | Updates live on vote")
         return embed
 
-    async def _refresh_live_season_view(self, guild: discord.Guild):
+    async def _sync_active_run(self, guild: discord.Guild, season: Optional[Dict] = None) -> bool:
+        """Ensure active_run boss_order matches the current week of the active season."""
+        if season is None:
+            season = await self.config.guild(guild).season_data()
+        if not season.get("is_active"):
+            return False
+        cur_week = season.get("current_week", 1)
+        expected_bosses = self._get_bosses_for_week(season, cur_week)
+        if not expected_bosses:
+            return False
+        async with self.config.guild(guild).active_run() as run:
+            if run.get("boss_order") != expected_bosses and not run.get("is_running"):
+                run["boss_order"] = expected_bosses
+                run["current_index"] = -1
+                run["is_running"] = False
+                run["start_time"] = None
+                log.info(f"BreakingArmy: Synchronized active_run to Week {cur_week} bosses ({expected_bosses}) in {guild.name}")
+                return True
+        return False
+
+    async def _refresh_live_season_view(self, guild: discord.Guild) -> Tuple[bool, str]:
         """Update the persistent live season status message if one exists."""
         season = await self.config.guild(guild).season_data()
         live = season.get("live_season_message", {})
-        if not live.get("message_id"):
+        if not live or not live.get("message_id"):
             log.debug(f"No live season message tracked for guild {guild.id}")
-            return
+            return False, "No live season message tracked."
 
-        channel_id = live["channel_id"]
-        message_id = live["message_id"]
+        channel_id = live.get("channel_id")
+        message_id = live.get("message_id")
 
         try:
-            channel = guild.get_channel(channel_id) or self.bot.get_channel(channel_id)
+            channel = (
+                guild.get_channel(channel_id)
+                or (guild.get_thread(channel_id) if hasattr(guild, "get_thread") else None)
+                or self.bot.get_channel(channel_id)
+            )
             if not channel:
                 try:
                     channel = await self.bot.fetch_channel(channel_id)
                 except discord.NotFound:
-                    log.warning(f"Live season channel {channel_id} not found in guild {guild.id}. Clearing tracked message.")
-                    async with self.config.guild(guild).season_data() as s:
-                        s["live_season_message"] = {}
-                    return
+                    log.warning(f"Live season channel {channel_id} not found in guild {guild.id}.")
+                    return False, f"Channel `{channel_id}` not found."
                 except discord.Forbidden:
                     log.error(f"Permission denied fetching live season channel {channel_id} in guild {guild.id}")
-                    return
+                    return False, f"Permission denied for channel `{channel_id}`."
+                except Exception as e:
+                    return False, f"Failed to fetch channel `{channel_id}`: {e}"
 
             try:
                 msg = await channel.fetch_message(message_id)
             except discord.NotFound:
-                log.warning(f"Live season message {message_id} not found in channel {channel_id}. Clearing tracked message.")
-                async with self.config.guild(guild).season_data() as s:
-                    s["live_season_message"] = {}
-                return
+                log.warning(f"Live season message {message_id} not found in channel {channel_id}.")
+                return False, f"Message `{message_id}` not found in {getattr(channel, 'mention', channel_id)}."
             except discord.Forbidden:
                 log.error(f"Permission denied fetching live season message {message_id} in channel {channel_id}")
-                return
+                return False, f"Permission denied reading message `{message_id}`."
+            except Exception as e:
+                return False, f"Failed to fetch message `{message_id}`: {e}"
 
+            await self._sync_active_run(guild, season)
             embeds = await self._generate_season_status_embeds(guild)
             
             poll_data = await self.config.guild(guild).active_poll()
@@ -441,8 +506,11 @@ class BreakingArmy(commands.Cog):
                 
             await msg.edit(embeds=embeds, view=view)
             log.debug(f"Successfully refreshed live season view for guild {guild.id}")
+            ch_name = getattr(channel, "mention", f"channel {channel_id}")
+            return True, f"Live view updated (message `{message_id}` in {ch_name})."
         except Exception as e:
             log.error(f"Unexpected error refreshing live season view for guild {guild.id}: {e}", exc_info=True)
+            return False, f"Error updating live view: {e}"
 
     async def _generate_season_status_embeds(self, guild: discord.Guild) -> List[discord.Embed]:
         season = await self.config.guild(guild).season_data()
@@ -598,12 +666,31 @@ class BreakingArmy(commands.Cog):
                 should_reset = True
 
         if not should_reset:
+            # Check for missed weekly rollover notification on active season
+            season = await self.config.guild(guild).season_data()
+            if season.get("is_active"):
+                cur_w = season.get("current_week", 1)
+                last_n = season.get("last_notified_week")
+                if cur_w > 1 and last_n != cur_w:
+                    boss_info = await self._get_upcoming_boss_info(guild)
+                    notif_msg = f"📈 **Breaking Army Advanced to Week {cur_w}** in {guild.name}!\nScheduled Bosses: {boss_info}"
+                    sent = await self._send_notification(guild, notif_msg)
+                    if sent:
+                        async with self.config.guild(guild).season_data() as s:
+                            s["last_notified_week"] = cur_w
+                        log.info(f"BreakingArmy: Sent missed week {cur_w} notification in {guild.name}")
+
+            # Ensure active_run and live view stay strictly synchronized
+            await self._sync_active_run(guild, season)
+            await self._refresh_live_season_view(guild)
+
             status_desc = f"Week {current_week}" if is_active else "Inactive"
             exp_desc = f", expected Week {expected_week}" if expected_week is not None else ""
             return False, f"Season is up to date ({status_desc}{exp_desc}, last reset: {last_reset_str})."
 
         msg = ""
         is_active = False
+        notif_msg = None
         async with self.config.guild(guild).season_data() as s:
             if season_start:
                 s["season_start"] = season_start.isoformat()
@@ -649,6 +736,7 @@ class BreakingArmy(commands.Cog):
 
             if season_ended:
                 msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
+                notif_msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
             elif weeks_advanced == 1:
                 msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name}."
             elif weeks_advanced > 1:
@@ -701,11 +789,21 @@ class BreakingArmy(commands.Cog):
                 run["start_time"] = None
             boss_info = await self._get_upcoming_boss_info(guild)
             msg += f"\nScheduled Bosses: {boss_info}"
+            if weeks_advanced >= 1:
+                catchup_note = f" *(caught up {weeks_advanced} missed weeks)*" if weeks_advanced > 1 else ""
+                notif_msg = f"📈 **Breaking Army Advanced to Week {season['current_week']}** in {guild.name}!{catchup_note}\nScheduled Bosses: {boss_info}"
+
+        if notif_msg:
+            sent = await self._send_notification(guild, notif_msg)
+            if sent and season.get("is_active"):
+                async with self.config.guild(guild).season_data() as s:
+                    s["last_notified_week"] = season["current_week"]
 
         if msg:
             log.info(f"BreakingArmy: {msg.replace('*', '')}")
             await self._send_log(guild, msg)
 
+        await self._sync_active_run(guild, season)
         await self._refresh_live_season_view(guild)
         return True, msg
 
@@ -855,6 +953,7 @@ class BreakingArmy(commands.Cog):
             s["max_week"] = max_week
             s["last_reset"] = target_reset.isoformat()
             s["season_start"] = target_reset.isoformat()
+            s["last_notified_week"] = 1
             s["season_queue"] = self._generate_season_queue(now, s.get("season_queue", []))
 
         async with self.config.guild(guild).seen_bosses() as seen:
@@ -873,19 +972,13 @@ class BreakingArmy(commands.Cog):
         # the same channel/style _advance_run uses for regular "Next Boss" pings, so
         # players watching for boss changes see season starts too (including fallback
         # seasons, which can start well after the usual weekly schedule tick).
-        notif_channel_id = await self.config.guild(guild).notification_channel()
-        notif_channel = guild.get_channel(notif_channel_id) if notif_channel_id else None
-        if notif_channel:
-            week1_bosses = self._get_bosses_for_week(season_shape, 1)
-            week1_info = " & ".join(
-                f"{boss_pool.get(b, '⚔️')} {b}" + (f" {new_emote}" if b in priority_bosses else "")
-                for b in week1_bosses
-            )
-            special_tag = "✨ **Special Season!** " if weeks == 5 else ""
-            try:
-                await notif_channel.send(f"🚀 **New Breaking Army Season!** {special_tag}Week 1 Boss: {week1_info}")
-            except discord.HTTPException:
-                log.warning(f"Failed to send season-start boss-change notice in {guild.name}")
+        week1_bosses = self._get_bosses_for_week(season_shape, 1)
+        week1_info = " & ".join(
+            f"{boss_pool.get(b, '⚔️')} {b}" + (f" {new_emote}" if b in priority_bosses else "")
+            for b in week1_bosses
+        )
+        special_tag = "✨ **Special Season!** " if weeks == 5 else ""
+        await self._send_notification(guild, f"🚀 **New Breaking Army Season!** {special_tag}Week 1 Boss: {week1_info}")
 
         if weeks == 5:
             title = "✨ New Special Season Initialized (5 Weeks)"
@@ -1188,7 +1281,6 @@ class BreakingArmy(commands.Cog):
             return await ctx.send("❌ **Permission Denied.**")
 
         poll_updated = False
-        live_updated = False
 
         # 1. Update Poll Embed
         poll = await self.config.guild(ctx.guild).active_poll()
@@ -1200,17 +1292,12 @@ class BreakingArmy(commands.Cog):
                 pass
 
         # 2. Update Live Season View
-        season = await self.config.guild(ctx.guild).season_data()
-        if season.get("live_season_message", {}).get("message_id"):
-            try:
-                await self._refresh_live_season_view(ctx.guild)
-                live_updated = True
-            except:
-                pass
+        await self._sync_active_run(ctx.guild)
+        live_updated, live_detail = await self._refresh_live_season_view(ctx.guild)
 
         status_msg = "✅ **Refresh Results:**\n"
         status_msg += f"- Poll Embed: {'Updated' if poll_updated else 'Not found/failed'}\n"
-        status_msg += f"- Live Season View: {'Updated' if live_updated else 'Not found/failed'}"
+        status_msg += f"- Live Season View: {live_detail}"
         
         await ctx.send(status_msg)
 
@@ -1526,6 +1613,7 @@ class BreakingArmy(commands.Cog):
             if target_reset > now: target_reset -= timedelta(days=7)
             s["last_reset"] = target_reset.isoformat()
             s["season_start"] = (target_reset - timedelta(weeks=week - 1)).isoformat()
+            s["last_notified_week"] = week
         
         season = await self.config.guild(ctx.guild).season_data()
         bosses = self._get_bosses_for_week(season, week)
@@ -1538,20 +1626,39 @@ class BreakingArmy(commands.Cog):
 
     @ba_season.command(name="check")
     async def season_check(self, ctx: commands.Context):
-        """Check season status and catch up on missed week rollovers immediately."""
+        """Check season status, sync active run, refresh live embeds, and catch up missed rollovers."""
         from datetime import timezone
         server_tz = timezone(timedelta(hours=1))
         now = datetime.now(server_tz)
         async with ctx.typing():
             advanced, msg = await self._check_guild_season_advancement(ctx.guild, now, server_tz, force=False)
+            await self._sync_active_run(ctx.guild)
+            live_ok, live_status = await self._refresh_live_season_view(ctx.guild)
+
+            season = await self.config.guild(ctx.guild).season_data()
+            cur = season.get("current_week", 1)
+            active = "Active" if season.get("is_active") else "Inactive"
+            last_reset = season.get("last_reset", "None")
+            notif_cid = await self.config.guild(ctx.guild).notification_channel()
+            notif_channel = ctx.guild.get_channel(notif_cid) or (ctx.guild.get_thread(notif_cid) if hasattr(ctx.guild, "get_thread") else None) if notif_cid else None
+            notif_str = notif_channel.mention if notif_channel else ("Disabled/Unset" if not notif_cid else f"`{notif_cid}`")
+
+            boss_info = await self._get_upcoming_boss_info(ctx.guild)
+
+            lines = []
             if advanced:
-                await ctx.send(f"✅ **Rollover catch-up executed:**\n{msg}")
+                lines.append(f"✅ **Rollover catch-up executed:**\n{msg}")
             else:
-                season = await self.config.guild(ctx.guild).season_data()
-                cur = season.get("current_week", 1)
-                active = "Active" if season.get("is_active") else "Inactive"
-                last_reset = season.get("last_reset", "None")
-                await ctx.send(f"ℹ️ **Season status:** {active} (Week {cur}), Last reset: `{last_reset}`.\n{msg}")
+                lines.append(f"ℹ️ **Season status:** {active} (Week {cur}), Last reset: `{last_reset}`.\n{msg}")
+
+            lines.append(f"⚔️ **Current Week Bosses:** {boss_info}")
+            lines.append(f"📢 **Notification Channel:** {notif_str}")
+            if live_ok:
+                lines.append(f"📺 **Live View:** {live_status}")
+            else:
+                lines.append(f"⚠️ **Live View:** {live_status}")
+
+            await ctx.send("\n".join(lines))
 
     @ba_season.command(name="advance")
     async def season_advance(self, ctx: commands.Context):
@@ -1561,7 +1668,44 @@ class BreakingArmy(commands.Cog):
         now = datetime.now(server_tz)
         async with ctx.typing():
             advanced, msg = await self._check_guild_season_advancement(ctx.guild, now, server_tz, force=True)
-            await ctx.send(f"✅ **Season advanced:**\n{msg}")
+            await self._sync_active_run(ctx.guild)
+            live_ok, live_status = await self._refresh_live_season_view(ctx.guild)
+            lines = [f"✅ **Season advanced:**\n{msg}"]
+            if live_ok:
+                lines.append(f"📺 **Live View:** {live_status}")
+            else:
+                lines.append(f"⚠️ **Live View:** {live_status}")
+            await ctx.send("\n".join(lines))
+
+    @ba_season.command(name="notify")
+    async def season_notify(self, ctx: commands.Context):
+        """Send or resend the current week's Breaking Army announcement to the notification channel."""
+        season = await self.config.guild(ctx.guild).season_data()
+        if not season.get("is_active"):
+            return await ctx.send("❌ No active season.")
+        cur_w = season.get("current_week", 1)
+        boss_info = await self._get_upcoming_boss_info(ctx.guild)
+        notif_msg = f"📈 **Breaking Army Advanced to Week {cur_w}** in {ctx.guild.name}!\nScheduled Bosses: {boss_info}"
+        sent = await self._send_notification(ctx.guild, notif_msg)
+        if sent:
+            async with self.config.guild(ctx.guild).season_data() as s:
+                s["last_notified_week"] = cur_w
+            notif_cid = await self.config.guild(ctx.guild).notification_channel()
+            ch = ctx.guild.get_channel(notif_cid) or (ctx.guild.get_thread(notif_cid) if hasattr(ctx.guild, "get_thread") else None) if notif_cid else None
+            mention = ch.mention if ch else f"`{notif_cid}`"
+            await ctx.send(f"✅ Notification sent to {mention}.")
+        else:
+            await ctx.send("❌ Could not send notification. Please ensure a notification channel is set with `[p]ba config notifchannel #channel`.")
+
+    @ba_season.command(name="refresh")
+    async def season_refresh(self, ctx: commands.Context):
+        """Force-refresh the live season view embed message."""
+        await self._sync_active_run(ctx.guild)
+        ok, status_msg = await self._refresh_live_season_view(ctx.guild)
+        if ok:
+            await ctx.send(f"✅ {status_msg}")
+        else:
+            await ctx.send(f"⚠️ {status_msg}\nUse `[p]ba season overwrite <message_id_or_link>` to bind an existing message, or `[p]ba season live` to post a new tracker.")
 
     @ba_season.command(name="show")
     async def season_show(self, ctx: commands.Context):
@@ -1602,10 +1746,19 @@ class BreakingArmy(commands.Cog):
         else:
             msg_id = parsed
 
+        # Helper to resolve channel or thread
+        def resolve_channel(cid):
+            if not cid: return None
+            return (
+                ctx.guild.get_channel(cid)
+                or (ctx.guild.get_thread(cid) if hasattr(ctx.guild, "get_thread") else None)
+                or self.bot.get_channel(cid)
+            )
+
         # Strategy 1: Use channel ID from link if available
         if channel_id:
             try:
-                channel = ctx.guild.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                channel = resolve_channel(channel_id) or await self.bot.fetch_channel(channel_id)
                 target_message = await channel.fetch_message(msg_id)
             except:
                 pass
@@ -1623,15 +1776,19 @@ class BreakingArmy(commands.Cog):
             live = season_data.get("live_season_message", {})
             if live.get("channel_id"):
                 try:
-                    channel = ctx.guild.get_channel(live["channel_id"]) or await self.bot.fetch_channel(live["channel_id"])
+                    c_id = live["channel_id"]
+                    channel = resolve_channel(c_id) or await self.bot.fetch_channel(c_id)
                     target_message = await channel.fetch_message(msg_id)
                 except:
                     pass
 
-        # Strategy 4: Search all text channels (last resort)
+        # Strategy 4: Search all text channels and active threads (last resort)
         if not target_message:
             await ctx.send("🔍 Searching for message in other channels...")
-            for channel in ctx.guild.text_channels:
+            channels_to_search = list(ctx.guild.text_channels)
+            if hasattr(ctx.guild, "threads"):
+                channels_to_search.extend(ctx.guild.threads)
+            for channel in channels_to_search:
                 if channel.id == ctx.channel.id: continue # Already checked
                 try:
                     target_message = await channel.fetch_message(msg_id)
@@ -1645,7 +1802,8 @@ class BreakingArmy(commands.Cog):
         if target_message.author.id != self.bot.user.id:
             return await ctx.send("❌ **Error:** I can only overwrite messages sent by me.")
 
-        # Generate content
+        # Ensure active run and embeds are up to date
+        await self._sync_active_run(ctx.guild)
         embeds = await self._generate_season_status_embeds(ctx.guild)
         poll_data = await self.config.guild(ctx.guild).active_poll()
         view = None
