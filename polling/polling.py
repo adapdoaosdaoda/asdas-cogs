@@ -367,7 +367,7 @@ class EventPolling(commands.Cog):
         """Wait for bot to be ready before starting backup task"""
         await self.bot.wait_until_ready()
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=1)
     async def weekly_results_update(self):
         """Update weekly results embeds every Sunday at 10 PM server time (UTC+1)"""
         try:
@@ -376,16 +376,31 @@ class EventPolling(commands.Cog):
             server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
 
-            # Check if it's Sunday (6 = Sunday) and between 22:00-22:59 PM
-            if now.weekday() != 6 or now.hour != 22:
+            # Target: Sunday 22:00 Server Time (UTC+1)
+            days_back = (now.weekday() - 6) % 7  # 6 = Sunday
+            target_time = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
+            if target_time > now:
+                target_time -= timedelta(days=7)
+
+            target_date_str = target_time.date().isoformat()
+            last_run = await self.config.last_weekly_results_update()
+
+            should_run = False
+            if not last_run:
+                # If never run, trigger if in the scheduled hour, else initialize to avoid stale trigger
+                if now.weekday() == 6 and now.hour == 22:
+                    should_run = True
+                else:
+                    await self.config.last_weekly_results_update.set(target_date_str)
+            else:
+                last_run_date_str = last_run.split("T")[0]
+                if last_run_date_str < target_date_str:
+                    should_run = True
+
+            if not should_run:
                 return
 
-            last_run = await self.config.last_weekly_results_update()
-            today_str = now.date().isoformat()
-            if last_run == today_str:
-                return
-            
-            await self.config.last_weekly_results_update.set(today_str)
+            await self.config.last_weekly_results_update.set(target_date_str)
 
             # Get all guilds
             all_guilds = await self.config.all_guilds()
@@ -415,6 +430,7 @@ class EventPolling(commands.Cog):
 
         Runs a few minutes before BreakingArmy's Sunday 22:00 advancement alert so the
         Schedule Change notification always reaches the owner first.
+        Self-corrects and catches up if the bot was offline across the 21:55 boundary.
         """
         try:
             # Get current datetime in server timezone (UTC+1)
@@ -422,16 +438,31 @@ class EventPolling(commands.Cog):
             server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
 
-            # Check if it's Sunday (6 = Sunday) at 21:55
-            if now.weekday() != 6 or now.hour != 21 or now.minute != 55:
+            # Target: Sunday 21:55 Server Time (UTC+1)
+            days_back = (now.weekday() - 6) % 7  # 6 = Sunday
+            target_time = now.replace(hour=21, minute=55, second=0, microsecond=0) - timedelta(days=days_back)
+            if target_time > now:
+                target_time -= timedelta(days=7)
+
+            target_date_str = target_time.date().isoformat()
+            last_run = await self.config.last_weekly_calendar_update()
+
+            should_run = False
+            if not last_run:
+                # If never run, trigger if in current 2-minute window, else initialize to avoid stale trigger
+                if now.weekday() == 6 and now.hour == 21 and abs(now.minute - 55) < 2:
+                    should_run = True
+                else:
+                    await self.config.last_weekly_calendar_update.set(target_date_str)
+            else:
+                last_run_date_str = last_run.split("T")[0]
+                if last_run_date_str < target_date_str:
+                    should_run = True
+
+            if not should_run:
                 return
 
-            last_run = await self.config.last_weekly_calendar_update()
-            today_str = now.date().isoformat()
-            if last_run == today_str:
-                return
-            
-            await self.config.last_weekly_calendar_update.set(today_str)
+            await self.config.last_weekly_calendar_update.set(target_date_str)
 
             # Get all guilds
             all_guilds = await self.config.all_guilds()
@@ -1585,7 +1616,10 @@ class EventPolling(commands.Cog):
 
     async def _send_log(self, guild: discord.Guild, msg: str):
         """Send a bot-status message to the owners (DM) and the configured log channel, if any."""
-        await self.bot.send_to_owners(msg)
+        try:
+            await self.bot.send_to_owners(msg)
+        except Exception as e:
+            log.warning(f"Failed to send log message to owners: {e}")
         log_channel_id = await self.config.guild(guild).log_channel_id()
         if log_channel_id:
             channel = guild.get_channel(log_channel_id)

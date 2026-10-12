@@ -84,7 +84,10 @@ class BreakingArmy(commands.Cog):
 
     async def _send_log(self, guild: discord.Guild, msg: str):
         """Send a bot-status message to the owners (DM) and the configured log channel, if any."""
-        await self.bot.send_to_owners(msg)
+        try:
+            await self.bot.send_to_owners(msg)
+        except Exception as e:
+            log.warning(f"Failed to send log message to owners: {e}")
         log_channel_id = await self.config.guild(guild).log_channel_id()
         if log_channel_id:
             channel = guild.get_channel(log_channel_id)
@@ -519,161 +522,185 @@ class BreakingArmy(commands.Cog):
     @tasks.loop(minutes=1)
     async def schedule_checker(self):
         try:
-            for guild_id in await self.config.all_guilds():
-                guild = self.bot.get_guild(guild_id)
-                if not guild: continue
-                
-                from datetime import timezone
-                server_tz = timezone(timedelta(hours=1))
-                now = datetime.now(server_tz)
-                day_name = now.strftime("%A")
-                time_str = now.strftime("%H:%M")
-                
-                # Night logic: Times 00:00 - 02:59 are considered part of the "night" of the previous day
-                # We use 03:00 as the cutoff to match EventPolling's next-day threshold
-                is_next_day = now.hour < 3
-                prev_day_name = (now - timedelta(days=1)).strftime("%A")
+            from datetime import timezone
+            server_tz = timezone(timedelta(hours=1))
+            now = datetime.now(server_tz)
+            day_name = now.strftime("%A")
+            time_str = now.strftime("%H:%M")
+            
+            # Night logic: Times 00:00 - 02:59 are considered part of the "night" of the previous day
+            # We use 03:00 as the cutoff to match EventPolling's next-day threshold
+            is_next_day = now.hour < 3
+            prev_day_name = (now - timedelta(days=1)).strftime("%A")
 
-                # 1. Auto-Death (2 hours)
-                run = await self.config.guild(guild).active_run()
-                if run["is_running"] and run["current_index"] >= 0 and run["start_time"]:
-                    start = datetime.fromisoformat(run["start_time"])
-                    if datetime.now(timezone.utc) >= start + timedelta(hours=2):
-                        await self._advance_run(guild)
+            all_guilds = await self.config.all_guilds()
+            for guild_id in all_guilds:
+                try:
+                    guild = self.bot.get_guild(int(guild_id))
+                except (ValueError, TypeError):
+                    guild = None
+                if not guild:
+                    continue
 
-                # 2. Season Reset / Week Advancement (Sunday 22:00)
-                # We use a 1-hour window for the "active" check, but catch-up handles downtime.
-                # Target: Sunday 22:00 Server Time (UTC+1)
-                days_back = (now.weekday() - 6) % 7 # 6 = Sunday
-                target_reset = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
-                if target_reset > now:
-                    target_reset -= timedelta(days=7)
+                try:
+                    # 1. Auto-Death (2 hours)
+                    run = await self.config.guild(guild).active_run()
+                    if run["is_running"] and run["current_index"] >= 0 and run["start_time"]:
+                        start = datetime.fromisoformat(run["start_time"])
+                        if start.tzinfo is None:
+                            start = start.replace(tzinfo=timezone.utc)
+                        if datetime.now(timezone.utc) >= start + timedelta(hours=2):
+                            await self._advance_run(guild)
 
-                last_reset_str = (await self.config.guild(guild).season_data())["last_reset"]
-                should_reset = False
-                if not last_reset_str:
-                    # Initialize last_reset if it doesn't exist, but only trigger if it's currently Sunday 22:00
-                    if day_name == "Sunday" and time_str == "22:00":
-                        should_reset = True
+                    # 2. Season Reset / Week Advancement (Sunday 22:00)
+                    # We use a 1-hour window for the "active" check, but catch-up handles downtime.
+                    # Target: Sunday 22:00 Server Time (UTC+1)
+                    days_back = (now.weekday() - 6) % 7  # 6 = Sunday
+                    target_reset = now.replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=days_back)
+                    if target_reset > now:
+                        target_reset -= timedelta(days=7)
+
+                    season_data = await self.config.guild(guild).season_data()
+                    last_reset_str = season_data.get("last_reset")
+                    should_reset = False
+                    if not last_reset_str:
+                        # Initialize last_reset if it doesn't exist, but trigger if currently Sunday 22:00
+                        # or if an active season is running and missed its rollover
+                        if season_data.get("is_active"):
+                            should_reset = True
+                        elif day_name == "Sunday" and time_str == "22:00":
+                            should_reset = True
+                        else:
+                            async with self.config.guild(guild).season_data() as s:
+                                s["last_reset"] = target_reset.isoformat()
                     else:
+                        last_reset = datetime.fromisoformat(last_reset_str)
+                        if last_reset.tzinfo is None:
+                            last_reset = last_reset.replace(tzinfo=server_tz)
+                        if last_reset < target_reset:
+                            should_reset = True
+
+                    if should_reset:
+                        msg = ""
+                        is_active = False
                         async with self.config.guild(guild).season_data() as s:
+                            # Catch up on every Sunday 22:00 boundary missed since last_reset
+                            # (e.g. the bot was offline across 2+ rollovers) instead of only
+                            # advancing current_week by 1 - otherwise the week count desyncs
+                            # from real elapsed weeks and a missed advance is never logged.
+                            missed_reset = datetime.fromisoformat(last_reset_str) if last_reset_str else (target_reset - timedelta(days=7))
+                            if missed_reset.tzinfo is None:
+                                missed_reset = missed_reset.replace(tzinfo=server_tz)
+                            weeks_advanced = 0
+                            season_ended = False
+                            r = missed_reset
+                            while r < target_reset:
+                                r += timedelta(days=7)
+                                if not s["is_active"]:
+                                    break
+                                s["current_week"] += 1
+                                weeks_advanced += 1
+                                if s["current_week"] > s.get("max_week", 4):
+                                    s["is_active"] = False
+                                    season_ended = True
+                                    break
                             s["last_reset"] = target_reset.isoformat()
-                else:
-                    last_reset = datetime.fromisoformat(last_reset_str)
-                    if last_reset < target_reset:
-                        should_reset = True
 
-                if should_reset:
-                    msg = ""
-                    is_active = False
-                    async with self.config.guild(guild).season_data() as s:
-                        # Catch up on every Sunday 22:00 boundary missed since last_reset
-                        # (e.g. the bot was offline across 2+ rollovers) instead of only
-                        # advancing current_week by 1 - otherwise the week count desyncs
-                        # from real elapsed weeks and a missed advance is never logged.
-                        missed_reset = datetime.fromisoformat(last_reset_str) if last_reset_str else target_reset
-                        weeks_advanced = 0
-                        season_ended = False
-                        r = missed_reset
-                        while r < target_reset:
-                            r += timedelta(days=7)
-                            if not s["is_active"]:
-                                break
-                            s["current_week"] += 1
-                            weeks_advanced += 1
-                            if s["current_week"] > s.get("max_week", 4):
-                                s["is_active"] = False
-                                season_ended = True
-                                break
-                        s["last_reset"] = target_reset.isoformat()
+                            if season_ended:
+                                msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
+                            elif weeks_advanced == 1:
+                                msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name}."
+                            elif weeks_advanced > 1:
+                                msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name} *(caught up {weeks_advanced} missed weeks)*."
+                            is_active = s["is_active"]
 
-                        if season_ended:
-                            msg = f"🏁 **Breaking Army Season Ended** in {guild.name}."
-                        elif weeks_advanced == 1:
-                            msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name}."
-                        elif weeks_advanced > 1:
-                            msg = f"📈 **Breaking Army Advanced to Week {s['current_week']}** in {guild.name} *(caught up {weeks_advanced} missed weeks)*."
-                        is_active = s["is_active"]
+                            # Keep the year's schedule populated (covers first-ever setup too).
+                            if not s.get("season_queue"):
+                                s["season_queue"] = self._generate_season_queue(now, [])
 
-                        # Keep the year's schedule populated (covers first-ever setup too).
-                        if not s.get("season_queue"):
-                            s["season_queue"] = self._generate_season_queue(now, [])
+                        if not is_active:
+                            # Only activate the next season once its pre-generated,
+                            # month-aligned start date has actually arrived - never
+                            # chain immediately after the previous season ends. Peek
+                            # (don't pop) so a failed setup (e.g. not enough bosses for
+                            # a special 5-week season) leaves the slot queued for retry
+                            # instead of silently discarding that month's season.
+                            season_data = await self.config.guild(guild).season_data()
+                            queue = season_data.get("season_queue", [])
+                            due_weeks = None
+                            if queue:
+                                q_start = datetime.fromisoformat(queue[0]["start"])
+                                if q_start.tzinfo is None:
+                                    q_start = q_start.replace(tzinfo=server_tz)
+                                if q_start <= now:
+                                    due_weeks = queue[0].get("weeks", 4)
 
-                    if not is_active:
-                        # Only activate the next season once its pre-generated,
-                        # month-aligned start date has actually arrived - never
-                        # chain immediately after the previous season ends. Peek
-                        # (don't pop) so a failed setup (e.g. not enough bosses for
-                        # a special 5-week season) leaves the slot queued for retry
-                        # instead of silently discarding that month's season.
-                        season_data = await self.config.guild(guild).season_data()
-                        queue = season_data.get("season_queue", [])
-                        due_weeks = queue[0]["weeks"] if queue and datetime.fromisoformat(queue[0]["start"]) <= now else None
+                            if due_weeks:
+                                setup_embed = await self._setup_new_season_logic(guild, weeks=due_weeks, max_week=due_weeks)
+                                if setup_embed:
+                                    await self._consume_due_season_slot(guild)
+                                    special_tag = "✨ Special (5-Week) " if due_weeks == 5 else ""
+                                    msg = f"🚀 **New {special_tag}Breaking Army Season Started** in {guild.name}!"
+                                    poll_data = await self.config.guild(guild).active_poll()
+                                    channel = guild.get_channel(poll_data["channel_id"])
+                                    if channel: await channel.send(embed=setup_embed)
+                                else:
+                                    min_pool = 7 if due_weeks == 5 else 6
+                                    msg += f"\n⚠️ A season was due to start but failed - need at least **{min_pool}** bosses in the pool. It will retry next tick."
 
-                        if due_weeks:
-                            setup_embed = await self._setup_new_season_logic(guild, weeks=due_weeks, max_week=due_weeks)
-                            if setup_embed:
-                                await self._consume_due_season_slot(guild)
-                                special_tag = "✨ Special (5-Week) " if due_weeks == 5 else ""
-                                msg = f"🚀 **New {special_tag}Breaking Army Season Started** in {guild.name}!"
-                                poll_data = await self.config.guild(guild).active_poll()
-                                channel = guild.get_channel(poll_data["channel_id"])
-                                if channel: await channel.send(embed=setup_embed)
-                            else:
-                                min_pool = 7 if due_weeks == 5 else 6
-                                msg += f"\n⚠️ A season was due to start but failed - need at least **{min_pool}** bosses in the pool. It will retry next tick."
-
-                    # Pre-populate active_run for the upcoming week
-                    season = await self.config.guild(guild).season_data()
-                    if season["is_active"]:
-                        bosses = self._get_bosses_for_week(season, season["current_week"])
-                        await self.config.guild(guild).active_run.set({
-                            "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
-                        })
-                        boss_info = await self._get_upcoming_boss_info(guild)
-                        msg += f"\nScheduled Bosses: {boss_info}"
-                    
-                    if msg:
-                        await self._send_log(guild, msg)
-                    
-                    await self._refresh_live_season_view(guild)
-
-                # 3. Schedule Trigger
-                polling_cog = self.bot.get_cog("EventPolling")
-                if not polling_cog: continue
-                polls = await polling_cog.config.guild(guild).polls()
-                if not polls: continue
-                latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
-                poll_data = polls[latest_poll_id]
-                snapshot = poll_data.get("weekly_snapshot_winning_times")
-                winners = snapshot if snapshot else polling_cog._calculate_winning_times_weighted(poll_data.get("selections", {}))
-                
-                ba_winners = winners.get("Breaking Army", {})
-                trigger = False
-                for slot in ba_winners.values():
-                    win_day = slot[0][0]
-                    win_time = slot[0][1]
-                    h = int(win_time.split(":")[0])
-                    
-                    # Stored win_time is UTC+1. In Summer (CEST), 17:00 Local is stored as 16:00 UTC+1.
-                    # We only treat 00:00-02:59 as the next calendar day's night.
-                    slot_is_next_day = h < 3
-                    if slot_is_next_day:
-                        if win_day == prev_day_name and time_str == win_time:
-                            trigger = True; break
-                    else:
-                        if win_day == day_name and time_str == win_time:
-                            trigger = True; break
-                            
-                if trigger:
-                    last = await self.config.guild(guild).active_run.last_auto_trigger()
-                    if last != now.strftime("%Y-%m-%dT%H:%M"):
-                        await self.config.guild(guild).active_run.last_auto_trigger.set(now.strftime("%Y-%m-%dT%H:%M"))
+                        # Pre-populate active_run for the upcoming week
+                        season = await self.config.guild(guild).season_data()
+                        if season["is_active"]:
+                            bosses = self._get_bosses_for_week(season, season["current_week"])
+                            await self.config.guild(guild).active_run.set({
+                                "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
+                            })
+                            boss_info = await self._get_upcoming_boss_info(guild)
+                            msg += f"\nScheduled Bosses: {boss_info}"
                         
-                        # Determine which day name triggered it (could be day_name or prev_day_name)
-                        trigger_day = prev_day_name if slot_is_next_day else day_name
-                        await self._auto_start_run(guild, day_name=trigger_day)
-        except Exception as e: log.error(f"Checker error: {e}")
+                        if msg:
+                            await self._send_log(guild, msg)
+                        
+                        await self._refresh_live_season_view(guild)
+
+                    # 3. Schedule Trigger
+                    polling_cog = self.bot.get_cog("EventPolling")
+                    if not polling_cog: continue
+                    polls = await polling_cog.config.guild(guild).polls()
+                    if not polls: continue
+                    latest_poll_id = max(polls.keys(), key=lambda pid: int(pid))
+                    poll_data = polls[latest_poll_id]
+                    snapshot = poll_data.get("weekly_snapshot_winning_times")
+                    winners = snapshot if snapshot else polling_cog._calculate_winning_times_weighted(poll_data.get("selections", {}))
+                    
+                    ba_winners = winners.get("Breaking Army", {})
+                    trigger = False
+                    for slot in ba_winners.values():
+                        win_day = slot[0][0]
+                        win_time = slot[0][1]
+                        h = int(win_time.split(":")[0])
+                        
+                        # Stored win_time is UTC+1. In Summer (CEST), 17:00 Local is stored as 16:00 UTC+1.
+                        # We only treat 00:00-02:59 as the next calendar day's night.
+                        slot_is_next_day = h < 3
+                        if slot_is_next_day:
+                            if win_day == prev_day_name and time_str == win_time:
+                                trigger = True; break
+                        else:
+                            if win_day == day_name and time_str == win_time:
+                                trigger = True; break
+                                
+                    if trigger:
+                        last = await self.config.guild(guild).active_run.last_auto_trigger()
+                        if last != now.strftime("%Y-%m-%dT%H:%M"):
+                            await self.config.guild(guild).active_run.last_auto_trigger.set(now.strftime("%Y-%m-%dT%H:%M"))
+                            
+                            # Determine which day name triggered it (could be day_name or prev_day_name)
+                            trigger_day = prev_day_name if slot_is_next_day else day_name
+                            await self._auto_start_run(guild, day_name=trigger_day)
+                except Exception as guild_e:
+                    log.error(f"Error checking schedule for guild {guild.id}: {guild_e}", exc_info=True)
+        except Exception as e: log.error(f"Checker error: {e}", exc_info=True)
 
     @schedule_checker.before_loop
     async def before_schedule_checker(self):
