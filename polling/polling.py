@@ -50,6 +50,8 @@ class EventPolling(commands.Cog):
             export_guild_id=None,
             last_weekly_results_update=None,
             last_weekly_calendar_update=None,
+            last_weekly_results_update_run=None,
+            last_weekly_calendar_update_run=None,
             is_dst=False  # Track current DST status for Europe/Berlin
         )
 
@@ -367,11 +369,13 @@ class EventPolling(commands.Cog):
         """Wait for bot to be ready before starting backup task"""
         await self.bot.wait_until_ready()
 
-    @tasks.loop(minutes=1)
-    async def weekly_results_update(self):
-        """Update weekly results embeds every Sunday at 10 PM server time (UTC+1)"""
+    async def _execute_weekly_results_update(self, force: bool = False) -> List[str]:
+        """Update weekly results embeds every Sunday at 10 PM server time (UTC+1).
+        
+        Self-corrects and catches up if the bot was offline across the boundary.
+        """
+        results_log = []
         try:
-            # Get current datetime in server timezone (UTC+1)
             from datetime import timezone
             server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
@@ -383,57 +387,67 @@ class EventPolling(commands.Cog):
                 target_time -= timedelta(days=7)
 
             target_date_str = target_time.date().isoformat()
-            last_run = await self.config.last_weekly_results_update()
+            last_run = await self.config.last_weekly_results_update_run()
 
-            should_run = False
-            if not last_run:
-                # If never run, trigger if in the scheduled hour, else initialize to avoid stale trigger
-                if now.weekday() == 6 and now.hour == 22:
+            should_run = force
+            if not should_run:
+                if not last_run:
                     should_run = True
                 else:
-                    await self.config.last_weekly_results_update.set(target_date_str)
-            else:
-                last_run_date_str = last_run.split("T")[0]
-                if last_run_date_str < target_date_str:
-                    should_run = True
+                    last_run_date_str = last_run.split("T")[0]
+                    if last_run_date_str < target_date_str:
+                        should_run = True
 
             if not should_run:
-                return
+                return results_log
 
+            await self.config.last_weekly_results_update_run.set(target_date_str)
             await self.config.last_weekly_results_update.set(target_date_str)
+            log.info(f"EventPolling: Running weekly results update for target {target_date_str} (force={force})")
 
             # Get all guilds
             all_guilds = await self.config.all_guilds()
 
             for guild_id_str, guild_data in all_guilds.items():
-                guild_id = int(guild_id_str)
+                try:
+                    guild_id = int(guild_id_str)
+                except (ValueError, TypeError):
+                    continue
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
                     continue
 
                 polls = guild_data.get("polls", {})
                 for poll_id, poll_data in polls.items():
-                    # Update all results messages for this poll
-                    await self._update_results_messages(guild, poll_data, poll_id)
+                    res_msgs = poll_data.get("results_messages", [])
+                    if res_msgs:
+                        await self._update_results_messages(guild, poll_data, poll_id)
+                        results_log.append(f"{guild.name}: Updated {len(res_msgs)} results message(s) for poll '{poll_data.get('title', poll_id)}'")
 
         except Exception as e:
-            print(f"Error during weekly results update: {e}")
+            log.error(f"Error during weekly results update: {e}", exc_info=True)
+            results_log.append(f"Error: {e}")
+        return results_log
+
+    @tasks.loop(minutes=1)
+    async def weekly_results_update(self):
+        """Update weekly results embeds every Sunday at 10 PM server time (UTC+1)"""
+        await self._execute_weekly_results_update(force=False)
 
     @weekly_results_update.before_loop
     async def before_weekly_results_update(self):
         """Wait for bot to be ready before starting weekly results update task"""
         await self.bot.wait_until_ready()
 
-    @tasks.loop(minutes=1)
-    async def weekly_calendar_update(self):
+    async def _execute_weekly_calendar_update(self, force: bool = False) -> List[str]:
         """Update weekly calendar embeds every Sunday at 21:55 server time (UTC+1).
 
         Runs a few minutes before BreakingArmy's Sunday 22:00 advancement alert so the
         Schedule Change notification always reaches the owner first.
         Self-corrects and catches up if the bot was offline across the 21:55 boundary.
         """
+        results_log = []
         try:
-            # Get current datetime in server timezone (UTC+1)
             from datetime import timezone
             server_tz = timezone(timedelta(hours=1))
             now = datetime.now(server_tz)
@@ -445,30 +459,32 @@ class EventPolling(commands.Cog):
                 target_time -= timedelta(days=7)
 
             target_date_str = target_time.date().isoformat()
-            last_run = await self.config.last_weekly_calendar_update()
+            last_run = await self.config.last_weekly_calendar_update_run()
 
-            should_run = False
-            if not last_run:
-                # If never run, trigger if in current 2-minute window, else initialize to avoid stale trigger
-                if now.weekday() == 6 and now.hour == 21 and abs(now.minute - 55) < 2:
+            should_run = force
+            if not should_run:
+                if not last_run:
                     should_run = True
                 else:
-                    await self.config.last_weekly_calendar_update.set(target_date_str)
-            else:
-                last_run_date_str = last_run.split("T")[0]
-                if last_run_date_str < target_date_str:
-                    should_run = True
+                    last_run_date_str = last_run.split("T")[0]
+                    if last_run_date_str < target_date_str:
+                        should_run = True
 
             if not should_run:
-                return
+                return results_log
 
+            await self.config.last_weekly_calendar_update_run.set(target_date_str)
             await self.config.last_weekly_calendar_update.set(target_date_str)
+            log.info(f"EventPolling: Running weekly calendar update for target {target_date_str} (force={force})")
 
             # Get all guilds
             all_guilds = await self.config.all_guilds()
 
             for guild_id_str, guild_data in all_guilds.items():
-                guild_id = int(guild_id_str)
+                try:
+                    guild_id = int(guild_id_str)
+                except (ValueError, TypeError):
+                    continue
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
                     continue
@@ -503,13 +519,25 @@ class EventPolling(commands.Cog):
                                 f"Nothing to do — the winning times are unchanged from last week."
                             )
 
-                        await self._send_log(
-                            guild,
-                            f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n{body}"
-                        )
+                        log_msg = f"{header} for {guild.name} (Poll: {poll_data.get('title', poll_id)})\n{body}"
+                        await self._send_log(guild, log_msg)
+                        status_desc = "Schedule changed" if changed else "No schedule changes"
+                        results_log.append(f"{guild.name}: {status_desc} for poll '{poll_data.get('title', poll_id)}' (owner notified)")
 
         except Exception as e:
-            print(f"Error during weekly calendar update: {e}")
+            log.error(f"Error during weekly calendar update: {e}", exc_info=True)
+            results_log.append(f"Error: {e}")
+        return results_log
+
+    @tasks.loop(minutes=1)
+    async def weekly_calendar_update(self):
+        """Update weekly calendar embeds every Sunday at 21:55 server time (UTC+1).
+
+        Runs a few minutes before BreakingArmy's Sunday 22:00 advancement alert so the
+        Schedule Change notification always reaches the owner first.
+        Self-corrects and catches up if the bot was offline across the 21:55 boundary.
+        """
+        await self._execute_weekly_calendar_update(force=False)
 
     def _snapshot_has_changed(self, old: Dict, new: Dict) -> bool:
         """Compare two snapshots to see if winning times changed"""
@@ -2485,6 +2513,29 @@ class EventPolling(commands.Cog):
             await ctx.send(f"✅ Successfully updated weekly snapshot and refreshed all related calendar/results messages.")
         except Exception as e:
             await ctx.send(f"✅ Snapshot updated, but failed to update some messages: {e}")
+
+    @eventpoll.command(name="checksunday")
+    async def check_sunday(self, ctx: commands.Context):
+        """Force check and execute Sunday calendar and results updates.
+
+        Catches up on missed Sunday notifications and calendar updates immediately.
+        """
+        async with ctx.typing():
+            cal_results = await self._execute_weekly_calendar_update(force=True)
+            res_results = await self._execute_weekly_results_update(force=True)
+
+            lines = []
+            if cal_results:
+                lines.append("**Weekly Calendar Updates:**\n" + "\n".join(f"- {r}" for r in cal_results))
+            else:
+                lines.append("**Weekly Calendar Updates:** No weekly calendar messages configured across polls.")
+
+            if res_results:
+                lines.append("**Weekly Results Updates:**\n" + "\n".join(f"- {r}" for r in res_results))
+            else:
+                lines.append("**Weekly Results Updates:** No results messages configured across polls.")
+
+            await ctx.send("\n\n".join(lines))
 
     @eventpoll.command(name="overwriteresults")
     async def overwrite_results(self, ctx: commands.Context, message_id_to_overwrite: str, poll_message_id: str):
