@@ -537,13 +537,19 @@ class BreakingArmy(commands.Cog):
             target_reset -= timedelta(days=7)
 
         season_data = await self.config.guild(guild).season_data()
+
+        # Always ensure season_queue is populated for the guild
+        if not season_data.get("season_queue"):
+            async with self.config.guild(guild).season_data() as s:
+                s["season_queue"] = self._generate_season_queue(now, [])
+            season_data = await self.config.guild(guild).season_data()
+
         is_active = season_data.get("is_active", False)
         last_reset_str = season_data.get("last_reset")
         current_week = season_data.get("current_week", 1)
         max_week = season_data.get("max_week", season_data.get("weeks", 4))
-        queue = season_data.get("season_queue", [])
 
-        # Deduce or retrieve season_start boundary
+        # Retrieve or deduce season_start boundary
         season_start = None
         if season_data.get("season_start"):
             try:
@@ -553,14 +559,16 @@ class BreakingArmy(commands.Cog):
             except Exception:
                 season_start = None
 
-        if not season_start and queue:
-            try:
-                q_start = datetime.fromisoformat(queue[0]["start"])
-                if q_start.tzinfo is None:
-                    q_start = q_start.replace(tzinfo=server_tz)
-                season_start = q_start - timedelta(weeks=season_data.get("weeks", 4))
-            except Exception:
-                season_start = None
+        if not season_start and is_active:
+            # Derive season_start directly from calendar month boundaries:
+            # Breaking Army seasons begin at the Sunday 22:00 nearest the 1st of the month.
+            cur_month_start = datetime(now.year, now.month, 1, tzinfo=server_tz)
+            this_month_sunday = self._nearest_month_start_sunday(cur_month_start)
+            if now < this_month_sunday:
+                prev_year, prev_month = (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+                season_start = self._nearest_month_start_sunday(datetime(prev_year, prev_month, 1, tzinfo=server_tz))
+            else:
+                season_start = this_month_sunday
 
         expected_week = None
         if season_start and is_active:
@@ -597,7 +605,7 @@ class BreakingArmy(commands.Cog):
         msg = ""
         is_active = False
         async with self.config.guild(guild).season_data() as s:
-            if season_start and not s.get("season_start"):
+            if season_start:
                 s["season_start"] = season_start.isoformat()
 
             s_max = s.get("max_week", s.get("weeks", 4))
@@ -686,9 +694,11 @@ class BreakingArmy(commands.Cog):
         season = await self.config.guild(guild).season_data()
         if season["is_active"]:
             bosses = self._get_bosses_for_week(season, season["current_week"])
-            await self.config.guild(guild).active_run.set({
-                "boss_order": bosses, "current_index": -1, "is_running": False, "start_time": None
-            })
+            async with self.config.guild(guild).active_run() as run:
+                run["boss_order"] = bosses
+                run["current_index"] = -1
+                run["is_running"] = False
+                run["start_time"] = None
             boss_info = await self._get_upcoming_boss_info(guild)
             msg += f"\nScheduled Bosses: {boss_info}"
 
@@ -713,14 +723,17 @@ class BreakingArmy(commands.Cog):
             is_next_day = now.hour < 3
             prev_day_name = (now - timedelta(days=1)).strftime("%A")
 
-            all_guilds = await self.config.all_guilds()
-            for guild_id in all_guilds:
+            # Collect all guilds from bot cache and config
+            guild_set = {g for g in self.bot.guilds}
+            for guild_id_str in await self.config.all_guilds():
                 try:
-                    guild = self.bot.get_guild(int(guild_id))
+                    g = self.bot.get_guild(int(guild_id_str))
+                    if g:
+                        guild_set.add(g)
                 except (ValueError, TypeError):
-                    guild = None
-                if not guild:
-                    continue
+                    pass
+
+            for guild in guild_set:
 
                 try:
                     # 1. Auto-Death (2 hours)
