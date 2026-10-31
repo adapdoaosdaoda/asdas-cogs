@@ -180,13 +180,8 @@ class EventPolling(commands.Cog):
         # Blocked time slots: (Legacy, Guild War is now handled via events list)
         self.blocked_times = []
 
-        # Event-specific blocked time periods (applies to all days for these events)
-        # Events cannot be scheduled if they would overlap with these time periods
-        self.event_blocked_times = {
-            "Showdown": {"start": "20:30", "end": "00:00"},  # Cannot run during 20:30-00:00
-            "Breaking Army": {"start": "19:30", "end": "21:30"},  # Cannot run during 19:30-21:30
-            "Party": {"start": "19:40", "end": "21:30"}  # Cannot run during 19:40-21:30
-        }
+        # Event-specific blocked time periods (all times unlocked)
+        self.event_blocked_times = {}
 
         # Timezone display - customize this to match your server's timezone
         # Examples: "UTC", "UTC+1", "UTC-5", "EST", "PST", "Server Time"
