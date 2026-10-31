@@ -575,7 +575,7 @@ class PartyModal(discord.ui.View):
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
         try:
-            channel = interaction.guild.get_channel(poll_data["channel_id"])
+            channel = await self.cog._get_channel_or_thread(interaction.guild, poll_data["channel_id"])
             if channel:
                 message = await channel.fetch_message(poll_data["message_id"])
                 updated_embed = await self.cog._create_poll_embed(
@@ -877,7 +877,7 @@ class FixedDaysModal(discord.ui.View):
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
         try:
-            channel = interaction.guild.get_channel(poll_data["channel_id"])
+            channel = await self.cog._get_channel_or_thread(interaction.guild, poll_data["channel_id"])
             if channel:
                 message = await channel.fetch_message(poll_data["message_id"])
                 updated_embed = await self.cog._create_poll_embed(
@@ -1265,7 +1265,7 @@ class WeeklyEventModal(discord.ui.View):
     async def _update_poll_display(self, interaction: discord.Interaction, poll_data: Dict):
         """Update the poll embed and calendar"""
         try:
-            channel = interaction.guild.get_channel(poll_data["channel_id"])
+            channel = await self.cog._get_channel_or_thread(interaction.guild, poll_data["channel_id"])
             if channel:
                 message = await channel.fetch_message(poll_data["message_id"])
                 updated_embed = await self.cog._create_poll_embed(
@@ -1598,15 +1598,6 @@ class CalendarTimezoneView(discord.ui.View):
         self.guild_id = guild_id
         self.poll_id = poll_id
         self.is_weekly = is_weekly
-
-        # Add link button if URL provided
-        if poll_url:
-            link_button = discord.ui.Button(
-                label="Vote Here",
-                style=discord.ButtonStyle.link,
-                url=poll_url
-            )
-            self.add_item(link_button)
 
         # Add timezone button
         timezone_button = discord.ui.Button(
