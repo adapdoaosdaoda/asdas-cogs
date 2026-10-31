@@ -647,7 +647,7 @@ class EventPolling(commands.Cog):
                 if not guild:
                     continue
                 
-                channel = guild.get_channel(channel_id)
+                channel = await self._get_channel_or_thread(guild, channel_id)
                 if not channel:
                     continue
 
@@ -1319,13 +1319,9 @@ class EventPolling(commands.Cog):
         # Restore weekly calendar views
         weekly_calendar_messages = poll_data.get("weekly_calendar_messages", [])
         if weekly_calendar_messages:
-            poll_channel_id = poll_data.get("channel_id")
-            poll_message_id = poll_data.get("message_id")
-            poll_url = f"https://discord.com/channels/{guild.id}/{poll_channel_id}/{poll_message_id}"
-            
             for cal_msg_data in weekly_calendar_messages:
                 try:
-                    view = CalendarTimezoneView(self, guild.id, poll_id, is_weekly=True, poll_url=poll_url)
+                    view = CalendarTimezoneView(self, guild.id, poll_id, is_weekly=True)
                     self.bot.add_view(view)
                 except Exception as e:
                     log.error(f"Could not restore weekly calendar view for poll {poll_id}: {e}")
@@ -1337,7 +1333,7 @@ class EventPolling(commands.Cog):
             if not guild:
                 return
 
-            channel = guild.get_channel(poll_data["channel_id"])
+            channel = await self._get_channel_or_thread(guild, poll_data["channel_id"])
             if channel:
                 message = await channel.fetch_message(poll_data["message_id"])
                 updated_embed = await self._create_poll_embed(
@@ -1414,7 +1410,7 @@ class EventPolling(commands.Cog):
 
                 # Update the poll message embed to reflect new votes
                 try:
-                    channel = ctx.guild.get_channel(poll_data.get("channel_id"))
+                    channel = await self._get_channel_or_thread(ctx.guild, poll_data.get("channel_id"))
                     if channel:
                         message = await channel.fetch_message(int(target_poll_id))
                         title = poll_data.get("title", "Event Schedule Poll")
@@ -1449,7 +1445,7 @@ class EventPolling(commands.Cog):
             if poll_id in current_polls:
                 old_poll_data = current_polls[poll_id]
                 try:
-                    old_channel = ctx.guild.get_channel(old_poll_data.get("channel_id"))
+                    old_channel = await self._get_channel_or_thread(ctx.guild, old_poll_data.get("channel_id"))
                     if old_channel:
                         old_message = await old_channel.fetch_message(old_poll_data.get("message_id"))
                         # Disable the old poll message
@@ -1534,6 +1530,42 @@ class EventPolling(commands.Cog):
 
         return None
 
+    async def _get_channel_or_thread(self, guild: Optional[discord.Guild], channel_id: int):
+        """Get a channel or thread from cache or fetch from API if not cached.
+        Automatically joins and unarchives threads if needed."""
+        if not channel_id:
+            return None
+
+        channel = None
+        if guild:
+            if hasattr(guild, "get_channel_or_thread"):
+                channel = guild.get_channel_or_thread(channel_id)
+            if not channel:
+                channel = guild.get_channel(channel_id) or guild.get_thread(channel_id)
+
+        if not channel:
+            channel = self.bot.get_channel(channel_id)
+
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                channel = None
+
+        if channel and isinstance(channel, discord.Thread):
+            if channel.archived:
+                try:
+                    await channel.edit(archived=False)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+            if not channel.me:
+                try:
+                    await channel.join()
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
+        return channel
+
     async def _fetch_message_from_input(self, ctx: commands.Context, message_input: Union[str, int]) -> Optional[discord.Message]:
         """Fetch a Discord message from either a raw message ID or a message link.
         Supports cross-channel fetching via message links or searching guild channels."""
@@ -1555,9 +1587,9 @@ class EventPolling(commands.Cog):
         else:
             return None
 
-        # 1. If channel_id was in the link, try that channel first
+        # 1. If channel_id was in the link, try that channel or thread first
         if channel_id:
-            channel = ctx.guild.get_channel(channel_id) or ctx.guild.get_thread(channel_id)
+            channel = await self._get_channel_or_thread(ctx.guild, channel_id)
             if channel:
                 try:
                     return await channel.fetch_message(message_id)
@@ -1706,7 +1738,7 @@ class EventPolling(commands.Cog):
             log.warning(f"Failed to send log message to owners: {e}")
         log_channel_id = await self.config.guild(guild).log_channel_id()
         if log_channel_id:
-            channel = guild.get_channel(log_channel_id)
+            channel = await self._get_channel_or_thread(guild, log_channel_id)
             if channel:
                 try:
                     await channel.send(msg)
@@ -1919,7 +1951,7 @@ class EventPolling(commands.Cog):
 
         # Try to fetch the message
         try:
-            channel = ctx.guild.get_channel(poll_data["channel_id"])
+            channel = await self._get_channel_or_thread(ctx.guild, poll_data["channel_id"])
             if not channel:
                 await ctx.send("Could not find the poll's channel!")
                 return
@@ -2113,7 +2145,7 @@ class EventPolling(commands.Cog):
 
         # Try to edit the original message to disable buttons
         try:
-            channel = ctx.guild.get_channel(poll_data["channel_id"])
+            channel = await self._get_channel_or_thread(ctx.guild, poll_data["channel_id"])
             if channel:
                 message = await channel.fetch_message(poll_data["message_id"])
                 view = discord.ui.View()
@@ -2648,7 +2680,7 @@ class EventPolling(commands.Cog):
         await ctx.send(f"✅ Successfully overwrote message with results embed! This message will now be auto-updated.")
 
     @eventpoll.command(name="setchannel")
-    async def eventpoll_setchannel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+    async def eventpoll_setchannel(self, ctx: commands.Context, channel: Union[discord.TextChannel, discord.Thread] = None):
         """Set the channel for event notifications. Leave empty to disable."""
         if channel:
             await self.config.guild(ctx.guild).notification_channel_id.set(channel.id)
@@ -2658,7 +2690,7 @@ class EventPolling(commands.Cog):
             await ctx.send("✅ Event notifications disabled")
 
     @eventpoll.command(name="setlogchannel")
-    async def eventpoll_setlogchannel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+    async def eventpoll_setlogchannel(self, ctx: commands.Context, channel: Union[discord.TextChannel, discord.Thread] = None):
         """Set the channel that receives owner-status log messages (schedule change summaries). Leave empty to disable."""
         if channel:
             await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
@@ -2752,7 +2784,7 @@ class EventPolling(commands.Cog):
         guild_data = await self.config.guild(ctx.guild).all()
         
         channel_id = guild_data.get("notification_channel_id")
-        channel = ctx.guild.get_channel(channel_id) if channel_id else None
+        channel = await self._get_channel_or_thread(ctx.guild, channel_id) if channel_id else None
         
         notif_msg = guild_data.get("notification_message")
         custom_msgs = guild_data.get("notification_messages", {})
@@ -3327,9 +3359,8 @@ class EventPolling(commands.Cog):
         # Add footer
         embed.set_footer(text="times are adjusted every week based on Sunday's results")
 
-        # Create view with timezone button (is_weekly=True) and link button
-        poll_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
-        view = CalendarTimezoneView(self, guild_id, poll_id, is_weekly=True, poll_url=poll_url)
+        # Create view with timezone button (is_weekly=True)
+        view = CalendarTimezoneView(self, guild_id, poll_id, is_weekly=True)
 
         return embed, calendar_file, view, winning_times
 
@@ -3339,14 +3370,14 @@ class EventPolling(commands.Cog):
 
         for cal_msg_data in calendar_messages:
             try:
-                channel = guild.get_channel(cal_msg_data["channel_id"])
+                channel = await self._get_channel_or_thread(guild, cal_msg_data["channel_id"])
                 if channel:
                     message = await channel.fetch_message(cal_msg_data["message_id"])
                     updated_embed, calendar_file, view = await self._create_calendar_embed(poll_data, guild.id, poll_id)
                     await message.edit(embed=updated_embed, attachments=[calendar_file], view=view)
-            except Exception:
+            except Exception as e:
                 # Silently fail if we can't update a calendar message
-                pass
+                log.debug(f"Failed to update calendar message: {e}")
 
     async def _check_and_create_initial_snapshot(self, guild: discord.Guild, poll_id: str):
         """Check if this is the first vote and create initial weekly snapshot if needed"""
@@ -3401,7 +3432,7 @@ class EventPolling(commands.Cog):
         # Update all weekly calendar messages
         for idx, cal_msg_data in enumerate(weekly_calendar_messages):
             try:
-                channel = guild.get_channel(cal_msg_data["channel_id"])
+                channel = await self._get_channel_or_thread(guild, cal_msg_data["channel_id"])
                 if channel:
                     message = await channel.fetch_message(cal_msg_data["message_id"])
                     # Need to create a new file for each message since files can only be sent once
@@ -3412,9 +3443,9 @@ class EventPolling(commands.Cog):
                         # Generate new file for subsequent messages
                         _, calendar_file_copy, _, _ = await self._create_weekly_calendar_embed(poll_data, guild.id, poll_id)
                         await message.edit(embed=updated_embed, attachments=[calendar_file_copy], view=view)
-            except Exception:
+            except Exception as e:
                 # Silently fail if we can't update a weekly calendar message
-                pass
+                log.debug(f"Failed to update weekly calendar message: {e}")
 
     async def _create_results_embed(self, poll_data: Dict, guild_id: int, poll_id: str) -> discord.Embed:
         """Create a results embed showing current poll results
@@ -3512,14 +3543,14 @@ class EventPolling(commands.Cog):
 
         for res_msg_data in results_messages:
             try:
-                channel = guild.get_channel(res_msg_data["channel_id"])
+                channel = await self._get_channel_or_thread(guild, res_msg_data["channel_id"])
                 if channel:
                     message = await channel.fetch_message(res_msg_data["message_id"])
                     updated_embed = await self._create_results_embed(poll_data, guild.id, poll_id)
                     await message.edit(embed=updated_embed)
-            except Exception:
+            except Exception as e:
                 # Silently fail if we can't update a results message
-                pass
+                log.debug(f"Failed to update results message: {e}")
 
     async def _create_poll_embed(self, title: str, guild_id: int, poll_id: str) -> discord.Embed:
         """Create calendar-style embed showing winning times"""
