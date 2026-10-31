@@ -1534,6 +1534,67 @@ class EventPolling(commands.Cog):
 
         return None
 
+    async def _fetch_message_from_input(self, ctx: commands.Context, message_input: Union[str, int]) -> Optional[discord.Message]:
+        """Fetch a Discord message from either a raw message ID or a message link.
+        Supports cross-channel fetching via message links or searching guild channels."""
+        channel_id = None
+        message_id = None
+
+        if isinstance(message_input, int):
+            message_id = message_input
+        elif isinstance(message_input, str):
+            match = re.search(r'discord\.com/channels/\d+/(\d+)/(\d+)', message_input)
+            if match:
+                channel_id = int(match.group(1))
+                message_id = int(match.group(2))
+            else:
+                try:
+                    message_id = int(message_input)
+                except ValueError:
+                    return None
+        else:
+            return None
+
+        # 1. If channel_id was in the link, try that channel first
+        if channel_id:
+            channel = ctx.guild.get_channel(channel_id) or ctx.guild.get_thread(channel_id)
+            if channel:
+                try:
+                    return await channel.fetch_message(message_id)
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+
+        # 2. Try current channel
+        try:
+            return await ctx.channel.fetch_message(message_id)
+        except (discord.NotFound, discord.Forbidden):
+            pass
+
+        # 3. Check all other text channels in guild
+        for ch in ctx.guild.channels:
+            if not isinstance(ch, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                continue
+            if channel_id and ch.id == channel_id:
+                continue
+            if ch.id == ctx.channel.id:
+                continue
+            try:
+                return await ch.fetch_message(message_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                continue
+
+        for thread in ctx.guild.threads:
+            if channel_id and thread.id == channel_id:
+                continue
+            if thread.id == ctx.channel.id:
+                continue
+            try:
+                return await thread.fetch_message(message_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                continue
+
+        return None
+
     def _convert_to_local_time(self, server_time_str: str) -> str:
         """Convert a server time (UTC+1) string to local Berlin time (CET/CEST)"""
         berlin_tz = pytz.timezone('Europe/Berlin')
@@ -1775,24 +1836,10 @@ class EventPolling(commands.Cog):
 
         # Try to fetch the message to ensure it exists and is a bot message
         try:
-            # Try to find the message in any channel
-            message = None
-            if poll_id in polls:
-                # Poll exists, try to get the message from stored channel
-                channel = ctx.guild.get_channel(polls[poll_id]["channel_id"])
-                if channel:
-                    try:
-                        message = await channel.fetch_message(parsed_id)
-                    except:
-                        pass
-
-            # If not found in stored location, try current channel
+            message = await self._fetch_message_from_input(ctx, message_id)
             if not message:
-                try:
-                    message = await ctx.channel.fetch_message(parsed_id)
-                except:
-                    await ctx.send("Could not find the specified message. Make sure the message ID is correct and the message is in an accessible channel.")
-                    return
+                await ctx.send("Could not find the specified message. Make sure the message ID or link is correct and accessible.")
+                return
 
             # Verify it's a bot message
             if message.author.id != self.bot.user.id:
@@ -2303,7 +2350,10 @@ class EventPolling(commands.Cog):
 
         # Try to fetch the target message
         try:
-            message = await ctx.channel.fetch_message(target_msg_id)
+            message = await self._fetch_message_from_input(ctx, message_id_to_overwrite)
+            if not message:
+                await ctx.send("Could not find the target message to overwrite. Make sure the message ID or link is correct and accessible.")
+                return
 
             # Verify it's a bot message
             if message.author.id != self.bot.user.id:
@@ -2331,7 +2381,7 @@ class EventPolling(commands.Cog):
                 if not any(msg["message_id"] == target_msg_id for msg in calendar_messages):
                     polls[poll_id]["calendar_messages"].append({
                         "message_id": target_msg_id,
-                        "channel_id": ctx.channel.id
+                        "channel_id": message.channel.id
                     })
 
         await ctx.send(f"✅ Successfully overwrote message with calendar: {message.jump_url}")
@@ -2362,7 +2412,10 @@ class EventPolling(commands.Cog):
 
         # Try to fetch the target message
         try:
-            message = await ctx.channel.fetch_message(target_msg_id)
+            message = await self._fetch_message_from_input(ctx, message_id_to_overwrite)
+            if not message:
+                await ctx.send("Could not find the target message to overwrite. Make sure the message ID or link is correct and accessible.")
+                return
 
             # Verify it's a bot message
             if message.author.id != self.bot.user.id:
@@ -2393,7 +2446,7 @@ class EventPolling(commands.Cog):
                 if not any(msg["message_id"] == target_msg_id for msg in weekly_calendar_messages):
                     polls[poll_id]["weekly_calendar_messages"].append({
                         "message_id": target_msg_id,
-                        "channel_id": ctx.channel.id
+                        "channel_id": message.channel.id
                     })
 
         await ctx.send(f"✅ Successfully overwrote message with weekly calendar: {message.jump_url}")
@@ -2558,7 +2611,10 @@ class EventPolling(commands.Cog):
 
         # Try to fetch the target message
         try:
-            message = await ctx.channel.fetch_message(target_msg_id)
+            message = await self._fetch_message_from_input(ctx, message_id_to_overwrite)
+            if not message:
+                await ctx.send("Could not find the target message to overwrite. Make sure the message ID or link is correct and accessible.")
+                return
 
             # Verify it's a bot message
             if message.author.id != self.bot.user.id:
@@ -2586,7 +2642,7 @@ class EventPolling(commands.Cog):
                 if not any(msg["message_id"] == target_msg_id for msg in results_messages):
                     polls[poll_id]["results_messages"].append({
                         "message_id": target_msg_id,
-                        "channel_id": ctx.channel.id
+                        "channel_id": message.channel.id
                     })
 
         await ctx.send(f"✅ Successfully overwrote message with results embed! This message will now be auto-updated.")
