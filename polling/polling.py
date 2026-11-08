@@ -558,21 +558,40 @@ class EventPolling(commands.Cog):
                 if new_data[0] != old_data[0]: return True
         return False
 
-    def _next_occurrence_timestamp(self, day: str, local_time_str: str) -> int:
+    def _next_occurrence_timestamp(self, day: str, local_time_str: str, event_name: Optional[str] = None, raw_time: Optional[str] = None) -> int:
         """Unix timestamp (seconds) of the next occurrence of `day` at `local_time_str`
         (HH:MM, already-converted Berlin local time). "Daily"/"Fixed" have no specific
         weekday, so they resolve to the next occurrence of that time (today or tomorrow)."""
         berlin_tz = pytz.timezone('Europe/Berlin')
         now = datetime.now(berlin_tz)
-        h, m = map(int, local_time_str.split(':'))
 
         if day in ("Daily", "Fixed"):
+            gw_days = self.events.get("Guild War", {}).get("days", ["Saturday", "Sunday"])
+            is_party_gw_overlap = (
+                event_name == "Party"
+                and raw_time is not None
+                and self._party_overlaps_guild_war(raw_time, is_local_time=False)
+            )
+
+            today_day = now.strftime("%A")
+            effective_time = local_time_str
+            if is_party_gw_overlap and today_day in gw_days:
+                effective_time = self._convert_to_local_time(self._adjust_time_string(raw_time, -1))
+
+            h, m = map(int, effective_time.split(':'))
             target = now.replace(hour=h, minute=m, second=0, microsecond=0)
             if target <= now:
-                target += timedelta(days=1)
+                tomorrow = now + timedelta(days=1)
+                tomorrow_day = tomorrow.strftime("%A")
+                next_time = local_time_str
+                if is_party_gw_overlap and tomorrow_day in gw_days:
+                    next_time = self._convert_to_local_time(self._adjust_time_string(raw_time, -1))
+                next_h, next_m = map(int, next_time.split(':'))
+                target = tomorrow.replace(hour=next_h, minute=next_m, second=0, microsecond=0)
         else:
             target_weekday = self.days_of_week.index(day) if day in self.days_of_week else now.weekday()
             days_ahead = (target_weekday - now.weekday()) % 7
+            h, m = map(int, local_time_str.split(':'))
             target = now.replace(hour=h, minute=m, second=0, microsecond=0) + timedelta(days=days_ahead)
             if days_ahead == 0 and target <= now:
                 target += timedelta(days=7)
@@ -610,10 +629,18 @@ class EventPolling(commands.Cog):
                     label += f" #{int(slot_idx)+1}"
 
                 if use_discord_timestamps:
-                    ts = self._next_occurrence_timestamp(day, time)
-                    lines.append(f"{emoji} {label}: <t:{ts}:f>")
+                    ts = self._next_occurrence_timestamp(day, time, event_name=event_name, raw_time=data[0][1])
+                    if event_name == "Party" and self._party_overlaps_guild_war(data[0][1], is_local_time=False):
+                        shifted_time = self._convert_to_local_time(self._adjust_time_string(data[0][1], -1))
+                        lines.append(f"{emoji} {label}: <t:{ts}:f> *(Mon-Fri: {time}, Sat-Sun: {shifted_time})*")
+                    else:
+                        lines.append(f"{emoji} {label}: <t:{ts}:f>")
                 elif day in ("Daily", "Fixed"):
-                    lines.append(f"{emoji} {label}: **{time}**")
+                    if event_name == "Party" and self._party_overlaps_guild_war(data[0][1], is_local_time=False):
+                        shifted_time = self._convert_to_local_time(self._adjust_time_string(data[0][1], -1))
+                        lines.append(f"{emoji} {label}: **{time}** (Mon-Fri) / **{shifted_time}** (Sat-Sun)")
+                    else:
+                        lines.append(f"{emoji} {label}: **{time}**")
                 else:
                     lines.append(f"{emoji} {label}: **{day} {time}**")
         return "\n".join(lines) if lines else "No events scheduled."
@@ -755,7 +782,18 @@ class EventPolling(commands.Cog):
 
                             # Validate against winning day
                             if event_info["type"] == "daily":
-                                if now.hour == h and now.minute == m:
+                                actual_h, actual_m = h, m
+                                gw_info = self.events.get("Guild War", {})
+                                gw_days = gw_info.get("days", ["Saturday", "Sunday"])
+                                if (
+                                    event_name == "Party"
+                                    and check_day in gw_days
+                                    and self._party_overlaps_guild_war(win_time_str, is_local_time=False)
+                                ):
+                                    shifted_time = self._adjust_time_string(win_time_str, -1)
+                                    actual_h, actual_m = map(int, shifted_time.split(":"))
+
+                                if now.hour == actual_h and now.minute == actual_m:
                                     should_fire = True
                             elif event_info["type"] == "locked":
                                 if check_day in event_info.get("days", []) and now.hour == h and now.minute == m:
@@ -943,6 +981,44 @@ class EventPolling(commands.Cog):
             return f"{h:02d}:{m:02d}"
         except:
             return time_str
+
+    def _party_overlaps_guild_war(self, party_time_str: str, is_local_time: bool = False) -> bool:
+        """Check if Party starting at party_time_str overlaps with Guild War.
+
+        Args:
+            party_time_str: Party start time in HH:MM format
+            is_local_time: True if party_time_str is in local time, False if server time
+
+        Returns:
+            True if Party and Guild War time ranges overlap, False otherwise
+        """
+        gw_info = self.events.get("Guild War")
+        party_info = self.events.get("Party")
+        if not gw_info or not party_info:
+            return False
+
+        gw_time_str = gw_info.get("fixed_time")
+        if not gw_time_str:
+            return False
+
+        if is_local_time:
+            gw_time_str = self._convert_to_local_time(gw_time_str)
+
+        gw_duration = gw_info.get("duration", 90)
+        party_duration = party_info.get("duration", 10)
+
+        def to_minutes(t_str: str) -> int:
+            h, m = map(int, t_str.split(':'))
+            if h < 3:
+                h += 24
+            return h * 60 + m
+
+        party_start = to_minutes(party_time_str)
+        party_end = party_start + party_duration
+        gw_start = to_minutes(gw_time_str)
+        gw_end = gw_start + gw_duration
+
+        return party_start < gw_end and gw_start < party_end
 
     @tasks.loop(minutes=5)
     async def website_export_task(self):
@@ -1686,8 +1762,20 @@ class EventPolling(commands.Cog):
                     # Daily events appear on all days
                     if event_name not in calendar_data:
                         calendar_data[event_name] = {}
+                    
+                    gw_info = self.events.get("Guild War", {})
+                    gw_days = gw_info.get("days", ["Saturday", "Sunday"])
+                    is_party_gw_overlap = (
+                        event_name == "Party" and
+                        self._party_overlaps_guild_war(winner_time, is_local_time=False)
+                    )
+
                     for day in self.days_of_week:
-                        calendar_data[event_name][day] = display_time
+                        if is_party_gw_overlap and day in gw_days:
+                            # Push 1 hour earlier on guild war days
+                            calendar_data[event_name][day] = self._adjust_time_string(display_time, -1)
+                        else:
+                            calendar_data[event_name][day] = display_time
                 elif event_info["type"] == "fixed_days":
                     # Fixed-day events
                     if event_name not in calendar_data:
@@ -3508,7 +3596,11 @@ class EventPolling(commands.Cog):
 
                     # Show winning time
                     if event_info["type"] == "daily":
-                        field_value += f"{local_time} ({winner_points} pts)\n"
+                        if event_name == "Party" and self._party_overlaps_guild_war(time, is_local_time=False):
+                            shifted_local = self._convert_to_local_time(self._adjust_time_string(time, -1))
+                            field_value += f"{local_time} (Mon-Fri) / {shifted_local} (Sat-Sun) ({winner_points} pts)\n"
+                        else:
+                            field_value += f"{local_time} ({winner_points} pts)\n"
                     elif event_info["type"] == "fixed_days":
                         if event_info["slots"] > 1:
                             field_value += f"{day[:3]} {local_time} ({winner_points} pts)\n"
@@ -3684,6 +3776,7 @@ class EventPolling(commands.Cog):
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: days without a scheduled Hero's Realm (Catch-up) are preferred; Breaking Army/Showdown then prefer Saturday, then later time; others prefer later time",
+            "• If Party overlaps with Guild War (Sat & Sun), it is pushed 1 hour earlier on those days",
             "",
         ]
         return "\n".join(summary_lines)
@@ -3790,11 +3883,25 @@ class EventPolling(commands.Cog):
             if should_consolidate:
                 # consolidated line
                 line = f"{emoji} **{event_name}** ({voters_count} voters): {active_slots[0]['text']}"
+                if (
+                    event_name == "Party"
+                    and 0 in event_slots
+                    and self._party_overlaps_guild_war(event_slots[0][0][1], is_local_time=False)
+                ):
+                    shifted_local = self._convert_to_local_time(self._adjust_time_string(event_slots[0][0][1], -1))
+                    line += f" *(Sat/Sun: {shifted_local})*"
                 result_lines.append(line)
             else:
                 # individual lines
                 for slot in active_slots:
                     line = f"{emoji} **{event_name}{slot['suffix']}** ({voters_count} voters): {slot['text']}"
+                    if (
+                        event_name == "Party"
+                        and 0 in event_slots
+                        and self._party_overlaps_guild_war(event_slots[0][0][1], is_local_time=False)
+                    ):
+                        shifted_local = self._convert_to_local_time(self._adjust_time_string(event_slots[0][0][1], -1))
+                        line += f" *(Sat/Sun: {shifted_local})*"
                     result_lines.append(line)
 
         return "\n".join(result_lines)
@@ -3861,6 +3968,13 @@ class EventPolling(commands.Cog):
                     else:
                         summary_lines.append(f"  {rank}. {day[:3]} {time} - **{points} pts**")
 
+                if (
+                    event_name == "Party"
+                    and self._party_overlaps_guild_war(winner_key[1], is_local_time=False)
+                ):
+                    shifted_local = self._convert_to_local_time(self._adjust_time_string(winner_key[1], -1))
+                    summary_lines.append(f"  *(⚠️ Moves to {shifted_local} on Sat/Sun due to Guild War)*")
+
                 summary_lines.append("")
         else:
             if event_info["slots"] > 1:
@@ -3898,6 +4012,7 @@ class EventPolling(commands.Cog):
             "• When events conflict: Higher priority gets +3 bonus points",
             "• After bonus, higher points wins the time slot",
             "• If still tied: days without a scheduled Hero's Realm (Catch-up) are preferred; Breaking Army/Showdown then prefer Saturday, then later time; others prefer later time",
+            "• If Party overlaps with Guild War (Sat & Sun), it is pushed 1 hour earlier on those days",
             "",
             f"**All times shown in {self.timezone_display}**",
             "**Top 3 Options Per Event:**",
@@ -3940,6 +4055,13 @@ class EventPolling(commands.Cog):
                         else:
                             summary_lines.append(f"  {rank}. {day[:3]} {time} - **{points} pts**")
 
+                    if (
+                        event_name == "Party"
+                        and self._party_overlaps_guild_war(winner_key[1], is_local_time=False)
+                    ):
+                        shifted_local = self._convert_to_local_time(self._adjust_time_string(winner_key[1], -1))
+                        summary_lines.append(f"  *(⚠️ Moves to {shifted_local} on Sat/Sun due to Guild War)*")
+
                     summary_lines.append("")
             else:
                 if event_info["slots"] > 1:
@@ -3972,7 +4094,14 @@ class EventPolling(commands.Cog):
                         winners, votes = event_slots[slot_index]
                         if event_info["type"] == "daily":
                             time_str = winners[0][1]
-                            summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
+                            if (
+                                event_name == "Party"
+                                and self._party_overlaps_guild_war(time_str, is_local_time=False)
+                            ):
+                                shifted_time = self._adjust_time_string(time_str, -1)
+                                summary_lines.append(f"{emoji} **{event_name}**: {time_str} (Mon-Fri) / {shifted_time} (Sat-Sun) ({votes} votes)")
+                            else:
+                                summary_lines.append(f"{emoji} **{event_name}**: {time_str} ({votes} votes)")
                         elif event_info["type"] == "fixed_days":
                             time_str = winners[0][1]
                             if event_info["slots"] > 1:
@@ -4022,11 +4151,21 @@ class EventPolling(commands.Cog):
                     if winner_time not in schedule: continue
                     if event_info["type"] == "daily":
                         # Daily events appear on all days
+                        gw_info = self.events.get("Guild War", {})
+                        gw_days = gw_info.get("days", ["Saturday", "Sunday"])
+                        is_party_gw_overlap = (
+                            event_name == "Party" and
+                            self._party_overlaps_guild_war(winner_time, is_local_time=False)
+                        )
                         for day in self.days_of_week:
-                            if event_info["slots"] > 1:
-                                schedule[winner_time][day].append((priority, f"{emoji}{slot_index + 1}"))
-                            else:
-                                schedule[winner_time][day].append((priority, emoji))
+                            actual_time = winner_time
+                            if is_party_gw_overlap and day in gw_days:
+                                actual_time = self._adjust_time_string(winner_time, -1)
+                            if actual_time in schedule:
+                                if event_info["slots"] > 1:
+                                    schedule[actual_time][day].append((priority, f"{emoji}{slot_index + 1}"))
+                                else:
+                                    schedule[actual_time][day].append((priority, emoji))
                     elif event_info["type"] == "fixed_days":
                         # Fixed-day events appear on their configured days
                         if event_info["slots"] > 1:
@@ -4445,7 +4584,15 @@ class EventPolling(commands.Cog):
                 for affected_day in affected_days:
                     # Find all 30-min slots this event occupies
                     from datetime import datetime, timedelta
-                    current_time = datetime.strptime(time, "%H:%M")
+                    event_time = time
+                    if (
+                        event_name == "Party"
+                        and affected_day in self.events.get("Guild War", {}).get("days", ["Saturday", "Sunday"])
+                        and self._party_overlaps_guild_war(time, is_local_time=False)
+                    ):
+                        event_time = self._adjust_time_string(time, -1)
+
+                    current_time = datetime.strptime(event_time, "%H:%M")
                     duration = event_info.get("duration", 30)
                     slots_needed = max(1, duration // 30)
 
@@ -4462,7 +4609,7 @@ class EventPolling(commands.Cog):
                             'slot_index': slot_index,
                             'points': winner_points,
                             'priority': priority,
-                            'start_time': time,
+                            'start_time': event_time,
                             'all_entries': all_entries
                         })
 
@@ -4627,6 +4774,18 @@ class EventPolling(commands.Cog):
         slots_needed = max(1, duration // 30)
 
         for affected_day in affected_days:
+            event_time = time
+            if (
+                event_name == "Party"
+                and affected_day in self.events.get("Guild War", {}).get("days", ["Saturday", "Sunday"])
+                and self._party_overlaps_guild_war(time, is_local_time=False)
+            ):
+                event_time = self._adjust_time_string(time, -1)
+
+            current_time = datetime.strptime(event_time, "%H:%M")
+            duration = event_info.get("duration", 30)
+            slots_needed = max(1, duration // 30)
+
             for i in range(slots_needed):
                 slot_time = current_time + timedelta(minutes=i * 30)
                 slot_time_str = slot_time.strftime("%H:%M")
@@ -4661,6 +4820,18 @@ class EventPolling(commands.Cog):
         slots_needed = max(1, duration // 30)
 
         for affected_day in affected_days:
+            event_time = time
+            if (
+                event_name == "Party"
+                and affected_day in self.events.get("Guild War", {}).get("days", ["Saturday", "Sunday"])
+                and self._party_overlaps_guild_war(time, is_local_time=False)
+            ):
+                event_time = self._adjust_time_string(time, -1)
+
+            current_time = datetime.strptime(event_time, "%H:%M")
+            duration = event_info.get("duration", 30)
+            slots_needed = max(1, duration // 30)
+
             for i in range(slots_needed):
                 slot_time = current_time + timedelta(minutes=i * 30)
                 slot_time_str = slot_time.strftime("%H:%M")

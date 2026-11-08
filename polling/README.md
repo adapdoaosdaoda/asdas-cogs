@@ -51,6 +51,7 @@ pip install git+https://github.com/jay3332/pilmoji
 - **Slots**: 1
 - **Time selection**: 18:00 - 24:00 (30-minute intervals)
 - **No day selection needed**
+- **Guild War adjustment**: When Party overlaps with Guild War (Saturday & Sunday 19:30-21:00), it is automatically pushed 1 hour earlier on Saturday and Sunday (e.g. voted at 20:00, scheduled at 19:00 on Sat/Sun and 20:00 Mon-Fri)
 - **Button color**: Green
 
 ### Breaking Army (Weekly Event) ⚡

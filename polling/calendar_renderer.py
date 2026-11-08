@@ -392,47 +392,74 @@ class CalendarRenderer:
 
             for day, time_str in day_times.items():
                 # Handle special day types
-                days_to_process = []
                 if day == "Daily":
-                    # Daily events appear on all days
-                    days_to_process = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                    # Check if Party overlaps with Guild War
+                    gw_info = events.get("Guild War", {})
+                    gw_time_str = gw_info.get("fixed_time")
+                    gw_duration = gw_info.get("duration", 90)
+                    party_duration = event_info.get("duration", 10)
+
+                    is_party_gw_overlap = False
+                    if base_event_name == "Party" and gw_time_str:
+                        def to_mins(t_str: str) -> int:
+                            h, m = map(int, t_str.split(':'))
+                            if h < 3:
+                                h += 24
+                            return h * 60 + m
+
+                        p_start = to_mins(time_str)
+                        p_end = p_start + party_duration
+                        g_start = to_mins(gw_time_str)
+                        g_end = g_start + gw_duration
+                        is_party_gw_overlap = p_start < g_end and g_start < p_end
+
+                    if is_party_gw_overlap:
+                        gw_days_short = [day_map.get(d, d[:3]) for d in gw_info.get("days", ["Saturday", "Sunday"])]
+                        all_days_short = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                        non_gw_days = [d for d in all_days_short if d not in gw_days_short]
+                        h, m = map(int, time_str.split(':'))
+                        shifted_time_str = f"{(h - 1) % 24:02d}:{m:02d}"
+                        day_time_pairs = [(non_gw_days, time_str), (gw_days_short, shifted_time_str)]
+                    else:
+                        day_time_pairs = [(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], time_str)]
                 elif day == "Fixed":
                     # Fixed-day events with single slot - expand to all configured days
                     fixed_days = event_info.get("days", [])
-                    days_to_process = [day_map.get(d, d[:3]) for d in fixed_days]
+                    day_time_pairs = [([day_map.get(d, d[:3]) for d in fixed_days], time_str)]
                 else:
                     # Regular day or multi-slot fixed-day event
                     short_day = day_map.get(day, day[:3])
-                    days_to_process = [short_day]
+                    day_time_pairs = [([short_day], time_str)]
 
                 # Determine slot number for this event
                 slot_num = day_slot_map.get(day, 0)  # 0 means single slot or not applicable
 
-                # Calculate how many time slots this event spans (based on duration)
-                duration = event_info.get("duration", 30)
-                # Use ceiling division to account for any partial slot overlaps
-                time_slots_spanned = (duration + 29) // 30
+                for days_to_process, actual_time_str in day_time_pairs:
+                    # Calculate how many time slots this event spans (based on duration)
+                    duration = event_info.get("duration", 30)
+                    # Use ceiling division to account for any partial slot overlaps
+                    time_slots_spanned = (duration + 29) // 30
 
-                # Generate all time slots for this event (e.g., 19:00 and 19:30 for 60-min event)
-                from datetime import datetime, timedelta
-                start_time = datetime.strptime(time_str, "%H:%M")
-                time_slots_for_event = []
-                for i in range(time_slots_spanned):
-                    slot_time = start_time + timedelta(minutes=i * 30)
-                    # Normalize to 30-minute slot boundary for cell assignment
-                    normalized_m = (slot_time.minute // 30) * 30
-                    slot_time_str = f"{slot_time.hour:02d}:{normalized_m:02d}"
-                    time_slots_for_event.append(slot_time_str)
+                    # Generate all time slots for this event (e.g., 19:00 and 19:30 for 60-min event)
+                    from datetime import datetime, timedelta
+                    start_time = datetime.strptime(actual_time_str, "%H:%M")
+                    time_slots_for_event = []
+                    for i in range(time_slots_spanned):
+                        slot_time = start_time + timedelta(minutes=i * 30)
+                        # Normalize to 30-minute slot boundary for cell assignment
+                        normalized_m = (slot_time.minute // 30) * 30
+                        slot_time_str = f"{slot_time.hour:02d}:{normalized_m:02d}"
+                        time_slots_for_event.append(slot_time_str)
 
-                # Add event to all relevant time slots and days
-                for slot_time_str in time_slots_for_event:
-                    if slot_time_str not in schedule:
-                        schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+                    # Add event to all relevant time slots and days
+                    for slot_time_str in time_slots_for_event:
+                        if slot_time_str not in schedule:
+                            schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
 
-                    for short_day in days_to_process:
-                        if short_day in schedule[slot_time_str]:
-                            # Store base event name (without slot number) for rendering
-                            schedule[slot_time_str][short_day].append((priority, base_event_name, slot_num, time_str, duration))
+                        for short_day in days_to_process:
+                            if short_day in schedule[slot_time_str]:
+                                # Store base event name (without slot number) for rendering
+                                schedule[slot_time_str][short_day].append((priority, base_event_name, slot_num, actual_time_str, duration))
 
         # Don't generate a fixed time range - instead, ensure all time slots that have events exist
         # The _crop_empty_hours function will remove empty slots at the extremities
