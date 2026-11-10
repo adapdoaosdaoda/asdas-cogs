@@ -97,13 +97,21 @@ class EventPolling(commands.Cog):
             },
             "Hero's Realm (Reset)": {
                 "type": "locked",
-                "days": ["Monday"],
-                "fixed_time": "19:15",  # UTC 18:15
-                "duration": 15,  # 15 minutes (second half of 19:00-19:30 slot)
+                "days": ["Sunday", "Monday"],
+                "fixed_time": "22:00",
+                "fixed_times": {
+                    "Sunday": "22:00",
+                    "Monday": "20:15",
+                },
+                "duration": 30,
+                "durations": {
+                    "Sunday": 30,
+                    "Monday": 15,
+                },
                 "color": discord.Color(0xe1e7ec),
                 "emoji": "🛡️",
                 "priority": 5,
-                "slots": 1
+                "slots": 2
             },
             "Sword Trial": {
                 "type": "fixed_days",
@@ -707,9 +715,12 @@ class EventPolling(commands.Cog):
                         # Handle locked events (fixed time)
                         if event_info.get("type") == "locked":
                             fixed_time = event_info.get("fixed_time")
+                            fixed_times = event_info.get("fixed_times", {})
                             days = event_info.get("days", [])
-                            if fixed_time and days:
-                                all_checks[event_name][0] = (("Fixed", fixed_time), 0, [])
+                            for i, day in enumerate(days):
+                                slot_time = fixed_times.get(day, fixed_time)
+                                if slot_time:
+                                    all_checks[event_name][i] = ((day, slot_time), 0, [])
                             continue
                             
                         # Handle other events with defaults
@@ -752,12 +763,9 @@ class EventPolling(commands.Cog):
                         if event_info["type"] == "daily":
                             win_day = day_name 
                             win_time_str = winner_key[1]
-                        elif event_info["type"] == "locked":
-                            win_day = "Fixed" # Handled below
+                        elif event_info["type"] in ["fixed_days", "once", "weekly", "locked"]:
+                            win_day = winner_key[0]
                             win_time_str = winner_key[1]
-                        elif event_info["type"] in ["fixed_days", "once", "weekly"]:
-                             win_day = winner_key[0]
-                             win_time_str = winner_key[1]
                         else:
                             continue
                             
@@ -796,8 +804,9 @@ class EventPolling(commands.Cog):
                                 if now.hour == actual_h and now.minute == actual_m:
                                     should_fire = True
                             elif event_info["type"] == "locked":
-                                if check_day in event_info.get("days", []) and now.hour == h and now.minute == m:
-                                    should_fire = True
+                                if (win_day == "Fixed" and check_day in event_info.get("days", [])) or check_day == win_day:
+                                    if now.hour == h and now.minute == m:
+                                        should_fire = True
                             elif event_info["type"] == "fixed_days" and win_day == "Fixed":
                                 # Fixed days with single slot (legacy or fixed_time)
                                 if check_day in event_info.get("days", []) and now.hour == h and now.minute == m:
@@ -880,6 +889,47 @@ class EventPolling(commands.Cog):
     async def before_event_notification_task(self):
         await self.bot.wait_until_ready()
 
+    def _is_winter_time(self) -> bool:
+        """Check if Europe/Berlin is currently in winter time (CET, UTC+1, not DST)"""
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        return not bool(datetime.now(berlin_tz).dst())
+
+    def _update_locked_events(self):
+        """Update locked events (such as Hero's Realm Reset) based on DST/winter status"""
+        if not hasattr(self, "events") or "Hero's Realm (Reset)" not in self.events:
+            return
+
+        if self._is_winter_time():
+            # In winter time (CET): Sunday 22:00 CET and Monday 20:15 CET
+            self.events["Hero's Realm (Reset)"].update({
+                "days": ["Sunday", "Monday"],
+                "fixed_time": "22:00",
+                "fixed_times": {
+                    "Sunday": "22:00",
+                    "Monday": "20:15",
+                },
+                "duration": 30,
+                "durations": {
+                    "Sunday": 30,
+                    "Monday": 15,
+                },
+                "slots": 2,
+            })
+        else:
+            # In summer time (CEST): Monday 20:15 CEST (represented as 19:15 UTC+1 server time)
+            self.events["Hero's Realm (Reset)"].update({
+                "days": ["Monday"],
+                "fixed_time": "19:15",
+                "fixed_times": {
+                    "Monday": "19:15",
+                },
+                "duration": 15,
+                "durations": {
+                    "Monday": 15,
+                },
+                "slots": 1,
+            })
+
     def _update_timezone_display(self):
         """Update self.timezone_display based on current Europe/Berlin DST status"""
         berlin_tz = pytz.timezone('Europe/Berlin')
@@ -888,7 +938,10 @@ class EventPolling(commands.Cog):
             self.timezone_display = "Europe/Berlin (DST)"
         else:
             self.timezone_display = "Europe/Berlin"
-        
+
+        # Update locked events to reflect winter/summer time
+        self._update_locked_events()
+
         # Update calendar renderer if it exists
         if hasattr(self, 'calendar_renderer'):
             self.calendar_renderer.timezone = self.timezone_display
@@ -967,11 +1020,23 @@ class EventPolling(commands.Cog):
                         # winner_key: (day, time)
                         snapshot = poll_data["weekly_snapshot_winning_times"]
                         for event_name, slots in snapshot.items():
+                            event_info = self.events.get(event_name, {})
+                            if event_info.get("type") == "locked":
+                                continue
                             for slot_idx, slot_val in slots.items():
                                 if slot_val and len(slot_val) > 0:
                                     winner_key = list(slot_val[0])
                                     winner_key[1] = self._adjust_time_string(winner_key[1], hour_delta)
                                     slot_val[0] = tuple(winner_key)
+
+                        for event_name, event_info in self.events.items():
+                            if event_info.get("type") == "locked":
+                                fixed_times = event_info.get("fixed_times", {})
+                                fixed_time = event_info.get("fixed_time")
+                                snapshot[event_name] = {}
+                                for slot_idx, d in enumerate(event_info.get("days", [])):
+                                    t = fixed_times.get(d, fixed_time)
+                                    snapshot[event_name][slot_idx] = ((d, t), 9999, [])
 
     def _adjust_time_string(self, time_str: str, hour_delta: int) -> str:
         """Adjust a HH:MM time string by a number of hours, wrapping around 24h"""
@@ -1802,13 +1867,14 @@ class EventPolling(commands.Cog):
                 if event_name not in calendar_data:
                     calendar_data[event_name] = {}
                 
-                fixed_time = event_info.get("fixed_time")
+                fixed_times = event_info.get("fixed_times", {})
+                default_fixed_time = event_info.get("fixed_time")
                 event_days = event_info.get("days", [])
                 
-                if fixed_time and event_days:
-                    # Apply local conversion if requested
-                    display_fixed_time = self._convert_to_local_time(fixed_time) if convert_to_local else fixed_time
-                    for day in event_days:
+                for day in event_days:
+                    time_for_day = fixed_times.get(day, default_fixed_time)
+                    if time_for_day:
+                        display_fixed_time = self._convert_to_local_time(time_for_day) if convert_to_local else time_for_day
                         calendar_data[event_name][day] = display_fixed_time
 
         return calendar_data
@@ -2184,9 +2250,12 @@ class EventPolling(commands.Cog):
             # Add to embed
             if event_results or event_info["type"] == "locked":
                 if event_info["type"] == "locked":
-                    day_val = event_info["days"][0]
-                    time_val = event_info["fixed_time"]
-                    field_value = f"**{day_val[:3]} {time_val}**: *Fixed time*\n"
+                    field_value = ""
+                    fixed_times = event_info.get("fixed_times", {})
+                    fixed_time = event_info.get("fixed_time")
+                    for d in event_info.get("days", []):
+                        t = fixed_times.get(d, fixed_time)
+                        field_value += f"**{d[:3]} {t}**: *Fixed time*\n"
                 else:
                     field_value = ""
                     for selection, users in sorted(event_results.items()):
@@ -3591,7 +3660,7 @@ class EventPolling(commands.Cog):
                         if event_info["type"] == "fixed_days":
                             day_name = event_info["days"][slot_index] if slot_index < len(event_info["days"]) else f"Slot {slot_index + 1}"
                             field_value += f"**{day_name[:3]}:** "
-                        else:
+                        elif event_info["type"] != "locked":
                             field_value += f"**Slot {slot_index + 1}:** "
 
                     # Show winning time
@@ -3677,9 +3746,20 @@ class EventPolling(commands.Cog):
         )
         # Get display times for locked events (sourced from self.events so this
         # can't drift out of sync with the actual configured fixed times/days)
-        hr_reset_info = self.events["Hero's Realm (Reset)"]
-        heros_reset_day = "/".join(d[:3] for d in hr_reset_info["days"])
-        heros_reset_time = self._convert_to_local_time(hr_reset_info["fixed_time"])
+        hr_reset_info = self.events.get("Hero's Realm (Reset)", {})
+        hr_fixed_times = hr_reset_info.get("fixed_times", {})
+        hr_default_time = hr_reset_info.get("fixed_time")
+        hr_days = hr_reset_info.get("days", [])
+        if hr_fixed_times and len(hr_days) > 1:
+            hr_parts = []
+            for d in hr_days:
+                t = self._convert_to_local_time(hr_fixed_times.get(d, hr_default_time))
+                hr_parts.append(f"{d[:3]} {t}")
+            heros_reset_display = " & ".join(hr_parts)
+        else:
+            heros_reset_day = "/".join(d[:3] for d in hr_days)
+            heros_reset_time = self._convert_to_local_time(hr_default_time)
+            heros_reset_display = f"{heros_reset_day} {heros_reset_time}"
 
         gw_info = self.events["Guild War"]
         gw_day = "/".join(d[:3] for d in gw_info["days"])
@@ -3690,7 +3770,7 @@ class EventPolling(commands.Cog):
             name="🔒 Locked",
             value=(
                 f"🛡️ **Hero's Realm (Reset)**\n"
-                f"{heros_reset_day} {heros_reset_time}\n"
+                f"{heros_reset_display}\n"
                 f"🏰 **Guild War**\n"
                 f"{gw_day} {gw_time} ({gw_duration} min)"
             ),
@@ -4249,10 +4329,14 @@ class EventPolling(commands.Cog):
 
         return "\n".join(lines) if len(lines) > 3 else ""
 
+    def _get_locked_event_days(self, event_name: str) -> List[str]:
+        """Get the fixed days for a locked event, if configured"""
+        event_info = self.events.get(event_name, {})
+        return list(event_info.get("days", []))
+
     def _get_locked_event_day(self, event_name: str) -> Optional[str]:
         """Get the fixed day for a locked event, if configured"""
-        event_info = self.events.get(event_name, {})
-        days = event_info.get("days", [])
+        days = self._get_locked_event_days(event_name)
         return days[0] if days else None
 
     def _get_hero_realm_catchup_day(self, winning_times: Dict) -> Optional[str]:
@@ -4291,12 +4375,14 @@ class EventPolling(commands.Cog):
             # Handle locked events - fixed time, no voting
             if event_info["type"] == "locked":
                 fixed_time = event_info.get("fixed_time")
+                fixed_times = event_info.get("fixed_times", {})
                 days = event_info.get("days", [])
-                if fixed_time and days:
-                    # Locked events only have one slot (the fixed time on the specified day)
-                    day = days[0]
-                    winning_times[event_name][0] = ((day, fixed_time), 9999, [])  # High points to ensure priority
-                    log.info(f"  Locked event: {day} at {fixed_time}")
+                if days:
+                    for slot_idx, day in enumerate(days):
+                        slot_time = fixed_times.get(day, fixed_time)
+                        if slot_time:
+                            winning_times[event_name][slot_idx] = ((day, slot_time), 9999, [])
+                            log.info(f"  Locked event slot {slot_idx}: {day} at {slot_time}")
                 continue
 
             # Special handling for weekly events with multiple slots (Breaking Army, Showdown, Guild War)
@@ -4483,12 +4569,13 @@ class EventPolling(commands.Cog):
                         # Hero's Realm (Catch-up) itself avoids the locked Reset's day;
                         # other events avoid Hero's Realm (Catch-up)'s own winning day.
                         if event_name == "Hero's Realm (Catch-up)":
-                            day_to_avoid = self._get_locked_event_day("Hero's Realm (Reset)")
+                            days_to_avoid = set(self._get_locked_event_days("Hero's Realm (Reset)"))
                         else:
-                            day_to_avoid = self._get_hero_realm_catchup_day(winning_times)
+                            catchup_day = self._get_hero_realm_catchup_day(winning_times)
+                            days_to_avoid = {catchup_day} if catchup_day else set()
                         sorted_entries = sorted(
                             point_totals.items(),
-                            key=lambda x: (x[1], x[0][0] != day_to_avoid, x[0][1]),
+                            key=lambda x: (x[1], x[0][0] not in days_to_avoid, x[0][1]),
                             reverse=True
                         )
 

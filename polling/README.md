@@ -37,6 +37,12 @@ pip install git+https://github.com/jay3332/pilmoji
 - **No day selection needed** (automatically appears on Wed/Fri/Sat/Sun)
 - **Button color**: Grey
 
+### Hero's Realm (Reset) (Locked Event) 🛡️
+- **Duration**: 30 minutes on Sunday, 15 minutes on Monday
+- **Winter Time (CET)**: Scheduled on **both Sunday at 22:00 CET and Monday at 20:15 CET**
+- **Summer Time (CEST)**: Scheduled on **Monday at 20:15 CEST** (19:15 UTC+1 server time)
+- **Not selectable** - Automatically scheduled as a locked event in calendar visualizations and results
+
 ### Sword Trial (Fixed-Day Event) ⚔️
 - **Duration**: 30 minutes
 - **Frequency**: Wed, Fri, Sat, Sun only

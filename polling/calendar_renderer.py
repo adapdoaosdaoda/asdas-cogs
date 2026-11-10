@@ -436,7 +436,8 @@ class CalendarRenderer:
 
                 for days_to_process, actual_time_str in day_time_pairs:
                     # Calculate how many time slots this event spans (based on duration)
-                    duration = event_info.get("duration", 30)
+                    durations = event_info.get("durations", {})
+                    duration = durations.get(day, event_info.get("duration", 30))
                     # Use ceiling division to account for any partial slot overlaps
                     time_slots_spanned = (duration + 29) // 30
 
@@ -483,32 +484,39 @@ class CalendarRenderer:
                     continue
 
                 fixed_time_str = event_info.get("fixed_time")
+                fixed_times = event_info.get("fixed_times", {})
                 event_days = event_info.get("days", [])
                 duration = event_info.get("duration", 30)
+                durations = event_info.get("durations", {})
                 priority = event_info.get("priority", 3)
 
-                if not fixed_time_str or not event_days:
+                if not event_days:
                     continue
 
-                # Parse time
-                start_dt = datetime.strptime(fixed_time_str, "%H:%M")
-                # Use ceiling division to account for any partial slot overlaps
-                time_slots_spanned = (duration + 29) // 30
+                for day_full in event_days:
+                    day_time_str = fixed_times.get(day_full, fixed_time_str)
+                    if not day_time_str:
+                        continue
+                    day_duration = durations.get(day_full, duration)
 
-                for i in range(time_slots_spanned):
-                    slot_time = start_dt + timedelta(minutes=i * 30)
-                    # Normalize to 30-minute slot boundary for cell assignment
-                    normalized_m = (slot_time.minute // 30) * 30
-                    slot_time_str = f"{slot_time.hour:02d}:{normalized_m:02d}"
+                    # Parse time
+                    start_dt = datetime.strptime(day_time_str, "%H:%M")
+                    # Use ceiling division to account for any partial slot overlaps
+                    time_slots_spanned = (day_duration + 29) // 30
 
-                    # Create time slot if it doesn't exist
-                    if slot_time_str not in schedule:
-                        schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+                    for i in range(time_slots_spanned):
+                        slot_time = start_dt + timedelta(minutes=i * 30)
+                        # Normalize to 30-minute slot boundary for cell assignment
+                        normalized_m = (slot_time.minute // 30) * 30
+                        slot_time_str = f"{slot_time.hour:02d}:{normalized_m:02d}"
 
-                    # Add locked event to all configured days
-                    for day_full in event_days:
+                        # Create time slot if it doesn't exist
+                        if slot_time_str not in schedule:
+                            schedule[slot_time_str] = {d: [] for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+
+                        # Add locked event to configured day
                         short_day = day_map.get(day_full, day_full[:3])
-                        schedule[slot_time_str][short_day].append((priority, event_name, 0, fixed_time_str, duration))
+                        schedule[slot_time_str][short_day].append((priority, event_name, 0, day_time_str, day_duration))
 
         # Note: Events will be sorted dynamically at draw time based on position rules
 
